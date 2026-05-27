@@ -1,0 +1,43 @@
+# sgdjscc_lab requirements – Phase 1 (AWGN inference only)
+#
+# This package runs inside the SGDJSCC original environment.
+# All versions are pinned to match SGDJSCC/requirements.txt and install.sh.
+# Install the full environment first:
+#
+#   conda create -n ptest python=3.9
+#   conda activate ptest
+#   conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 pytorch-cuda=11.8 -c pytorch -c nvidia
+#
+# Then run this requirements file:
+#   pip install -r sgdjscc_lab/requirements.txt
+
+# Core deep learning (must match SGDJSCC conda env)
+torch==2.1.0
+torchvision==0.16.0
+
+# Diffusion + transformer infrastructure
+diffusers==0.26.3
+transformers==4.44.2
+huggingface-hub==0.25.1
+pytorch_lightning==2.4.0
+timm==0.9.16
+xformers==0.0.22.post7
+
+# Utility / math
+einops
+omegaconf
+numpy==1.23.2
+scikit-image
+Pillow
+
+# CLIP (OpenAI)
+openai-clip
+
+# Phase 1 uses these only for SGDJSCC imports; no evaluation loop here
+lpips
+pytorch-msssim
+torchmetrics
+clean-fid
+torch-fidelity
+efficientnet_pytorch
+matplotlib

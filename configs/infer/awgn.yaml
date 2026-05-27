@@ -1,0 +1,15 @@
+# configs/infer/awgn.yaml
+#
+# ⚠ 참고 전용 (reference only) — 현재 config.py 로더에 연결되어 있지 않습니다.
+#
+# 이 파일은 Phase 3에서 OmegaConf composition으로 default.yaml에 합성될
+# 예정인 I/O 설정 fragment입니다. 지금은 default.yaml이 단일 설정 파일입니다.
+#
+# Phase 3 task: config.py의 load_config()를 확장하여 defaults 리스트를 지원.
+#
+# 경로 주의: input_path와 output_dir은 이 YAML 파일의 위치(configs/infer/)가
+# 아니라 실제로 로드될 config 파일 위치 기준으로 resolve됩니다.
+
+input_path: "../../inputs/"    # → sgdjscc_lab/inputs/ (default.yaml 기준)
+output_dir: "../../outputs/"   # → sgdjscc_lab/outputs/
+device: "cuda:0"

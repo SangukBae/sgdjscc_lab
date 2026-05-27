@@ -1,0 +1,16 @@
+# configs/eval/default.yaml – Evaluation metric settings (Phase 3+)
+#
+# Full metric evaluation is planned for Phase 3.
+# See src/sgdjscc_lab/evaluators/ for the planned interface.
+
+metrics:
+  - psnr
+  - ssim
+  # Phase 3+:
+  # - lpips
+  # - clip_image_similarity
+  # - clip_text_image_similarity
+  # - object_preservation_rate
+  # - hallucination_score
+
+snr_list: [0, 5, 10, 15, 20, 25]

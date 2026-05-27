@@ -1,0 +1,17 @@
+# Large model artifacts
+checkpoints/
+*.pth
+
+# Runtime artifacts
+outputs/
+inputs/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Environment / tooling
+.venv/
+venv/
+.DS_Store

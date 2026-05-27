@@ -1,0 +1,48 @@
+# sgdjscc_lab default config
+# Phase 1: AWGN single-image / folder inference only
+
+# -- I/O ----------------------------------------------------------------------
+input_path: "../inputs/"       # path to a single image file OR a folder of images
+output_dir: "../outputs/"      # directory where reconstructed .png files are saved
+
+# -- Runtime ------------------------------------------------------------------
+device: "cuda:0"               # "cuda:0" | "cpu"
+
+# -- Channel ------------------------------------------------------------------
+snr_db: 10                     # AWGN SNR in dB
+
+# -- Checkpoints --------------------------------------------------------------
+# Place the checkpoints downloaded from HuggingFace here.
+# Relative paths are resolved from the directory of this config file (configs/).
+# "../checkpoints/" therefore resolves to sgdjscc_lab/checkpoints/.
+# Expected files under model_root/:
+#   JSCC_model.pth            - JSCC encoder/decoder + SNR predictor + canny TX net
+#   diffusion_backbone.pth    - base MDTv2 diffusion denoiser
+#   diffusion_controlnet.pth  - MDTv2 + ControlNet weights (needed when use_controlnet: true)
+#   muge-epoch-19-checkpoint.pth  - MuGE edge extractor
+model_root: "../checkpoints/"
+
+# -- Semantic guidance flags --------------------------------------------------
+use_semantic: true       # true = use diffusion denoiser + semantic guidance
+use_text: true           # true = use BLIP2 text caption as coarse guidance
+use_controlnet: true     # true = use ControlNet with edge map as fine guidance
+use_jscc_feature: true   # true = use received JSCC latent as diffusion init
+use_gt_csi: false        # false = blind SNR estimation from channel output (default)
+
+# -- Edge map transmission ----------------------------------------------------
+# canny_cr: bandwidth ratio allocated to edge map transmission
+# Set to "none" to skip canny JSCC transmission (uses locally extracted edge directly)
+canny_cr: "0.2"
+
+# -- Diffusion denoiser settings ----------------------------------------------
+diffusion_step: 50       # number of denoising steps
+step_style: "continuous" # "continuous" (default) | "discrete"
+guidance_scale: 4.0      # classifier-free guidance strength
+controlnet_scale: 0.3    # ControlNet conditioning scale
+cfg_method: "pcs_1.0"    # CFG schedule: "constant" | "pcs_1.0" | "clamp_linear_X"
+
+# -- Masking (set "none" to disable) ------------------------------------------
+mask_method: "none"
+
+# -- Canny edge thresholding (applied only when SNR <= -5 dB) -----------------
+th: 0.25
