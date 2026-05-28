@@ -110,6 +110,32 @@ tests/ + docs"]
 
         L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> L8 --> L9 --> L10 --> L11 --> L12
     end
+
+    O1 --- L1
+    O2 --- L2
+    O3 --- L3
+    O4 --- L4
+    O5 --- L5
+    O6 --- L6
+    O7 --- L7
+    O8 --- L8
+    O9 --- L9
+    O10 --- L10
+    O11 --- L11
+    O12 --- L12
+
+    linkStyle 22 stroke:transparent,fill:none;
+    linkStyle 23 stroke:transparent,fill:none;
+    linkStyle 24 stroke:transparent,fill:none;
+    linkStyle 25 stroke:transparent,fill:none;
+    linkStyle 26 stroke:transparent,fill:none;
+    linkStyle 27 stroke:transparent,fill:none;
+    linkStyle 28 stroke:transparent,fill:none;
+    linkStyle 29 stroke:transparent,fill:none;
+    linkStyle 30 stroke:transparent,fill:none;
+    linkStyle 31 stroke:transparent,fill:none;
+    linkStyle 32 stroke:transparent,fill:none;
+    linkStyle 33 stroke:transparent,fill:none;
 ```
 
 ---
@@ -184,4 +210,3 @@ It is the bridge between:
 
 - **Phase 1**: "make the original AWGN inference reproducible"
 - **Phase 3**: "add evaluation, richer guidance, and research features"
-
