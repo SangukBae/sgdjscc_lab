@@ -16,16 +16,19 @@ and extension.
 ## Side-by-Side Block Diagram
 
 ```mermaid
-flowchart LR
+flowchart TB
 
-    subgraph ORIG["Original SGDJSCC Framework"]
-        direction TB
-        O1["Entry Script
+    subgraph COMPARE[" "]
+        direction LR
+
+        subgraph ORIG["Original SGDJSCC Framework"]
+            direction TB
+            O1["Entry Script
 inference_one.py"]
-        O2["Config / Arguments
+            O2["Config / Arguments
 inference_config.py
 hardcoded paths + runtime flags"]
-        O3["Inline Model Construction
+            O3["Inline Model Construction
 JSCC model
 BLIP2
 MuGE
@@ -33,96 +36,97 @@ Diffusion backbone
 ControlNet
 CLIP
 shared VAE"]
-        O4["Input Image / Dataset
+            O4["Input Image / Dataset
 ImageFolder or direct image"]
-        O5["Patch Preparation
+            O5["Patch Preparation
 split_image_v2()
 preprocess inline"]
-        O6["Semantic Guidance Extraction
+            O6["Semantic Guidance Extraction
 BLIP2 caption
 MuGE soft edge"]
-        O7["JSCC Encode
+            O7["JSCC Encode
 VAE encode
 scaling_factor=15.45
 L2 normalize"]
-        O8["Wireless Channel
+            O8["Wireless Channel
 inline AWGN injection"]
-        O9["Step Matching
+            O9["Step Matching
 blind SNR prediction
 power scalar
 mask token"]
-        O10["Canny Re-Transmission
+            O10["Canny Re-Transmission
 canny TX net
 canny latent encoding"]
-        O11["Diffusion Denoising
+            O11["Diffusion Denoising
 MDTv2 / ControlNet
 DiffusionGenerator.generate()"]
-        O12["Final Decode
+            O12["Final Decode
 VAE decode
 save / log / evaluate inline"]
 
-        O1 --> O2 --> O3 --> O4 --> O5 --> O6 --> O7 --> O8 --> O9 --> O10 --> O11 --> O12
-    end
+            O1 --> O2 --> O3 --> O4 --> O5 --> O6 --> O7 --> O8 --> O9 --> O10 --> O11 --> O12
+        end
 
-    subgraph LAB["sgdjscc_lab Phase 2 Framework"]
-        direction TB
-        L1["CLI Entry
+        subgraph LAB["sgdjscc_lab Phase 2 Framework"]
+            direction TB
+            L1["CLI Entry
 scripts/infer_images.py"]
-        L2["Config Layer
+            L2["Config Layer
 config.py
 default.yaml
 CLI override merge"]
-        L3["Runtime Assembly
+            L3["Runtime Assembly
 runtime.py shim
 ModelBundle creation"]
-        L4["Model Builders
+            L4["Model Builders
 models/jscc_model.py
 models/diffusion_wrapper.py
 models/model_bundle.py"]
-        L5["Input / I/O Layer
+            L5["Input / I/O Layer
 io.py
 single image or folder"]
-        L6["Preprocessing Layer
+            L6["Preprocessing Layer
 utils/preprocessing.py
 prepare_patches()
 split / merge"]
-        L7["Guidance Layer
+            L7["Guidance Layer
 guidance/text_extractor.py
 guidance/edge_extractor.py"]
-        L8["JSCC Core
+            L8["JSCC Core
 models/jscc_model.py
 VAE encode / normalize"]
-        L9["Channel Layer
+            L9["Channel Layer
 channels/awgn.py
 AWGNChannel.transmit()"]
-        L10["Inference Pipeline
+            L10["Inference Pipeline
 pipelines/infer_pipeline.py
 step matching
 mask token
 canny retransmission"]
-        L11["Diffusion Layer
+            L11["Diffusion Layer
 DiffusionGenerator
 MDTv2 / ControlNet"]
-        L12["Output / Extension Layer
+            L12["Output / Extension Layer
 save image
 evaluators/quality.py scaffold
 tests/ + docs"]
 
-        L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> L8 --> L9 --> L10 --> L11 --> L12
-    end
+            L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> L8 --> L9 --> L10 --> L11 --> L12
+        end
 
-    O1 --- L1
-    O2 --- L2
-    O3 --- L3
-    O4 --- L4
-    O5 --- L5
-    O6 --- L6
-    O7 --- L7
-    O8 --- L8
-    O9 --- L9
-    O10 --- L10
-    O11 --- L11
-    O12 --- L12
+        O1 --- L1
+        O2 --- L2
+        O3 --- L3
+        O4 --- L4
+        O5 --- L5
+        O6 --- L6
+        O7 --- L7
+        O8 --- L8
+        O9 --- L9
+        O10 --- L10
+        O11 --- L11
+        O12 --- L12
+    end
 
     linkStyle 22 stroke:transparent,fill:none;
     linkStyle 23 stroke:transparent,fill:none;
