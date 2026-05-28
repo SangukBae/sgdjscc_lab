@@ -74,6 +74,36 @@ Dataset config example:
 python scripts/evaluate.py --config configs/dataset/kodak.yaml
 ```
 
+## Training
+`sgdjscc_lab` currently does **not** provide a standalone training CLI such as
+`scripts/train.py`.
+
+Current status:
+
+- inference CLI: available
+- evaluation CLI: available
+- training CLI: not yet implemented in `sgdjscc_lab`
+
+This means there is **no supported training command** in the package yet.
+If training support is added later, it will be documented here as an explicit
+CLI command.
+
+For now, the practical workflow is:
+
+```bash
+# Inference
+python scripts/infer_images.py --config configs/default.yaml
+
+# Evaluation
+python scripts/evaluate.py --config configs/composed.yaml --snr 10
+```
+
+Notes:
+
+- The original [SGDJSCC README](../SGDJSCC/README.md) also exposes inference only.
+- Fine-tuning / training workflow for `sgdjscc_lab` is a future extension item,
+  not a completed feature of the current package.
+
 ## Tests
 ```bash
 cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
