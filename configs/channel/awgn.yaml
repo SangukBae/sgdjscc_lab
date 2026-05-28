@@ -1,11 +1,7 @@
-# configs/channel/awgn.yaml
+# configs/channel/awgn.yaml – AWGN channel fragment
 #
-# ⚠ 참고 전용 (reference only) — 현재 config.py 로더에 연결되어 있지 않습니다.
-#
-# 이 파일은 Phase 3에서 OmegaConf composition으로 default.yaml에 합성될
-# 예정인 채널 설정 fragment입니다. 지금은 default.yaml이 단일 설정 파일입니다.
-#
-# Phase 3 task: config.py의 load_config()를 확장하여 defaults 리스트를 지원.
+# Merged into composed configs via the _defaults_ list in load_config().
+# All path values are resolved relative to the root config file's directory.
 
 channel: awgn
 snr_db: 10          # AWGN channel SNR (dB)

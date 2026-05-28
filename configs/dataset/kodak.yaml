@@ -1,0 +1,41 @@
+# configs/dataset/kodak.yaml – Kodak PhotoCD dataset (24 images, 768×512)
+#
+# The Kodak dataset is the standard benchmark for image compression and JSCC.
+# All 24 images are uncompressed PNG, 768×512 (or 512×768 in portrait).
+#
+# Usage:
+#   python scripts/evaluate.py --config configs/composed.yaml \
+#       --input /path/to/kodak/ --output-csv outputs/kodak_results.csv
+#
+# Download: http://r0k.us/graphics/kodak/
+# License: Free for non-commercial use.
+
+# Fragment composition: merge channel/model/infer/eval defaults, then override below.
+_defaults_:
+  - ../channel/awgn
+  - ../model/sgdjscc
+  - ../infer/awgn
+  - ../eval/default
+
+dataset_name: kodak
+num_images: 24
+
+# Paths resolve relative to this file's directory (configs/dataset/).
+# Two levels up reaches sgdjscc_lab/ → inputs/ is there.
+input_path: "../../inputs/kodak/"
+reference_path: "../../inputs/kodak/"    # same as input (reference = original)
+annotation_path: null                    # no annotations for Kodak
+
+# Image properties
+image_width:  768
+image_height: 512
+# Note: Kodak images are multiples of 128 in one axis but not always both.
+# Resize to 512×512 before inference to avoid patch-explosion:
+#   H=512 → stride=128 → 4 patches ✓
+#   W=768 → 768 % 128 = 0 → stride=128 → 6 patches ✓ (no resize needed if W≥128)
+
+# Evaluation notes
+notes: >
+  Standard 24-image benchmark. Images should be resized so both H and W are
+  multiples of 128 before running inference (see README: Input image size).
+  Canonical SNR list for JSCC comparison: [0, 5, 10, 15, 20, 25] dB.

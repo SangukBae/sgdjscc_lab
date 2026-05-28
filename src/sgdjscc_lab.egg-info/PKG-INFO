@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: sgdjscc_lab
+Version: 0.2.0
+Summary: SGDJSCC research fork – modular AWGN inference package
+Requires-Python: >=3.9

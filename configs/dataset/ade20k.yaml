@@ -1,0 +1,42 @@
+# configs/dataset/ade20k.yaml – ADE20K validation set configuration
+#
+# ADE20K is the benchmark used by the default segmentation model
+# (nvidia/segformer-b0-finetuned-ade-512-512, 150 semantic classes).
+#
+# Download: https://groups.csail.mit.edu/vision/datasets/ADE20K/
+#   Register and download ADE20K_2021_17_01.zip (~3.6 GB)
+
+# Fragment composition: merge channel/model/infer/eval defaults, then override below.
+_defaults_:
+  - ../channel/awgn
+  - ../model/sgdjscc
+  - ../infer/awgn
+  - ../eval/default
+
+dataset_name: ade20k_val
+split: validation
+
+# Paths resolve relative to this file's directory (configs/dataset/).
+# Two levels up reaches sgdjscc_lab/ → inputs/ is there.
+input_path:      "../../inputs/ade20k/images/validation/"
+reference_path:  "../../inputs/ade20k/images/validation/"
+annotation_path: "../../inputs/ade20k/annotations/validation/"
+
+# Subset for fast experiments
+max_images: 500    # use null for full dataset (2000 images)
+
+# Image properties
+target_width:  512
+target_height: 512
+
+# Segmentation model for this dataset
+segmentation_model: "nvidia/segformer-b0-finetuned-ade-512-512"
+num_classes: 150
+
+# Evaluation notes
+notes: >
+  ADE20K validation set provides 150-class scene-parsing annotations.
+  Used primarily for SegmentationExtractor evaluation and region-based
+  preservation scoring (Phase 3+). The DepthExtractor (Intel/dpt-large)
+  was also trained on ADE20K scenes, making this dataset suitable for
+  combined depth+segmentation guidance experiments.

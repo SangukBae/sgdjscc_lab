@@ -127,3 +127,73 @@ class TestMergeCliOverrides:
         snr_before = cfg.snr_db
         cfg = merge_cli_overrides(cfg, snr_db=None, device=None)
         assert cfg.snr_db == snr_before
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _defaults_ fragment composition tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFragmentComposition:
+    def _make_fragment(self, directory: Path, name: str, content: str) -> Path:
+        directory.mkdir(parents=True, exist_ok=True)
+        f = directory / f"{name}.yaml"
+        f.write_text(content)
+        return f
+
+    def test_fragments_merged_into_cfg(self, tmp_path):
+        """_defaults_ entries are loaded and merged; root keys override."""
+        self._make_fragment(tmp_path / "channel", "awgn", "channel: awgn\nsnr_db: 10\n")
+        self._make_fragment(tmp_path / "model", "base", "use_semantic: true\ndiffusion_step: 50\n")
+
+        root = tmp_path / "composed.yaml"
+        root.write_text("_defaults_:\n  - channel/awgn\n  - model/base\n")
+
+        cfg = load_config(root)
+        assert cfg.channel == "awgn"
+        assert cfg.snr_db == 10
+        assert cfg.use_semantic is True
+        assert cfg.diffusion_step == 50
+
+    def test_root_key_overrides_fragment(self, tmp_path):
+        """An explicit key in the root config wins over a fragment value."""
+        self._make_fragment(tmp_path / "channel", "awgn", "channel: awgn\nsnr_db: 10\n")
+
+        root = tmp_path / "composed.yaml"
+        root.write_text("_defaults_:\n  - channel/awgn\nsnr_db: 5\n")
+
+        cfg = load_config(root)
+        assert cfg.snr_db == 5
+
+    def test_later_fragment_overrides_earlier(self, tmp_path):
+        """Later entries in _defaults_ override earlier ones."""
+        self._make_fragment(tmp_path / "a", "first", "value: 1\n")
+        self._make_fragment(tmp_path / "a", "second", "value: 2\n")
+
+        root = tmp_path / "composed.yaml"
+        root.write_text("_defaults_:\n  - a/first\n  - a/second\n")
+
+        cfg = load_config(root)
+        assert cfg.value == 2
+
+    def test_path_fields_resolved_after_composition(self, tmp_path):
+        """input_path from a fragment is resolved relative to the root config dir.
+
+        Root config is at tmp_path/composed.yaml → cfg_dir = tmp_path.
+        Fragment path 'data/' resolves to tmp_path/data (not the fragment's dir).
+        """
+        self._make_fragment(tmp_path / "infer", "io", "input_path: 'data/'\noutput_dir: 'out/'\n")
+
+        root = tmp_path / "composed.yaml"
+        root.write_text("_defaults_:\n  - infer/io\nmodel_root: 'ckpt/'\n")
+
+        cfg = load_config(root)
+        assert Path(cfg.input_path).is_absolute()
+        assert Path(cfg.output_dir).is_absolute()
+        assert Path(cfg.model_root).is_absolute()
+        assert Path(cfg.input_path).resolve() == (tmp_path / "data").resolve()
+
+    def test_no_defaults_key_unchanged(self, minimal_yaml):
+        """A config without _defaults_ is loaded unchanged."""
+        cfg = load_config(minimal_yaml)
+        assert "_defaults_" not in cfg
+        assert cfg.snr_db == 10

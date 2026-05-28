@@ -1,34 +1,78 @@
-"""config.py – OmegaConf-based config loader with CLI override support."""
+"""config.py – OmegaConf-based config loader with CLI override support.
+
+Composition via ``_defaults_``
+--------------------------------
+A config file may declare a ``_defaults_`` list::
+
+    _defaults_:
+      - channel/awgn
+      - model/sgdjscc
+      - infer/awgn
+
+Each entry is a path relative to the root config file's directory (without the
+``.yaml`` extension).  ``load_config()`` loads the fragments in order, merges
+them with ``OmegaConf.merge()``, then merges the root config on top so that
+explicit keys in the root file always win.  After composition all relative path
+fields are resolved relative to the root config's directory.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
 
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import OmegaConf, DictConfig, ListConfig
+
+_PATH_KEYS = (
+    "input_path",
+    "output_dir",
+    "model_root",
+    "reference_path",
+    "annotation_path",
+    "caption_path",
+)
+
+
+def _resolve_paths(cfg: DictConfig, cfg_dir: Path) -> DictConfig:
+    for key in _PATH_KEYS:
+        val = cfg.get(key, None)
+        if val is not None:
+            p = Path(val)
+            if not p.is_absolute():
+                cfg[key] = str((cfg_dir / p).resolve())
+    return cfg
 
 
 def load_config(config_path: str | Path) -> DictConfig:
-    """Load YAML config from *config_path*.
+    """Load YAML config from *config_path*, merging any ``_defaults_`` fragments.
 
     Paths inside the config are resolved relative to the **config file's
     directory**, not the current working directory.  This lets users run
     ``python scripts/infer_images.py --config configs/default.yaml`` from any
     working directory and still have ``input_path`` / ``output_dir`` /
     ``model_root`` resolve sensibly.
+
+    If the config contains a ``_defaults_`` list, each entry names a fragment
+    YAML (path without ``.yaml``, relative to ``cfg_dir``) that is loaded and
+    merged in order before the root config is applied on top.
     """
     config_path = Path(config_path).resolve()
     cfg = OmegaConf.load(config_path)
-
     cfg_dir = config_path.parent
 
-    # Resolve relative paths anchored to the config file's directory.
-    for key in ("input_path", "output_dir", "model_root"):
-        val = cfg.get(key, None)
-        if val is not None:
-            p = Path(val)
-            if not p.is_absolute():
-                cfg[key] = str(cfg_dir / p)
+    # ── Fragment composition ──────────────────────────────────────────────────
+    if "_defaults_" in cfg:
+        defaults: list = OmegaConf.to_container(cfg.pop("_defaults_"), resolve=False)
+        composed: DictConfig = OmegaConf.create({})
+        for name in defaults:
+            fragment_path = (cfg_dir / f"{name}.yaml").resolve()
+            fragment = OmegaConf.load(fragment_path)
+            composed = OmegaConf.merge(composed, fragment)
+        # Root config keys override fragment defaults.
+        cfg = OmegaConf.merge(composed, cfg)
+
+    # ── Resolve relative path fields ──────────────────────────────────────────
+    cfg = _resolve_paths(cfg, cfg_dir)
 
     return cfg
 

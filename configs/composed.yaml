@@ -1,0 +1,20 @@
+# configs/composed.yaml – Phase 2 composed config
+#
+# Demonstrates OmegaConf fragment composition introduced in Phase 2.
+# load_config() merges the three fragments in order, then applies any
+# explicit keys in this file on top.
+#
+# Usage:
+#   python scripts/infer_images.py --config configs/composed.yaml
+#   python scripts/infer_images.py --config configs/composed.yaml --snr 5
+
+_defaults_:
+  - channel/awgn       # snr_db, channel type
+  - model/sgdjscc      # model_root, guidance flags, diffusion settings
+  - infer/awgn         # input_path, output_dir, device
+  - eval/default       # metrics list, CLIP model, SRS weights, CSV path
+
+# Optional per-run overrides – uncomment to customise:
+# snr_db: 5
+# device: "cuda:1"
+# input_path: "../inputs/my_images/"

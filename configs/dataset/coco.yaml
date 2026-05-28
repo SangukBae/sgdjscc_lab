@@ -1,0 +1,40 @@
+# configs/dataset/coco.yaml – COCO val2017 dataset configuration
+#
+# Used for semantic evaluation: object preservation, hallucination detection,
+# and POPE-style probing benefit from COCO's rich annotation set.
+#
+# Download: https://cocodataset.org/#download
+#   Images:       val2017.zip (~1 GB)
+#   Annotations:  annotations_trainval2017.zip (~241 MB)
+
+# Fragment composition: merge channel/model/infer/eval defaults, then override below.
+_defaults_:
+  - ../channel/awgn
+  - ../model/sgdjscc
+  - ../infer/awgn
+  - ../eval/default
+
+dataset_name: coco_val2017
+split: val
+
+# Paths resolve relative to this file's directory (configs/dataset/).
+# Two levels up reaches sgdjscc_lab/ → inputs/ is there.
+input_path:      "../../inputs/coco/val2017/"
+reference_path:  "../../inputs/coco/val2017/"
+annotation_path: "../../inputs/coco/annotations/instances_val2017.json"
+caption_path:    "../../inputs/coco/annotations/captions_val2017.json"
+
+# Subset for fast experiments
+max_images: 1000    # use null for full dataset (5000 images)
+
+# Image properties
+# COCO images vary in size. Standard practice: resize to 512×512 before inference.
+target_width:  512
+target_height: 512
+
+# Evaluation notes
+notes: >
+  COCO val2017 is the standard benchmark for object preservation and
+  hallucination evaluation. The 80 COCO object classes match the default
+  vocabulary used in ObjectPreservationEvaluator and HallucinationEvaluator.
+  For full POPE-style evaluation, use the annotation files with hallucination.py.

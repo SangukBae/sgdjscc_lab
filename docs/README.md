@@ -4,7 +4,8 @@
 
 `sgdjscc_lab` is the research and development fork for extending `SGDJSCC`
 without modifying the original `SGDJSCC/` package. The original repository is
-kept as a read-only reference and paper baseline.
+kept as a read-only reference and paper baseline, while `sgdjscc_lab` serves as
+the clean package for modularization, evaluation, and future research.
 
 ---
 
@@ -13,11 +14,10 @@ kept as a read-only reference and paper baseline.
 | Phase | Status | Completion Criterion |
 |-------|--------|---------------------|
 | 1 | ✅ Complete | `python scripts/infer_images.py --config configs/default.yaml` runs AWGN inference |
-| 2 | ✅ Complete (구조 분리) | channels / guidance / models / pipelines 분리, 24개 테스트 통과 |
-| 2 | ⚠ Scaffold only | config composition: fragment YAML 생성됨, 로더 연결은 Phase 3 |
-| 3 | 🔲 Planned | Dataset, SNR, model selection changeable via config only + full metric loop |
-| 4 | 🔲 Planned | Video keyframe consistency |
-| 5 | 🔲 Planned | Rayleigh fading, DiT/DiTJSCC, Adapter-based condition injection |
+| 2 | ✅ Complete | channels / guidance / models / pipelines 분리, `_defaults_` composition |
+| 3 | ✅ Complete | Full evaluator suite, SNR-sweep CSV, depth/seg guidance, regeneration loop |
+| 4 | 🔲 Planned | Video keyframe consistency and temporal metrics |
+| 5 | 🔲 Planned | Rayleigh fading, DiT/DiTJSCC, stronger semantic evaluation |
 
 ---
 
@@ -27,214 +27,237 @@ kept as a read-only reference and paper baseline.
 - original code preservation
 - reproduction reference
 - paper baseline
-- **never modified**
+- never modified by research iterations in `sgdjscc_lab`
 
 ### `sgdjscc_lab/`
 - clean research fork
-- structural reorganisation (Phase 2 ✅)
-- new module integration (Phase 3+)
-- experiment and evaluation framework (Phase 3+)
+- config-driven CLI
+- structural reorganization
+- evaluator and experiment framework
+- future guidance / channel / video extensions
 
 ---
 
-## Implemented Directory Structure (Phase 2)
+## Current Directory Layout
 
 ```text
 sgdjscc_lab/
-  pyproject.toml
-  requirements.txt
-
-  configs/
-    default.yaml           ← single config used by infer_images.py
-    channel/awgn.yaml      ← channel fragment (Phase 5: add rayleigh.yaml)
-    model/sgdjscc.yaml     ← model fragment
-    infer/awgn.yaml        ← I/O fragment
-    eval/default.yaml      ← evaluation fragment (Phase 3+)
-
-  scripts/
-    infer_images.py        ← CLI entry (Phase 1/2 ✅)
-    evaluate.py            ← stub (Phase 3+)
-
-  src/
-    sgdjscc_lab/
-      __init__.py          ← version 0.2.0
-
-      config.py            ← load_config, merge_cli_overrides
-      io.py                ← list_image_files, load/save image tensor
-      runtime.py           ← build_models() assembly point
-
-      channels/
-        awgn.py            ← AWGNChannel.transmit() ✅
-                           ← Phase 5: add rayleigh.py
-
-      guidance/
-        text_extractor.py  ← TextExtractor (BLIP2) ✅
-        edge_extractor.py  ← EdgeExtractor (MuGE) ✅
-                           ← Phase 3: add depth_extractor.py
-                           ← Phase 3: add segmentation_extractor.py
-
-      models/
-        jscc_model.py      ← JSCCModel, build_jscc_model ✅
-        diffusion_wrapper.py ← build_diffusion_pipeline ✅
-        model_bundle.py    ← ModelBundle dataclass ✅
-
-      pipelines/
-        infer_pipeline.py  ← run_batch, run_single_image ✅
-                           ← Phase 3: add eval_pipeline.py
-                           ← Phase 3: add regeneration_loop.py
-
-      evaluators/
-        quality.py         ← PSNR, SSIM scaffold ✅ (Phase 3: full impl)
-                           ← Phase 3: clip_score.py
-                           ← Phase 3: object_preservation.py
-                           ← Phase 3: hallucination.py
-                           ← Phase 3: semantic_reliability.py
-
-      utils/
-        preprocessing.py   ← prepare_patches, merge_patches ✅
-        memory.py          ← release_cuda_memory ✅
-        seed.py            ← set_global_seed ✅
-
-  tests/
-    test_config.py         ← 12 tests (no GPU) ✅
-    test_io.py             ← 12 tests (no GPU) ✅
+├── pyproject.toml
+├── requirements.txt
+├── configs/
+│   ├── default.yaml
+│   ├── composed.yaml
+│   ├── channel/awgn.yaml
+│   ├── model/sgdjscc.yaml
+│   ├── infer/awgn.yaml
+│   ├── eval/default.yaml
+│   └── dataset/
+│       ├── kodak.yaml
+│       ├── coco.yaml
+│       └── ade20k.yaml
+├── scripts/
+│   ├── infer_images.py
+│   └── evaluate.py
+├── src/sgdjscc_lab/
+│   ├── config.py
+│   ├── io.py
+│   ├── runtime.py
+│   ├── channels/
+│   │   └── awgn.py
+│   ├── guidance/
+│   │   ├── text_extractor.py
+│   │   ├── edge_extractor.py
+│   │   ├── depth_extractor.py
+│   │   └── segmentation_extractor.py
+│   ├── models/
+│   │   ├── jscc_model.py
+│   │   ├── diffusion_wrapper.py
+│   │   └── model_bundle.py
+│   ├── pipelines/
+│   │   ├── infer_pipeline.py
+│   │   ├── eval_pipeline.py
+│   │   └── regeneration_loop.py
+│   ├── evaluators/
+│   │   ├── quality.py
+│   │   ├── clip_score.py
+│   │   ├── object_preservation.py
+│   │   ├── hallucination.py
+│   │   └── semantic_reliability.py
+│   └── utils/
+│       ├── preprocessing.py
+│       ├── memory.py
+│       ├── seed.py
+│       ├── csv_logger.py
+│       └── metrics_io.py
+└── tests/
+    ├── test_config.py
+    ├── test_io.py
+    ├── test_channels.py
+    ├── test_evaluators.py
+    └── test_eval_pipeline.py
 ```
-
----
-
-## Phase 2 Structural Changes
-
-### What changed from Phase 1
-
-| Before (Phase 1) | After (Phase 2) |
-|---|---|
-| `runtime.py` (monolithic model loader) | `models/jscc_model.py` + `models/diffusion_wrapper.py` + `runtime.py` (assembly shim) |
-| `_JSCCModel.channel()` inline AWGN | `channels/awgn.py` `AWGNChannel.transmit()` |
-| `_build_caption_model()` in runtime | `guidance/text_extractor.py` `TextExtractor` |
-| `_build_canny_net()` in runtime | `guidance/edge_extractor.py` `EdgeExtractor` |
-| `pipeline.py` (flat) | `pipelines/infer_pipeline.py` with block helpers |
-| `preprocessing.py` (top-level) | `utils/preprocessing.py` |
-| `_release_cuda_memory()` in pipeline | `utils/memory.py` `release_cuda_memory()` |
-| `_set_seed()` in infer_images.py | `utils/seed.py` `set_global_seed()` |
-| No evaluators | `evaluators/quality.py` (PSNR/SSIM scaffold) |
-| No pyproject.toml | `pyproject.toml` (editable install) |
-| No tests | `tests/` (24 unit tests, no GPU) |
-
-### Compatibility shims
-
-`pipeline.py` and `preprocessing.py` are kept as thin re-export shims so
-any code that imports from the old locations continues to work.
-
-### Algorithm preservation
-
-All forward-pass computations are identical to `SGDJSCC/inference_one.py`:
-- VAE encode/decode (scaling factor = 15.45)
-- AWGN noise injection formula
-- Blind SNR estimation via snr_prediction_net
-- Continuous/discrete step matching
-- Mask token generation
-- Canny JSCC retransmission
-- Canny latent VAE encoding
-- DiffusionGenerator.generate() arguments
-- Final `(decode(normalize(denoised)) + 1) / 2` decode
 
 ---
 
 ## Development Principles
 
-### Principle 1: Interfaces defined in Phase 2
+### Principle 1: Preserve the original algorithm path
 
-The following interfaces are now usable:
+All core forward-pass computations remain aligned with the original
+`SGDJSCC/inference_one.py`:
 
-```python
-class AWGNChannel:
-    def transmit(self, latent: Tensor, snr_db: float) -> Tensor: ...
+- VAE encode/decode with scaling factor `15.45`
+- AWGN noise injection
+- blind SNR prediction
+- step matching
+- canny retransmission
+- canny latent VAE encoding
+- diffusion generate path
+- final normalized decode
 
-class TextExtractor:
-    def extract(self, image, device, offload_device, offload_after) -> list: ...
+### Principle 2: Separate interfaces before adding research ideas
 
-class EdgeExtractor:
-    def extract(self, image, device, offload_device, offload_after) -> tuple: ...
+The package is designed so that each concern can be replaced independently:
 
-class JSCCModel(nn.Module):
-    def normalize(self, x) -> Tensor: ...
-    def channel(self, x) -> Tensor: ...  # delegates to AWGNChannel
+- `channels/` for channel models
+- `guidance/` for semantic and structural extractors
+- `models/` for JSCC and diffusion wrappers
+- `pipelines/` for inference and evaluation orchestration
+- `evaluators/` for research metrics
 
-# Phase 3+ stubs (follow same pattern):
-class DepthExtractor:
-    def extract(self, image) -> dict: ...
+### Principle 3: Keep the original repository read-only
 
-class SegmentationExtractor:
-    def extract(self, image) -> dict: ...
+Any new idea should be implemented in `sgdjscc_lab/`, not in `SGDJSCC/`.
+
+---
+
+## Phase 1 Summary
+
+Phase 1 established the minimum runnable package:
+
+- AWGN single-image / folder inference
+- config-driven CLI
+- output image save path
+- original inference path preserved
+
+Completion criterion:
+
+```bash
+python scripts/infer_images.py --config configs/default.yaml
 ```
 
-### Principle 2: config/interface separation
+---
 
-- Channel type change: swap `awgn.yaml` for `rayleigh.yaml` + replace `AWGNChannel`
-- Guide change: swap `edge_extractor` for `depth_extractor` or `segmentation_extractor`
-- Model change: replace `jscc_model.py` builder
-- Evaluator addition: add a new file under `evaluators/`
+## Phase 2 Summary
+
+Phase 2 transformed the monolithic script structure into a modular package.
+
+### Main structural changes
+
+| Before | After |
+|---|---|
+| inline AWGN channel inside model | `channels/awgn.py` |
+| flat runtime loader | `models/jscc_model.py` + `models/diffusion_wrapper.py` + `runtime.py` |
+| flat pipeline | `pipelines/infer_pipeline.py` |
+| top-level preprocessing | `utils/preprocessing.py` |
+| seed and memory helpers inside scripts/pipeline | `utils/seed.py`, `utils/memory.py` |
+| no fragment config system | `_defaults_` composition in `config.py` |
+
+### Phase 2 completion points
+
+- modular package structure
+- editable install support
+- config composition
+- unit tests for config / I/O / AWGN channel
 
 ---
 
-## Phase 3 Task List
+## Phase 3 Summary
 
-### Config composition 완성 (Phase 2 미완 항목)
-- `config.py:load_config()` 에 `defaults` 리스트 지원 추가
-  - 예: `default.yaml`에 `defaults: [channel/awgn, model/sgdjscc, infer/awgn]` 기록
-  - OmegaConf.merge()로 fragment들을 순서대로 합성
-- 이 기능이 완성되면 채널/모델/I/O를 독립적으로 교체 가능해짐
+Phase 3 established the actual research-evaluation foundation.
 
-### New evaluators
-- `evaluators/clip_score.py` – CLIP image-image + text-image similarity
-- `evaluators/object_preservation.py` – object presence rate
-- `evaluators/hallucination.py` – POPE-style added-object detection
-- `evaluators/semantic_reliability.py` – SRS composite metric
+### Evaluators
 
-### New guidance
-- `guidance/depth_extractor.py` – MiDaS/DPT depth estimation
-- `guidance/segmentation_extractor.py` – Segment Anything / SEEM
+- `quality.py` — PSNR / SSIM / LPIPS
+- `clip_score.py` — CLIP image-image and text-image similarity
+- `object_preservation.py` — object preservation rate
+- `hallucination.py` — hallucination score
+- `semantic_reliability.py` — Semantic Reliability Score (SRS)
 
-### New pipelines
-- `pipelines/eval_pipeline.py` – SNR sweep + CSV result writing
-- `pipelines/regeneration_loop.py` – semantic mismatch detection + re-generation
+### Guidance extensions
 
-### Script
-- `scripts/evaluate.py` – full evaluation CLI
+- `depth_extractor.py` — DPT monocular depth
+- `segmentation_extractor.py` — SegFormer semantic segmentation
 
-### Tests
-- `tests/test_awgn_channel.py` – noise power verification
-- `tests/test_evaluators.py` – PSNR/SSIM output range
+### Evaluation pipelines
 
----
+- `eval_pipeline.py` — single-SNR and SNR-sweep evaluation
+- `regeneration_loop.py` — SRS-triggered retry path
+- `evaluate.py` — evaluation CLI
 
-## Structural Guide Corruption Rules (Phase 3)
+### Dataset configs
 
-Do NOT apply AWGN directly to guide data:
+- Kodak
+- COCO val2017
+- ADE20K validation
 
-| Data type | Recommended corruption |
-|-----------|----------------------|
-| Semantic feature tensor / channel symbol | AWGN / Rayleigh fading |
-| Canny edge map | dropout, blur, random erasing, salt-pepper |
-| Segmentation map | class dropout, region removal, erosion/dilation |
-| Caption tokens | token dropout, word replacement |
+### Semantic Reliability Score
 
----
+```text
+SRS = 0.30 × clip_image_image
+    + 0.25 × clip_text_image
+    + 0.25 × object_preservation_rate
+    - 0.10 × missing_object_rate
+    - 0.10 × additional_object_rate
+```
 
-## Phase 5 Rayleigh Extension
+### Current heuristic limitations
 
-To add Rayleigh fading:
-1. Add `channels/rayleigh.py` implementing `RayleighChannel.transmit()`
-2. Add `configs/channel/rayleigh.yaml`
-3. Update `models/jscc_model.py` to accept a channel type argument or
-   inject via config
+- Object preservation and hallucination are still heuristic CLIP-based metrics
+- POPE-style VQA is not yet integrated
+- Depth / segmentation models require external downloads on first use
+- Regeneration loop is a lightweight prototype
 
 ---
 
-## Phase 4: Integrate with `garam`
+## Phase 4 Plan
 
-Do this **only after** the standalone package is stable.
+Phase 4 extends the image package into a video/keyframe research framework.
 
-1. Develop independently in `sgdjscc_lab/`
-2. Stabilise the experiment API
-3. Add a `garam` adapter at the final stage
+Planned tasks:
+
+1. keyframe extraction and grouping
+2. temporal consistency metrics
+3. video-oriented pipelines
+4. keyframe-conditioned reconstruction flow
+
+The intended approach is to reuse the Phase 3 inference/evaluation API rather
+than build a separate codebase.
+
+---
+
+## Phase 5 Plan
+
+Phase 5 is for deeper channel/model research:
+
+1. `channels/rayleigh.py`
+2. `configs/channel/rayleigh.yaml`
+3. DiT / DiTJSCC style backbone experiments
+4. stronger semantic evaluation and VQA-based hallucination analysis
+5. multi-strategy regeneration and search
+
+---
+
+## Recommended Research Workflow
+
+1. Use `SGDJSCC/` only as a paper-reference baseline.
+2. Run inference and evaluation from `sgdjscc_lab/`.
+3. Add new guidance, channel, or evaluator modules inside the modular package.
+4. Compare ideas through Phase 3 metrics before extending to video or new channels.
+
+---
+
+## Related Documents
+
+- [../README.md](../README.md) — user-facing package usage
+- [framework_comparison.md](./framework_comparison.md) — original `SGDJSCC` vs `sgdjscc_lab` structure comparison

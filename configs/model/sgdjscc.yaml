@@ -1,34 +1,24 @@
-# configs/model/sgdjscc.yaml
+# configs/model/sgdjscc.yaml – SGDJSCC model fragment
 #
-# ⚠ 참고 전용 (reference only) — 현재 config.py 로더에 연결되어 있지 않습니다.
-#
-# 이 파일은 Phase 3에서 OmegaConf composition으로 default.yaml에 합성될
-# 예정인 모델 설정 fragment입니다. 지금은 default.yaml이 단일 설정 파일입니다.
-#
-# Phase 3 task: config.py의 load_config()를 확장하여 defaults 리스트를 지원.
+# Merged into composed configs via the _defaults_ list in load_config().
+# Paths below are relative to the root config file's directory (configs/).
 
-# Checkpoint directory (resolved relative to the config file being loaded)
-model_root: "../../checkpoints/"
+model_root: "../checkpoints/"
 
-# Semantic guidance flags
 use_semantic: true
 use_text: true
 use_controlnet: true
 use_jscc_feature: true
 use_gt_csi: false
 
-# Edge map transmission
 canny_cr: "0.2"
 
-# Diffusion denoiser
 diffusion_step: 50
 step_style: "continuous"
 guidance_scale: 4.0
 controlnet_scale: 0.3
 cfg_method: "pcs_1.0"
 
-# Masking
 mask_method: "none"
 
-# Canny threshold guard (applied only when SNR <= -5 dB)
 th: 0.25
