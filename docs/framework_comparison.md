@@ -13,47 +13,49 @@ and extension.
 
 ---
 
-## Block Diagram: Original SGDJSCC
+## Side-by-Side Block Diagram
 
 ```mermaid
-flowchart TB
-    O1["Entry Script\ninference_one.py"]
-    O2["Config / Arguments\ninference_config.py\nhardcoded paths + runtime flags"]
-    O3["Inline Model Construction\nJSCC model / BLIP2 / MuGE\nDiffusion backbone / ControlNet\nCLIP / shared VAE"]
-    O4["Input Image / Dataset\nImageFolder or direct image"]
-    O5["Patch Preparation\nsplit_image_v2()\npreprocess inline"]
-    O6["Semantic Guidance Extraction\nBLIP2 caption\nMuGE soft edge"]
-    O7["JSCC Encode\nVAE encode / scaling_factor=15.45 / L2 normalize"]
-    O8["Wireless Channel\ninline AWGN injection"]
-    O9["Step Matching\nblind SNR prediction / power scalar / mask token"]
-    O10["Canny Re-Transmission\ncanny TX net / canny latent encoding"]
-    O11["Diffusion Denoising\nMDTv2 / ControlNet\nDiffusionGenerator.generate()"]
-    O12["Final Decode\nVAE decode / save / log / evaluate inline"]
+flowchart LR
+    subgraph ORIG["Original SGDJSCC  (monolithic)"]
+        direction TB
+        O1["inference_one.py\nEntry Script"]
+        O2["inference_config.py\nhardcoded paths + flags"]
+        O3["Inline Model Construction\nJSCC / BLIP2 / MuGE\nDiffusion / ControlNet / CLIP"]
+        O4["Input Image / Dataset\nImageFolder or direct image"]
+        O5["Patch Preparation\nsplit_image_v2() inline"]
+        O6["Semantic Guidance\nBLIP2 caption + MuGE soft edge"]
+        O7["JSCC Encode\nVAE encode · scale 15.45 · L2 norm"]
+        O8["Wireless Channel\ninline AWGN injection"]
+        O9["Step Matching\nblind SNR · power scalar · mask token"]
+        O10["Canny Re-Transmission\ncanny TX net · canny latent"]
+        O11["Diffusion Denoising\nMDTv2 / ControlNet"]
+        O12["Final Decode\nVAE decode · save · evaluate inline"]
+        O1 --> O2 --> O3 --> O4 --> O5 --> O6
+        O6 --> O7 --> O8 --> O9 --> O10 --> O11 --> O12
+    end
 
-    O1 --> O2 --> O3 --> O4 --> O5 --> O6 --> O7 --> O8 --> O9 --> O10 --> O11 --> O12
+    subgraph LAB["sgdjscc_lab Phase 2  (modular)"]
+        direction TB
+        L1["scripts/infer_images.py\nCLI Entry"]
+        L2["config.py + default.yaml\nCLI override merge"]
+        L3["runtime.py shim\nModelBundle assembly"]
+        L4["models/\njscc_model · diffusion_wrapper · model_bundle"]
+        L5["io.py\nsingle image or folder"]
+        L6["utils/preprocessing.py\nprepare_patches() · split · merge"]
+        L7["guidance/\ntext_extractor · edge_extractor"]
+        L8["models/jscc_model.py\nVAE encode · normalize"]
+        L9["channels/awgn.py\nAWGNChannel.transmit()"]
+        L10["pipelines/infer_pipeline.py\nstep matching · mask · canny retransmit"]
+        L11["DiffusionGenerator\nMDTv2 / ControlNet"]
+        L12["save image\nevaluators/ scaffold · tests/ · docs/"]
+        L1 --> L2 --> L3 --> L4 --> L5 --> L6
+        L6 --> L7 --> L8 --> L9 --> L10 --> L11 --> L12
+    end
 ```
 
----
-
-## Block Diagram: sgdjscc_lab Phase 2
-
-```mermaid
-flowchart TB
-    L1["CLI Entry\nscripts/infer_images.py"]
-    L2["Config Layer\nconfig.py / default.yaml / CLI override merge"]
-    L3["Runtime Assembly\nruntime.py shim → ModelBundle"]
-    L4["Model Builders\nmodels/jscc_model.py\nmodels/diffusion_wrapper.py\nmodels/model_bundle.py"]
-    L5["Input / I/O Layer\nio.py — single image or folder"]
-    L6["Preprocessing Layer\nutils/preprocessing.py\nprepare_patches() / split / merge"]
-    L7["Guidance Layer\nguidance/text_extractor.py\nguidance/edge_extractor.py"]
-    L8["JSCC Core\nmodels/jscc_model.py\nVAE encode / normalize"]
-    L9["Channel Layer\nchannels/awgn.py\nAWGNChannel.transmit()"]
-    L10["Inference Pipeline\npipelines/infer_pipeline.py\nstep matching / mask token / canny retransmission"]
-    L11["Diffusion Layer\nDiffusionGenerator\nMDTv2 / ControlNet"]
-    L12["Output / Extension Layer\nsave image / evaluators/quality.py scaffold\ntests/ + docs"]
-
-    L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> L8 --> L9 --> L10 --> L11 --> L12
-```
+> **렌더링 안 될 경우:** VS Code에서 `bierner.markdown-mermaid` 확장을 설치하세요.
+> GitHub에서는 별도 설치 없이 자동 렌더링됩니다.
 
 ---
 
