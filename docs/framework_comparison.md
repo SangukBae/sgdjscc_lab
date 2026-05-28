@@ -13,111 +13,47 @@ and extension.
 
 ---
 
-## Side-by-Side Block Diagram
+## Block Diagram: Original SGDJSCC
 
-<table>
-  <tr>
-    <td width="50%" valign="top">
-
-<pre class="mermaid">
+```mermaid
 flowchart TB
-    O1["Entry Script
-inference_one.py"]
-    O2["Config / Arguments
-inference_config.py
-hardcoded paths + runtime flags"]
-    O3["Inline Model Construction
-JSCC model
-BLIP2
-MuGE
-Diffusion backbone
-ControlNet
-CLIP
-shared VAE"]
-    O4["Input Image / Dataset
-ImageFolder or direct image"]
-    O5["Patch Preparation
-split_image_v2()
-preprocess inline"]
-    O6["Semantic Guidance Extraction
-BLIP2 caption
-MuGE soft edge"]
-    O7["JSCC Encode
-VAE encode
-scaling_factor=15.45
-L2 normalize"]
-    O8["Wireless Channel
-inline AWGN injection"]
-    O9["Step Matching
-blind SNR prediction
-power scalar
-mask token"]
-    O10["Canny Re-Transmission
-canny TX net
-canny latent encoding"]
-    O11["Diffusion Denoising
-MDTv2 / ControlNet
-DiffusionGenerator.generate()"]
-    O12["Final Decode
-VAE decode
-save / log / evaluate inline"]
+    O1["Entry Script\ninference_one.py"]
+    O2["Config / Arguments\ninference_config.py\nhardcoded paths + runtime flags"]
+    O3["Inline Model Construction\nJSCC model / BLIP2 / MuGE\nDiffusion backbone / ControlNet\nCLIP / shared VAE"]
+    O4["Input Image / Dataset\nImageFolder or direct image"]
+    O5["Patch Preparation\nsplit_image_v2()\npreprocess inline"]
+    O6["Semantic Guidance Extraction\nBLIP2 caption\nMuGE soft edge"]
+    O7["JSCC Encode\nVAE encode / scaling_factor=15.45 / L2 normalize"]
+    O8["Wireless Channel\ninline AWGN injection"]
+    O9["Step Matching\nblind SNR prediction / power scalar / mask token"]
+    O10["Canny Re-Transmission\ncanny TX net / canny latent encoding"]
+    O11["Diffusion Denoising\nMDTv2 / ControlNet\nDiffusionGenerator.generate()"]
+    O12["Final Decode\nVAE decode / save / log / evaluate inline"]
 
     O1 --> O2 --> O3 --> O4 --> O5 --> O6 --> O7 --> O8 --> O9 --> O10 --> O11 --> O12
-</pre>
+```
 
-    </td>
-    <td width="50%" valign="top">
+---
 
-<pre class="mermaid">
+## Block Diagram: sgdjscc_lab Phase 2
+
+```mermaid
 flowchart TB
-    L1["CLI Entry
-scripts/infer_images.py"]
-    L2["Config Layer
-config.py
-default.yaml
-CLI override merge"]
-    L3["Runtime Assembly
-runtime.py shim
-ModelBundle creation"]
-    L4["Model Builders
-models/jscc_model.py
-models/diffusion_wrapper.py
-models/model_bundle.py"]
-    L5["Input / I/O Layer
-io.py
-single image or folder"]
-    L6["Preprocessing Layer
-utils/preprocessing.py
-prepare_patches()
-split / merge"]
-    L7["Guidance Layer
-guidance/text_extractor.py
-guidance/edge_extractor.py"]
-    L8["JSCC Core
-models/jscc_model.py
-VAE encode / normalize"]
-    L9["Channel Layer
-channels/awgn.py
-AWGNChannel.transmit()"]
-    L10["Inference Pipeline
-pipelines/infer_pipeline.py
-step matching
-mask token
-canny retransmission"]
-    L11["Diffusion Layer
-DiffusionGenerator
-MDTv2 / ControlNet"]
-    L12["Output / Extension Layer
-save image
-evaluators/quality.py scaffold
-tests/ + docs"]
+    L1["CLI Entry\nscripts/infer_images.py"]
+    L2["Config Layer\nconfig.py / default.yaml / CLI override merge"]
+    L3["Runtime Assembly\nruntime.py shim → ModelBundle"]
+    L4["Model Builders\nmodels/jscc_model.py\nmodels/diffusion_wrapper.py\nmodels/model_bundle.py"]
+    L5["Input / I/O Layer\nio.py — single image or folder"]
+    L6["Preprocessing Layer\nutils/preprocessing.py\nprepare_patches() / split / merge"]
+    L7["Guidance Layer\nguidance/text_extractor.py\nguidance/edge_extractor.py"]
+    L8["JSCC Core\nmodels/jscc_model.py\nVAE encode / normalize"]
+    L9["Channel Layer\nchannels/awgn.py\nAWGNChannel.transmit()"]
+    L10["Inference Pipeline\npipelines/infer_pipeline.py\nstep matching / mask token / canny retransmission"]
+    L11["Diffusion Layer\nDiffusionGenerator\nMDTv2 / ControlNet"]
+    L12["Output / Extension Layer\nsave image / evaluators/quality.py scaffold\ntests/ + docs"]
 
     L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> L8 --> L9 --> L10 --> L11 --> L12
-</pre>
-
-    </td>
-  </tr>
-</table>
+```
 
 ---
 
@@ -172,8 +108,8 @@ The major Phase 2 change is separation of responsibilities:
 
 This separation makes later work practical:
 
-- AWGN -> Rayleigh channel replacement
-- edge guidance -> depth / segmentation guidance expansion
+- AWGN → Rayleigh channel replacement
+- edge guidance → depth / segmentation guidance expansion
 - metric loop insertion without touching inference core
 - easier testing and clearer failure isolation
 
