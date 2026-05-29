@@ -7,6 +7,11 @@ without modifying the original `SGDJSCC/` package. The original repository is
 kept as a read-only reference and paper baseline, while `sgdjscc_lab` serves as
 the clean package for modularization, evaluation, and future research.
 
+Related docs:
+
+- `framework_comparison.md`: original `SGDJSCC/` vs `sgdjscc_lab/` structure comparison
+- `framework_file_roles.md`: file-by-file framework role map in execution order
+
 ---
 
 ## Phase Status
