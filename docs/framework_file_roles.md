@@ -9,7 +9,8 @@ The primary ordering is:
 
 1. inference framework
 2. evaluation framework
-3. optional extension and compatibility modules
+3. Phase 4 / 5 extension modules
+4. compatibility modules
 
 The core point is that `sgdjscc_lab` preserves the original `SGDJSCC`
 algorithmic path, but reorganizes the code into explicit modules.
@@ -90,15 +91,41 @@ The evaluation backbone is effectively:
 
 ---
 
-## 3. Optional Extension Modules
+## 3. Phase 4 / 5 Extension Modules
+
+### Phase 3 structural guidance extensions
 
 | File | Role | Figure 1(b) block |
 |---|---|---|
-| `src/sgdjscc_lab/guidance/depth_extractor.py` | Optional depth-guidance extractor for future structural conditioning experiments. | Semantic Extractor |
+| `src/sgdjscc_lab/guidance/depth_extractor.py` | Optional depth-guidance extractor for structural conditioning and evaluation. | Semantic Extractor |
 | `src/sgdjscc_lab/guidance/segmentation_extractor.py` | Optional semantic-segmentation extractor for region-aware guidance and analysis. | Semantic Extractor |
 
-These files are not part of the default AWGN inference path today, but they
-exist as extension points for future research phases.
+### Phase 4 semantic / temporal extensions
+
+| File(s) | Role | Figure 1(b) block |
+|---|---|---|
+| `src/sgdjscc_lab/controllers/adaptive_guidance_controller.py`, `src/sgdjscc_lab/controllers/snr_guidance_policy.py` | SNR-aware guidance/step control layered on top of the unchanged image forward path. | Cross-block orchestration |
+| `src/sgdjscc_lab/guidance/semantic_packet_extractor.py`, `object_extractor.py`, `relation_extractor.py`, `importance_estimator.py` | Build semantic packets from caption/object/relation/attribute/segmentation/depth cues. | Semantic Extractor |
+| `src/sgdjscc_lab/evaluators/semantic_packet_matcher.py`, `relation_consistency.py`, `attribute_consistency.py` | Compare original vs reconstructed packets and compute packet-aware semantic consistency. | Outside Figure 1(b) |
+| `src/sgdjscc_lab/controllers/regeneration_policy.py` | Chooses failure-mode-aware retry strategies from packet/verifier outputs. | Cross-block orchestration |
+| `src/sgdjscc_lab/video/scene_change_detector.py`, `keyframe_extractor.py`, `semantic_delta.py`, `motion_residual.py`, `temporal_pipeline.py` | Keyframe/GOP split, scene-change detection, packet delta logic, temporal reuse, and staged prompt scheduling. | Cross-block orchestration |
+| `src/sgdjscc_lab/evaluators/temporal_consistency.py` | Temporal SRS, identity consistency, temporal segmentation IoU, temporal hallucination. | Outside Figure 1(b) |
+| `scripts/evaluate_video.py` | Video/keyframe evaluation CLI. | Outside Figure 1(b) |
+
+### Phase 5 channel / acceleration / verifier extensions
+
+| File(s) | Role | Figure 1(b) block |
+|---|---|---|
+| `src/sgdjscc_lab/channels/rayleigh.py`, `fast_fading.py`, `packet_drop.py`, `measurement.py` | Additional channel models plus receiver-evidence / measurement abstractions for channel-conditioned evaluation. | Wireless Channel |
+| `src/sgdjscc_lab/models/channel_condition_encoder.py`, `reliability_head.py`, `diffusion_wrapper_channel.py` | Encodes received-channel evidence into condition features and applies adapter-level channel-conditioned decoding policies. | Diffusion Denoiser / Cross-block orchestration |
+| `src/sgdjscc_lab/controllers/channel_condition_policy.py`, `src/sgdjscc_lab/pipelines/channel_conditioned_infer.py` | One-pass channel-conditioned inference path with latent / joint / blind modes. | Cross-block orchestration |
+| `src/sgdjscc_lab/acceleration/ddim_sampler.py`, `consistency_decoder.py`, `early_exit.py`, `latency_profiler.py` | Step-budget control, few-step decoding interfaces, intra-sampler early exit, and latency measurement. | Diffusion Denoiser / Outside Figure 1(b) |
+| `src/sgdjscc_lab/evaluators/hallucination_vqa.py`, `vqa_backend.py`, `semantic_reliability_v2.py`, `regeneration_search.py` | Stronger semantic verification with local VQA backends, SRS-v2, and multi-strategy regeneration search. | Outside Figure 1(b) |
+| `src/sgdjscc_lab/controllers/adaptive_search_policy.py` | Orders regeneration strategies by failure mode and channel state. | Cross-block orchestration |
+| `scripts/benchmark_latency.py`, `scripts/benchmark_sampling.py` | Benchmark CLIs for latency / sampling tradeoff experiments. | Outside Figure 1(b) |
+
+These files are opt-in research extensions. They are not part of the default
+Phase 1–3 AWGN inference path unless explicitly enabled through config.
 
 ---
 
