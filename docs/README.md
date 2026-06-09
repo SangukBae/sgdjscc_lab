@@ -18,6 +18,7 @@ documents (see "Document Map" below).
 |---|---|
 | [phases_1to3.md](./phases_1to3.md) | Phase 1 / 2 / 3 summaries (inference CLI, modular package, evaluation framework + SRS) |
 | [limitation_reference_map.md](./limitation_reference_map.md) | External references for Phase 4/5: SGD-JSCC limitation priority, reference tables, reference mapping (FAST-GSC / DiffCom / LDM-SemCom) |
+| [etri_development_roadmap.md](./etri_development_roadmap.md) | ETRI-oriented development order: eight task goals plus prioritized limitation `1/2/5/6` improvements |
 | [phase4.md](./phase4.md) | Phase 4 plan + implementation status: 4-A packet-aware verifier + adaptive guidance, 4-B keyframe / temporal; delivered modules, config/CLI usage, limitations |
 | [phase5.md](./phase5.md) | Phase 5 plan + implementation status: 5-A channel conditioning, 5-B low-latency/consistency, 5-C verifier/search; per-module `implemented / wired / approximated / fallback / not-yet` tags, integration status, resolved + remaining limitations |
 | [framework_comparison.md](./framework_comparison.md) | original `SGDJSCC/` vs `sgdjscc_lab/` structure comparison |
