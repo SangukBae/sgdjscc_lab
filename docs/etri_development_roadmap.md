@@ -6,7 +6,7 @@ This document reorganizes the ETRI task into a practical development order.
 It combines:
 
 - the eight ETRI task goals from [etri_overview.md](./etri_overview.md)
-- the prioritized SGD-JSCC limitations `1`, `2`, `5`, `6` from
+- the prioritized SGD-JSCC limitations `A`, `B`, `C`, `D` from
   [limitation_reference_map.md](./limitation_reference_map.md)
 
 The ordering principle is simple: build the measurement and software baseline
@@ -49,10 +49,10 @@ use_phase5: false   # Phase 5-A/B/C 전체 비활성화 (기본값)
 | 4 | Fix the evaluation philosophy around semantic intent | The project should define success around semantic preservation, not just pixel fidelity. | [etri_overview.md](./etri_overview.md) |
 | 5 | Implement the evaluator suite including hallucination metrics | CLIP, object preservation, missing/additional objects, hallucination, and quality metrics are prerequisites for meaningful experiments. | [etri_overview.md](./etri_overview.md) |
 | 6 | Integrate SRS as the headline metric | SRS should be finalized only after its component metrics are stable. | [etri_overview.md](./etri_overview.md) |
-| 7 | Improve limitation `1`: make semantics explicit instead of hidden only in latent transport | Explicit semantic units are needed for packet extraction, semantic verification, and controllable reconstruction. | [limitation_reference_map.md](./limitation_reference_map.md) |
-| 8 | Improve limitation `2`: upgrade weak `caption + canny` guidance to richer semantic guidance | Stronger guidance is needed for object, attribute, relation preservation and hallucination control. | [limitation_reference_map.md](./limitation_reference_map.md) |
-| 9 | Improve limitation `6`: reduce semantic side-information overhead | After semantic units/guides exist, selective and compact transmission can be designed realistically. | [limitation_reference_map.md](./limitation_reference_map.md) |
-| 10 | Improve limitation `5`: reduce diffusion reconstruction latency | Few-step decoding and consistency-style acceleration should be evaluated only after semantic quality can already be measured. | [limitation_reference_map.md](./limitation_reference_map.md) |
+| 7 | Improve limitation `A`: reduce hallucination and semantic inconsistency under guidance | The core ETRI problem is not pixel fidelity alone, but preventing plausible-yet-wrong reconstructions and improving verified semantic reliability. | [limitation_reference_map.md](./limitation_reference_map.md) |
+| 8 | Improve limitation `B`: make semantic side information robust and lightweight | Caption and edge guidance must remain useful under corruption while avoiding unnecessary transmission overhead. | [limitation_reference_map.md](./limitation_reference_map.md) |
+| 9 | Improve limitation `C`: reduce diffusion reconstruction latency | Few-step decoding and consistency-style acceleration should be evaluated after semantic reliability metrics and verifier loops are already in place. | [limitation_reference_map.md](./limitation_reference_map.md) |
+| 10 | Improve limitation `D`: add blind / fading channel robustness beyond strong CSI assumptions | Channel-conditioned and blind reconstruction should be expanded after the core semantic reliability and latency path is stable. | [limitation_reference_map.md](./limitation_reference_map.md) |
 | 11 | Separate guide corruption models from channel noise | Once richer guidance exists, guide-specific corruption rules become necessary for realistic experiments. | [etri_overview.md](./etri_overview.md) |
 | 12 | Lock the fair comparison protocol | Final protocol fixing should come last, after the pipeline, metrics, and improved methods are all settled. | [etri_overview.md](./etri_overview.md) |
 
@@ -66,10 +66,10 @@ use_phase5: false   # Phase 5-A/B/C 전체 비활성화 (기본값)
 | 4 | Complete | The evaluation stack is semantic-first: CLIP, object preservation, hallucination, and SRS are first-class metrics beyond PSNR/SSIM/LPIPS. | None at the evaluation-policy level. |
 | 5 | Complete | Quality metrics, CLIP metrics, packet-aware metrics, temporal metrics, and VQA-based hallucination evaluation are implemented. | Some advanced semantic evaluators are still heuristic rather than fully learned. |
 | 6 | Complete | `srs_base`, `srs_packet`, and `srs_v2` are integrated into the evaluation path and can be enabled from config. | Final paper-level weight tuning may still change. |
-| 7 | Partial | Explicit semantic packets, packet matching, semantic delta, and temporal packet reuse are implemented. | Packets are still metadata-oriented; real semantic-packet transmission/coding is not complete yet. |
-| 8 | Partial | Richer semantic guidance exists through packet extraction, object/relation/attribute analysis, adaptive guidance, and staged prompts. | Guidance is still shallow/heuristic compared with full scene-graph-level semantic control. |
-| 9 | Partial | Keyframe reuse, semantic delta transmission simulation, and `overhead_reduction` reporting are implemented. | Compact/selective transmission is simulated, but true semantic side-information coding and drop handling remain incomplete. |
-| 10 | Partial / Scaffolded | DDIM step-budget control, dynamic routing, early exit, latency profiling, and benchmark CLIs are implemented. | A trained distilled consistency decoder is still a placeholder rather than a finished model. |
+| 7 | Partial | Packet-aware metrics, regeneration search, adaptive guidance, VQA-style hallucination checks, and `SRS-v2` support the semantic reliability path. | Guidance errors can still produce plausible-but-wrong outputs, and verification remains partly heuristic. |
+| 8 | Partial | Semantic delta transmission simulation, packet reuse, caption/guide corruption hooks, and `overhead_reduction` reporting are implemented. | True semantic side-information coding, stronger corruption robustness, and drop-aware control remain incomplete. |
+| 9 | Partial / Scaffolded | DDIM step-budget control, dynamic routing, early exit, latency profiling, and benchmark CLIs are implemented. | A trained distilled consistency decoder is still a placeholder rather than a finished model. |
+| 10 | Partial | Rayleigh / fast-fading / packet-drop channels, channel measurement bundles, and channel-conditioned inference modes are implemented. | Blind robustness is still limited and stronger non-AWGN validation is still needed. |
 | 11 | Limited | Supporting pieces exist, such as `packet_drop` channel support and segmentation-region dropout as an intended corruption mechanism. | A full guide-specific corruption framework matching the ETRI overview is not finished yet. |
 | 12 | Partial | The main evaluation loop already supports packet eval, channel conditioning, SRS-v2, regeneration search, and video evaluation under shared configs. | The final fixed comparison protocol across all baselines and ablations is not fully locked down yet. |
 
@@ -82,24 +82,24 @@ baseline preservation
 -> semantic-first evaluation philosophy
 -> evaluator suite
 -> SRS integration
--> limitation 1 improvement
--> limitation 2 improvement
--> limitation 6 improvement
--> limitation 5 improvement
+-> limitation A improvement
+-> limitation B improvement
+-> limitation C improvement
+-> limitation D improvement
 -> guide corruption model
 -> fair comparison protocol
 ```
 
-## Why Limitations 1, 2, 6, 5 Appear in This Order
+## Why Limitations A, B, C, D Appear in This Order
 
-- `1` comes first because explicit semantic units are the foundation for later
-  semantic control and verification.
-- `2` follows because richer guidance depends on having a clearer semantic
-  representation than the current latent-only baseline.
-- `6` comes after `1` and `2` because selective transmission only makes sense
-  after the transmitted semantic content has been defined.
-- `5` comes after the semantic improvements because latency reduction must be
-  evaluated against semantic quality, not only against runtime.
+- `A` comes first because hallucination and semantic inconsistency are the most
+  direct failure modes against the ETRI semantic-reliability objective.
+- `B` follows because side information is only useful if it remains robust
+  under corruption and does not consume unreasonable transmission budget.
+- `C` comes after the core semantic-reliability work because latency reduction
+  must be judged against verified semantic quality, not runtime alone.
+- `D` comes last among the limitation-improvement steps because blind/fading
+  robustness is important, but follows the core reliability and latency path.
 
 ## Practical Interpretation
 
