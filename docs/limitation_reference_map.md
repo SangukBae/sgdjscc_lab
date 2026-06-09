@@ -1,86 +1,79 @@
-> [← docs index](./README.md)
+> [← 문서 색인](./README.md)
 
-# ETRI Priority Map for SGD-JSCC Limitations
+# SGD-JSCC 한계점에 대한 ETRI 우선순위 지도
 
-This document reorganizes the SGD-JSCC limitation map for the current ETRI
-task objective.
+이 문서는 현재 ETRI 과제 목표에 맞춰 SGD-JSCC 한계점 지도를 재구성한 것이다.
 
-The primary goal is not maximum `PSNR`, but reliable preservation of semantic
-intent after wireless transmission. In practice, the main priorities are:
+핵심 목표는 최대 `PSNR`이 아니라, 무선 전송 후 **시맨틱 의도의 신뢰성 있는 보존**이다.
+실무적으로 주요 우선순위는 다음과 같다.
 
-- semantic reliability
-- hallucination reduction
-- robust use of semantic side information
-- practical diffusion latency
-- later expansion to fading / blind-channel settings
+- 시맨틱 신뢰도
+- 할루시네이션 감소
+- 시맨틱 부가정보의 견고한 활용
+- 실용적인 확산 지연 시간
+- 이후 페이딩 / 블라인드 채널 환경으로의 확장
 
-## Priority by ETRI task goal
+## ETRI 과제 목표별 우선순위
 
-For the next research iterations, `sgdjscc_lab` should prioritize the
-following SGD-JSCC limitations first:
+다음 연구 반복에서 `sgdjscc_lab`은 다음 SGD-JSCC 한계점을 먼저 우선순위로 둔다:
 
-- `A`: hallucination and semantic inconsistency under semantic guidance
-- `B`: semantic side-information fragility and transmission overhead
-- `C`: high diffusion reconstruction cost and decoding latency
+- `A`: 시맨틱 가이드 하에서의 할루시네이션과 시맨틱 불일치
+- `B`: 시맨틱 부가정보의 취약성과 전송 오버헤드
+- `C`: 높은 확산 복원 비용과 디코딩 지연 시간
 
-These map directly to the ETRI task focus:
+이들은 ETRI 과제 초점에 직접 대응된다:
 
-- `A`: stronger semantic verification, hallucination detection, adaptive
-  guidance, and reliable `SRS`
-- `B`: corrupted caption / edge robustness, selective semantic transmission,
-  and packet-aware regeneration
-- `C`: few-step decoding, consistency-style acceleration, and practical
-  prototype latency
+- `A`: 더 강한 시맨틱 검증, 할루시네이션 탐지, 적응형 가이드, 신뢰할 수 있는 `SRS`
+- `B`: 손상된 캡션 / 엣지 견고성, 선택적 시맨틱 전송, 패킷 인식 regeneration
+- `C`: few-step 디코딩, consistency 계열 가속, 실용적 프로토타입 지연
 
-The following limitations remain important, but are treated as the next
-expansion track after the higher-priority semantic/reliability/latency work:
+다음 한계점들도 여전히 중요하지만, 상위 우선순위인 시맨틱/신뢰도/지연 작업
+이후의 확장 트랙으로 다룬다:
 
-- `D`: weak channel adaptation and strong CSI assumptions in fading settings
-- `E`: limited evaluation scope beyond `128x128` image transmission
-- `F`: no MIMO / OFDM / multi-user extension yet
+- `D`: 페이딩 환경에서의 약한 채널 적응과 강한 CSI 가정
+- `E`: `128x128` 이미지 전송을 넘어서는 제한된 평가 범위
+- `F`: 아직 MIMO / OFDM / 다중 사용자 확장 없음
 
-In practice, this means `Phase 5-C`, `Phase 4` packet-aware control, and
-`Phase 5-B` acceleration are the primary research focus first, while
-`Phase 5-A` channel/fading robustness and broader system extensions follow.
+실무적으로 이는, `Phase 5-C`, `Phase 4` 패킷 인식 제어, `Phase 5-B` 가속을 먼저
+주요 연구 초점으로 두고, `Phase 5-A` 채널/페이딩 견고성과 더 넓은 시스템 확장은
+그 뒤를 따른다는 뜻이다.
 
-## Limitation table by ETRI priority
+## ETRI 우선순위별 한계점 표
 
-| Priority | SGD-JSCC limitation to solve | Why it matters in `sgdjscc_lab` | Reference papers to consult |
+| 우선순위 | 해결할 SGD-JSCC 한계점 | `sgdjscc_lab`에서 중요한 이유 | 참고할 논문 |
 |---|---|---|---|
-| `A1` | High-SNR guidance side effects and semantic inconsistency | At high SNR, text or edge guidance can interfere with faithful recovery and push the decoder toward plausible but incorrect content. This directly hurts `CLIP`, object preservation, hallucination score, and `SRS`. |  |
-| `A2` | Residual hallucination risk from generative reconstruction | If caption, edge, or diffusion guidance is wrong, the model can generate visually natural but semantically incorrect outputs. This is a core ETRI problem because the framework explicitly evaluates hallucination and semantic reliability. |  |
-| `B1` | Text side-information is assumed too idealistically | Caption transmission errors can mislead the decoder and invalidate semantic conditioning. The lab framework already models caption token corruption, so this must be handled as a first-class reliability issue. |  |
-| `B2` | Edge-map guidance introduces both overhead and error propagation | Edge maps consume part of the transmission budget and can become corrupted, which then injects wrong structural hints into the diffusion decoder. This directly affects packet-aware guidance and regeneration design. |  |
-| `C1` | Diffusion decoding is too slow for a usable prototype | The current multi-step denoising path is the main runtime bottleneck. ETRI needs quality-latency tradeoff experiments and a decoder that can run in fewer steps with bounded `SRS` loss. |  |
-| `D1` | Fast-fading support still depends on strong CSI assumptions | Blind or imperfect-CSI robustness is required for realistic wireless evaluation. This is important for `Phase 5-A`, but follows the core semantic/hallucination/latency work. |  |
-| `E1` | Evaluation scope is still narrow | Current experiments remain centered on resized `128x128` image transmission. ETRI needs stronger validation on time-aware pipelines, packet corruption, and broader semantic evaluation settings. |  |
-| `F1` | MIMO / OFDM / multi-user scenarios are not covered | This limits direct applicability to practical 5G/6G-style systems, but it is a follow-up expansion after the core reliability framework is stabilized. |  |
+| `A1` | 고-SNR 가이드 부작용과 시맨틱 불일치 | 고 SNR에서 텍스트나 엣지 가이드가 충실한 복원을 방해하고, 디코더를 그럴듯하지만 틀린 콘텐츠로 밀어붙일 수 있다. 이는 `CLIP`, 객체 보존, 할루시네이션 점수, `SRS`에 직접 악영향을 준다. |  |
+| `A2` | 생성형 복원에서의 잔여 할루시네이션 위험 | 캡션·엣지·확산 가이드가 틀리면, 시각적으로는 자연스럽지만 시맨틱적으로 틀린 출력을 생성할 수 있다. 프레임워크가 할루시네이션과 시맨틱 신뢰도를 명시적으로 평가하므로 이는 핵심 ETRI 문제다. |  |
+| `B1` | 텍스트 부가정보가 지나치게 이상적으로 가정됨 | 캡션 전송 오류는 디코더를 오도하고 시맨틱 조건화를 무효화할 수 있다. lab 프레임워크는 이미 캡션 토큰 손상을 모델링하므로, 이는 일급 신뢰도 이슈로 다뤄야 한다. |  |
+| `B2` | 엣지맵 가이드가 오버헤드와 오류 전파를 동시에 유발 | 엣지맵은 전송 예산의 일부를 소비하고 손상될 수 있으며, 그러면 잘못된 구조 힌트를 확산 디코더에 주입한다. 이는 패킷 인식 가이드와 regeneration 설계에 직접 영향을 준다. |  |
+| `C1` | 확산 디코딩이 사용 가능한 프로토타입에 비해 너무 느림 | 현재의 다단계 디노이징 경로가 주요 런타임 병목이다. ETRI는 품질-지연 트레이드오프 실험과, 제한된 `SRS` 손실로 더 적은 스텝에서 동작할 수 있는 디코더가 필요하다. |  |
+| `D1` | Fast-fading 지원이 여전히 강한 CSI 가정에 의존 | 현실적인 무선 평가에는 블라인드 또는 불완전 CSI 견고성이 필요하다. 이는 `Phase 5-A`에 중요하지만, 핵심 시맨틱/할루시네이션/지연 작업 이후에 온다. |  |
+| `E1` | 평가 범위가 여전히 좁음 | 현재 실험은 리사이즈된 `128x128` 이미지 전송에 집중되어 있다. ETRI는 시간 인식 파이프라인, 패킷 손상, 더 넓은 시맨틱 평가 환경에서의 강한 검증이 필요하다. |  |
+| `F1` | MIMO / OFDM / 다중 사용자 시나리오 미포함 | 실용적 5G/6G 스타일 시스템에 대한 직접 적용성을 제한하지만, 핵심 신뢰도 프레임워크가 안정된 뒤의 후속 확장이다. |  |
 
-## Lower-priority limitations for the current task
+## 현재 과제에서의 낮은 우선순위 한계점
 
-The following SGD-JSCC limitations are real, but are not the first blockers for
-the current ETRI objective:
+다음 SGD-JSCC 한계점들은 실재하지만, 현재 ETRI 목표의 첫 번째 차단 요소는 아니다:
 
-- `PSNR` is not always the best among JSCC baselines.
-  The ETRI target is semantic reliability rather than pixel-perfect recovery.
-- training cost and dataset scale are large.
-  This affects reproducibility and deployment cost, but is less direct than
-  hallucination, side-information fragility, and latency for the current task.
+- `PSNR`이 JSCC 베이스라인들 사이에서 항상 최고는 아니다.
+  ETRI 목표는 픽셀 완벽 복원이 아니라 시맨틱 신뢰도다.
+- 학습 비용과 데이터셋 규모가 크다.
+  재현성과 배포 비용에 영향을 주지만, 현재 과제에서는 할루시네이션·부가정보
+  취약성·지연보다 덜 직접적이다.
 
-## Planned mapping by workstream
+## 워크스트림별 계획 매핑
 
-| Workstream | Primary reference | Local path | Planned role in `sgdjscc_lab` |
+| 워크스트림 | 주요 참고 | 로컬 경로 | `sgdjscc_lab`에서의 계획 역할 |
 |---|---|---|---|
-| Packet-aware semantic control and regeneration |  |  | adaptive guidance strength, packet-aware verifier, semantic retry policy |
-| Low-latency diffusion decoding |  |  | DDIM ablation, few-step decoding, consistency-style acceleration, latency profiling |
-| Stronger semantic verification |  |  | hallucination checks, `SRS-v2`, final-output selection by verified semantic reliability |
-| CSI-free / blind channel-conditioned diffusion |  |  | receiver evidence abstraction, blind reconstruction, channel-token conditioning |
-| Broader channel and system expansion |  |  | fading robustness, time-aware evaluation, later MIMO / OFDM extension planning |
+| 패킷 인식 시맨틱 제어 및 regeneration |  |  | 적응형 가이드 강도, 패킷 인식 검증기, 시맨틱 재시도 정책 |
+| 저지연 확산 디코딩 |  |  | DDIM ablation, few-step 디코딩, consistency 계열 가속, 지연 프로파일링 |
+| 더 강한 시맨틱 검증 |  |  | 할루시네이션 점검, `SRS-v2`, 검증된 시맨틱 신뢰도 기반 최종 출력 선택 |
+| CSI-free / 블라인드 채널 조건화 확산 |  |  | 수신기 evidence 추상화, 블라인드 복원, 채널 토큰 조건화 |
+| 더 넓은 채널 및 시스템 확장 |  |  | 페이딩 견고성, 시간 인식 평가, 이후 MIMO / OFDM 확장 계획 |
 
-## Why the work is split this way
+## 작업을 이렇게 분할한 이유
 
-- first solve the core ETRI-facing limits:
-  hallucination, semantic inconsistency, and unreliable side information
-- then reduce diffusion latency so the framework is runnable as a practical
-  prototype
-- then deepen blind-channel robustness and broader wireless-system coverage
+- 먼저 ETRI를 직접 향하는 핵심 한계를 해결한다:
+  할루시네이션, 시맨틱 불일치, 신뢰할 수 없는 부가정보
+- 그다음 확산 지연을 줄여 프레임워크를 실용적 프로토타입으로 실행 가능하게 만든다
+- 그다음 블라인드 채널 견고성과 더 넓은 무선 시스템 커버리지를 심화한다

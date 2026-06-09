@@ -1,62 +1,60 @@
-# sgdjscc_lab Development Plan
+# sgdjscc_lab 개발 계획
 
-## Purpose
+## 목적
 
-`sgdjscc_lab` is the research and development fork for extending `SGDJSCC`
-without modifying the original `SGDJSCC/` package. The original repository is
-kept as a read-only reference and paper baseline, while `sgdjscc_lab` serves as
-the clean package for modularization, evaluation, and future research.
+`sgdjscc_lab`은 원본 `SGDJSCC/` 패키지를 수정하지 않고 `SGDJSCC`를 확장하기 위한
+연구·개발 fork이다. 원본 저장소는 읽기 전용 참조이자 논문 베이스라인으로 유지하고,
+`sgdjscc_lab`은 모듈화·평가·향후 연구를 위한 깨끗한 패키지 역할을 한다.
 
-This file is the **index**. The detailed content has been split into focused
-documents (see "Document Map" below).
+이 파일은 **색인(index)**이다. 상세 내용은 주제별 문서로 분리되어 있다(아래 "문서 지도" 참조).
 
 ---
 
-## Document Map
+## 문서 지도
 
-| Document | Contents |
+| 문서 | 내용 |
 |---|---|
-| [phases_1to3.md](./phases_1to3.md) | Phase 1 / 2 / 3 summaries (inference CLI, modular package, evaluation framework + SRS) |
-| [limitation_reference_map.md](./limitation_reference_map.md) | External references for Phase 4/5: SGD-JSCC limitation priority, reference tables, reference mapping (FAST-GSC / DiffCom / LDM-SemCom) |
-| [etri_development_roadmap.md](./etri_development_roadmap.md) | ETRI-oriented development order: eight task goals plus prioritized limitation `1/2/5/6` improvements |
-| [phase4.md](./phase4.md) | Phase 4 plan + implementation status: 4-A packet-aware verifier + adaptive guidance, 4-B keyframe / temporal; delivered modules, config/CLI usage, limitations |
-| [phase5.md](./phase5.md) | Phase 5 plan + implementation status: 5-A channel conditioning, 5-B low-latency/consistency, 5-C verifier/search; per-module `implemented / wired / approximated / fallback / not-yet` tags, integration status, resolved + remaining limitations |
-| [training_scaffold.md](./training_scaffold.md) | Training CLI design: `scripts/train.py`, `data/`, `training/`, pipeline modules, loss scaffold, checkpoint strategy, extension guide |
-| [framework_comparison.md](./framework_comparison.md) | original `SGDJSCC/` vs `sgdjscc_lab/` structure comparison |
-| [framework_file_roles.md](./framework_file_roles.md) | file-by-file framework role map in execution order |
+| [phases_1to3.md](./phases_1to3.md) | Phase 1 / 2 / 3 요약 (추론 CLI, 모듈형 패키지, 평가 프레임워크 + SRS) |
+| [limitation_reference_map.md](./limitation_reference_map.md) | Phase 4/5용 외부 참고자료: SGD-JSCC 한계점 우선순위, 참고 표, 참고문헌 매핑 (FAST-GSC / DiffCom / LDM-SemCom) |
+| [etri_development_roadmap.md](./etri_development_roadmap.md) | ETRI 지향 개발 순서: 과제 목표 8가지와 우선순위 한계점 `1/2/5/6` 개선 |
+| [phase4.md](./phase4.md) | Phase 4 계획 + 구현 현황: 4-A 패킷 인식 검증기 + 적응형 가이드, 4-B 키프레임/시간적; 제공 모듈, config/CLI 사용법, 한계 |
+| [phase5.md](./phase5.md) | Phase 5 계획 + 구현 현황: 5-A 채널 조건화, 5-B 저지연/consistency, 5-C 검증기/search; 모듈별 `구현됨 / 연결됨 / 근사됨 / fallback / 미구현` 태그, 통합 현황, 해결된 한계 + 남은 한계 |
+| [training_scaffold.md](./training_scaffold.md) | 학습 CLI 설계: `scripts/train.py`, `data/`, `training/`, 파이프라인 모듈, 손실 스캐폴드, 체크포인트 전략, 확장 가이드 |
+| [framework_comparison.md](./framework_comparison.md) | 원본 `SGDJSCC/` vs `sgdjscc_lab/` 구조 비교 |
+| [framework_file_roles.md](./framework_file_roles.md) | 실행 순서에 따른 파일별 프레임워크 역할 지도 |
 
 ---
 
-## Phase Status
+## Phase 현황
 
-| Phase | Status | Completion Criterion |
+| Phase | 상태 | 완료 기준 |
 |-------|--------|---------------------|
-| 1 | ✅ Complete | `python scripts/infer_images.py --config configs/default.yaml` runs AWGN inference |
-| 2 | ✅ Complete | channels / guidance / models / pipelines 분리, `_defaults_` composition |
-| 3 | ✅ Complete | Full evaluator suite, SNR-sweep CSV, depth/seg guidance, regeneration loop |
-| 4 | ✅ Complete | Phase 4-A packet-aware verifier + adaptive guidance; Phase 4-B keyframe / temporal pipeline (see [phase4_status.md](./phase4.md)) |
-| 5 | ✅ Scaffolded | Phase 5-A channel-conditioned diffusion (Rayleigh/fast-fading/packet-drop + measurement bundle), 5-B low-latency sampling/consistency/early-exit, 5-C SRS-v2 + regeneration search (see [phase5_status.md](./phase5.md)) |
+| 1 | ✅ 완료 | `python scripts/infer_images.py --config configs/default.yaml`로 AWGN 추론 실행 |
+| 2 | ✅ 완료 | channels / guidance / models / pipelines 분리, `_defaults_` composition |
+| 3 | ✅ 완료 | 전체 평가기 모음, SNR-sweep CSV, depth/seg 가이드, regeneration loop |
+| 4 | ✅ 완료 | Phase 4-A 패킷 인식 검증기 + 적응형 가이드; Phase 4-B 키프레임/시간적 파이프라인 ([phase4_status.md](./phase4.md) 참조) |
+| 5 | ✅ 스캐폴드 | Phase 5-A 채널 조건화 확산(Rayleigh/fast-fading/packet-drop + 측정 번들), 5-B 저지연 샘플링/consistency/early-exit, 5-C SRS-v2 + regeneration search ([phase5_status.md](./phase5.md) 참조) |
 
 ---
 
-## Repository Strategy
+## 저장소 전략
 
 ### `SGDJSCC/`
-- original code preservation
-- reproduction reference
-- paper baseline
-- never modified by research iterations in `sgdjscc_lab`
+- 원본 코드 보존
+- 재현 참조
+- 논문 베이스라인
+- `sgdjscc_lab`의 연구 반복(iteration)으로 절대 수정하지 않음
 
 ### `sgdjscc_lab/`
-- clean research fork
-- config-driven CLI
-- structural reorganization
-- evaluator and experiment framework
-- future guidance / channel / video extensions
+- 깨끗한 연구 fork
+- config 기반 CLI
+- 구조적 재구성
+- 평가기 및 실험 프레임워크
+- 향후 가이드 / 채널 / 비디오 확장
 
 ---
 
-## Current Directory Layout
+## 현재 디렉터리 구성
 
 ```text
 sgdjscc_lab/
@@ -115,56 +113,55 @@ sgdjscc_lab/
     └── test_eval_pipeline.py
 ```
 
-> The layout above shows the Phase 1–3 core. Phase 4/5 add `controllers/`,
-> `acceleration/`, `video/`, more `channels/` `guidance/` `evaluators/` modules,
-> and extra config presets — see [phase4_status.md](./phase4.md) and
-> [phase5_status.md](./phase5.md) for the full module lists.
+> 위 구성은 Phase 1–3 핵심을 보여준다. Phase 4/5는 `controllers/`, `acceleration/`,
+> `video/`, 추가 `channels/` `guidance/` `evaluators/` 모듈, 그리고 추가 config
+> preset을 더한다 — 전체 모듈 목록은 [phase4_status.md](./phase4.md)와
+> [phase5_status.md](./phase5.md)를 참조한다.
 
 ---
 
-## Development Principles
+## 개발 원칙
 
-### Principle 1: Preserve the original algorithm path
+### 원칙 1: 원본 알고리즘 경로 보존
 
-All core forward-pass computations remain aligned with the original
-`SGDJSCC/inference_one.py`:
+모든 핵심 forward-pass 연산은 원본 `SGDJSCC/inference_one.py`와 정합을 유지한다:
 
-- VAE encode/decode with scaling factor `15.45`
-- AWGN noise injection
-- blind SNR prediction
+- scaling factor `15.45`를 사용하는 VAE encode/decode
+- AWGN 잡음 주입
+- blind SNR 예측
 - step matching
-- canny retransmission
-- canny latent VAE encoding
-- diffusion generate path
-- final normalized decode
+- canny 재전송
+- canny latent VAE 인코딩
+- diffusion generate 경로
+- 최종 정규화 decode
 
-### Principle 2: Separate interfaces before adding research ideas
+### 원칙 2: 연구 아이디어를 추가하기 전에 인터페이스 분리
 
-The package is designed so that each concern can be replaced independently:
+각 관심사를 독립적으로 교체할 수 있도록 패키지를 설계한다:
 
-- `channels/` for channel models
-- `guidance/` for semantic and structural extractors
-- `models/` for JSCC and diffusion wrappers
-- `pipelines/` for inference and evaluation orchestration
-- `evaluators/` for research metrics
+- 채널 모델은 `channels/`
+- 시맨틱·구조 추출기는 `guidance/`
+- JSCC와 diffusion wrapper는 `models/`
+- 추론·평가 오케스트레이션은 `pipelines/`
+- 연구 지표는 `evaluators/`
 
-### Principle 3: Keep the original repository read-only
+### 원칙 3: 원본 저장소는 읽기 전용 유지
 
-Any new idea should be implemented in `sgdjscc_lab/`, not in `SGDJSCC/`.
-
----
-
-## Recommended Research Workflow
-
-1. Use `SGDJSCC/` only as a paper-reference baseline.
-2. Run inference and evaluation from `sgdjscc_lab/`.
-3. Add new guidance, channel, or evaluator modules inside the modular package.
-4. Compare ideas through Phase 3 metrics before extending to video or new channels.
+새 아이디어는 `SGDJSCC/`가 아니라 `sgdjscc_lab/`에 구현해야 한다.
 
 ---
 
-## Related Documents
+## 권장 연구 워크플로
 
-- [../README.md](../README.md) — user-facing package usage
-- [framework_comparison.md](./framework_comparison.md) — original `SGDJSCC` vs `sgdjscc_lab` structure comparison
-- [framework_file_roles.md](./framework_file_roles.md) — file-by-file framework role map
+1. `SGDJSCC/`는 논문 참조 베이스라인으로만 사용한다.
+2. 추론과 평가는 `sgdjscc_lab/`에서 실행한다.
+3. 새 가이드·채널·평가기 모듈은 모듈형 패키지 내부에 추가한다.
+4. 비디오나 새 채널로 확장하기 전에 Phase 3 지표로 아이디어를 비교한다.
+
+---
+
+## 관련 문서
+
+- [../README.md](../README.md) — 사용자 대상 패키지 사용법
+- [framework_comparison.md](./framework_comparison.md) — 원본 `SGDJSCC` vs `sgdjscc_lab` 구조 비교
+- [framework_file_roles.md](./framework_file_roles.md) — 파일별 프레임워크 역할 지도

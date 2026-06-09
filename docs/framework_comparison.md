@@ -1,19 +1,18 @@
-# Framework Comparison
+# 프레임워크 비교
 
-## Purpose
+## 목적
 
-This document compares:
+이 문서는 다음을 비교한다:
 
-- the original `SGDJSCC/` end-to-end inference framework
-- the `sgdjscc_lab/` **Phase 2** modularised framework
+- 원본 `SGDJSCC/` end-to-end 추론 프레임워크
+- `sgdjscc_lab/` **Phase 2** 모듈화 프레임워크
 
-The goal is to show how the same AWGN semantic image transmission pipeline was
-kept algorithmically similar while being structurally reorganised for research
-and extension.
+목표는, 동일한 AWGN 시맨틱 이미지 전송 파이프라인을 알고리즘적으로는 유사하게
+유지하면서 연구·확장을 위해 구조적으로 어떻게 재구성했는지 보여주는 것이다.
 
 ---
 
-## Side-by-Side Block Diagram
+## 나란히 본 블록 다이어그램
 
 ```mermaid
 flowchart LR
@@ -59,73 +58,73 @@ flowchart LR
 
 ---
 
-## Structural Difference Summary
+## 구조적 차이 요약
 
-| Topic | Original `SGDJSCC/` | `sgdjscc_lab` Phase 2 |
+| 항목 | 원본 `SGDJSCC/` | `sgdjscc_lab` Phase 2 |
 |---|---|---|
-| Entry point | `inference_one.py` 중심 | `scripts/infer_images.py` |
-| Config handling | script 내부 결합 + 일부 하드코딩 | `config.py` + YAML + CLI override |
-| Model loading | 한 파일 내부에서 inline 구성 | `models/` + `runtime.py` assembly |
-| Channel logic | `_JSCCModel.channel()` 내부 | `channels/awgn.py` |
-| Guidance logic | script 내부 함수 | `guidance/` 하위 모듈 |
-| Inference flow | script 중심 monolithic | `pipelines/infer_pipeline.py` |
-| Preprocessing | script와 util 혼합 | `utils/preprocessing.py` |
-| Evaluation | script 끝단에 섞임 | `evaluators/` scaffold 분리 |
-| Extensibility | 구조상 확장 어려움 | channel / guidance / evaluator 확장 용이 |
-| Original code modification | 해당 없음 | `SGDJSCC/`는 read-only reference 유지 |
+| 진입점 | `inference_one.py` 중심 | `scripts/infer_images.py` |
+| Config 처리 | script 내부 결합 + 일부 하드코딩 | `config.py` + YAML + CLI override |
+| 모델 로딩 | 한 파일 내부에서 inline 구성 | `models/` + `runtime.py` assembly |
+| 채널 로직 | `_JSCCModel.channel()` 내부 | `channels/awgn.py` |
+| 가이드 로직 | script 내부 함수 | `guidance/` 하위 모듈 |
+| 추론 흐름 | script 중심 monolithic | `pipelines/infer_pipeline.py` |
+| 전처리 | script와 util 혼합 | `utils/preprocessing.py` |
+| 평가 | script 끝단에 섞임 | `evaluators/` scaffold 분리 |
+| 확장성 | 구조상 확장 어려움 | channel / guidance / evaluator 확장 용이 |
+| 원본 코드 수정 | 해당 없음 | `SGDJSCC/`는 read-only reference 유지 |
 
 ---
 
-## Interpretation
+## 해석
 
-### 1. What stayed the same
+### 1. 그대로 유지된 것
 
-The following algorithmic blocks are intentionally preserved:
+다음 알고리즘 블록들은 의도적으로 보존된다:
 
 - VAE encode / decode
 - scaling factor `15.45`
-- AWGN channel corruption
-- blind SNR prediction
+- AWGN 채널 손상
+- blind SNR 예측
 - step matching
-- mask token generation
-- canny retransmission
-- canny latent conditioning
-- diffusion denoising with MDTv2 / ControlNet
+- mask token 생성
+- canny 재전송
+- canny latent 조건화
+- MDTv2 / ControlNet 기반 확산 디노이징
 
-In other words, `sgdjscc_lab` Phase 2 is **not a new transmission algorithm**.
-It is a **modular re-packaging** of the original `SGDJSCC` inference path.
+다시 말해, `sgdjscc_lab` Phase 2는 **새로운 전송 알고리즘이 아니다**.
+원본 `SGDJSCC` 추론 경로를 **모듈식으로 재포장(re-packaging)** 한 것이다.
 
-### 2. What changed structurally
+### 2. 구조적으로 바뀐 것
 
-The major Phase 2 change is separation of responsibilities:
+Phase 2의 주요 변경은 책임의 분리다:
 
-- `channels/` isolates wireless corruption logic
-- `guidance/` isolates semantic extraction logic
-- `models/` isolates construction of core model components
-- `pipelines/` isolates the orchestration flow
-- `utils/` collects preprocessing, seed, and memory helpers
-- `evaluators/` provides a clear insertion point for Phase 3 metrics
+- `channels/`는 무선 손상 로직을 분리한다
+- `guidance/`는 시맨틱 추출 로직을 분리한다
+- `models/`는 핵심 모델 구성 요소의 생성을 분리한다
+- `pipelines/`는 오케스트레이션 흐름을 분리한다
+- `utils/`는 전처리·seed·메모리 헬퍼를 모은다
+- `evaluators/`는 Phase 3 지표를 위한 명확한 삽입 지점을 제공한다
 
-### 3. Why this matters
+### 3. 왜 중요한가
 
-This separation makes later work practical:
+이 분리는 이후 작업을 실용적으로 만든다:
 
-- AWGN → Rayleigh channel replacement
-- edge guidance → depth / segmentation guidance expansion
-- metric loop insertion without touching inference core
-- easier testing and clearer failure isolation
+- AWGN → Rayleigh 채널 교체
+- 엣지 가이드 → depth / segmentation 가이드 확장
+- 추론 코어를 건드리지 않고 지표 루프 삽입
+- 더 쉬운 테스트와 명확한 실패 격리
 
 ---
 
-## Phase 2 Position
+## Phase 2의 위치
 
-Phase 2 should be understood as:
+Phase 2는 다음과 같이 이해해야 한다:
 
-- **algorithm-preserving**
-- **structure-improving**
-- **research-extension ready**
+- **알고리즘 보존(algorithm-preserving)**
+- **구조 개선(structure-improving)**
+- **연구 확장 준비 완료(research-extension ready)**
 
-It is the bridge between:
+이는 다음 사이의 다리(bridge)다:
 
-- **Phase 1**: "make the original AWGN inference reproducible"
-- **Phase 3**: "add evaluation, richer guidance, and research features"
+- **Phase 1**: "원본 AWGN 추론을 재현 가능하게 만든다"
+- **Phase 3**: "평가, 더 풍부한 가이드, 연구 기능을 추가한다"

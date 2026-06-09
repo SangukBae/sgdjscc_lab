@@ -1,17 +1,17 @@
-> [← docs index](./README.md)
+> [← 문서 색인](./README.md)
 
-# Phase 1–3 Summary
+# Phase 1–3 요약
 
-## Phase 1 Summary
+## Phase 1 요약
 
-Phase 1 established the minimum runnable package:
+Phase 1은 최소 실행 가능한 패키지를 구축했다:
 
-- AWGN single-image / folder inference
-- config-driven CLI
-- output image save path
-- original inference path preserved
+- AWGN 단일 이미지 / 폴더 추론
+- config 기반 CLI
+- 출력 이미지 저장 경로
+- 원본 추론 경로 보존
 
-Completion criterion:
+완료 기준:
 
 ```bash
 python scripts/infer_images.py --config configs/default.yaml
@@ -19,54 +19,54 @@ python scripts/infer_images.py --config configs/default.yaml
 
 ---
 
-## Phase 2 Summary
+## Phase 2 요약
 
-Phase 2 transformed the monolithic script structure into a modular package.
+Phase 2는 단일 스크립트(monolithic) 구조를 모듈형 패키지로 변환했다.
 
-### Main structural changes
+### 주요 구조 변경
 
-| Before | After |
+| 이전 | 이후 |
 |---|---|
-| inline AWGN channel inside model | `channels/awgn.py` |
-| flat runtime loader | `models/jscc_model.py` + `models/diffusion_wrapper.py` + `runtime.py` |
-| flat pipeline | `pipelines/infer_pipeline.py` |
-| top-level preprocessing | `utils/preprocessing.py` |
-| seed and memory helpers inside scripts/pipeline | `utils/seed.py`, `utils/memory.py` |
-| no fragment config system | `_defaults_` composition in `config.py` |
+| 모델 내부의 인라인 AWGN 채널 | `channels/awgn.py` |
+| 평평한(flat) 런타임 로더 | `models/jscc_model.py` + `models/diffusion_wrapper.py` + `runtime.py` |
+| 평평한 파이프라인 | `pipelines/infer_pipeline.py` |
+| 최상위 레벨 전처리 | `utils/preprocessing.py` |
+| scripts/pipeline 내부의 seed·메모리 헬퍼 | `utils/seed.py`, `utils/memory.py` |
+| fragment config 시스템 없음 | `config.py`의 `_defaults_` composition |
 
-### Phase 2 completion points
+### Phase 2 완료 항목
 
-- modular package structure
-- editable install support
+- 모듈형 패키지 구조
+- editable install 지원
 - config composition
-- unit tests for config / I/O / AWGN channel
+- config / I/O / AWGN 채널 단위 테스트
 
 ---
 
-## Phase 3 Summary
+## Phase 3 요약
 
-Phase 3 established the actual research-evaluation foundation.
+Phase 3은 실제 연구-평가 기반을 구축했다.
 
-### Evaluators
+### 평가기 (Evaluators)
 
 - `quality.py` — PSNR / SSIM / LPIPS
-- `clip_score.py` — CLIP image-image and text-image similarity
-- `object_preservation.py` — object preservation rate
-- `hallucination.py` — hallucination score
+- `clip_score.py` — CLIP 이미지-이미지 및 텍스트-이미지 유사도
+- `object_preservation.py` — 객체 보존율
+- `hallucination.py` — 할루시네이션 점수
 - `semantic_reliability.py` — Semantic Reliability Score (SRS)
 
-### Guidance extensions
+### 가이드 확장
 
-- `depth_extractor.py` — DPT monocular depth
-- `segmentation_extractor.py` — SegFormer semantic segmentation
+- `depth_extractor.py` — DPT 단안 깊이(monocular depth)
+- `segmentation_extractor.py` — SegFormer 시맨틱 세그멘테이션
 
-### Evaluation pipelines
+### 평가 파이프라인
 
-- `eval_pipeline.py` — single-SNR and SNR-sweep evaluation
-- `regeneration_loop.py` — SRS-triggered retry path
-- `evaluate.py` — evaluation CLI
+- `eval_pipeline.py` — 단일 SNR 및 SNR-sweep 평가
+- `regeneration_loop.py` — SRS 기반 재시도 경로
+- `evaluate.py` — 평가 CLI
 
-### Dataset configs
+### 데이터셋 config
 
 - Kodak
 - COCO val2017
@@ -82,14 +82,13 @@ SRS = 0.30 × clip_image_image
     - 0.10 × additional_object_rate
 ```
 
-### Phase 3 heuristic limitations at that point
+### 그 시점의 Phase 3 휴리스틱 한계
 
-- Object preservation and hallucination are still heuristic CLIP-based metrics
-- POPE-style VQA is not yet integrated in the Phase 3 stack
-- Depth / segmentation models require external downloads on first use
-- Regeneration loop is a lightweight prototype
+- 객체 보존과 할루시네이션은 여전히 휴리스틱 CLIP 기반 지표다
+- POPE 스타일 VQA는 아직 Phase 3 스택에 통합되지 않았다
+- Depth / segmentation 모델은 최초 사용 시 외부 다운로드가 필요하다
+- Regeneration loop는 경량 프로토타입이다
 
-Later phases add packet-aware verification, temporal metrics, local VQA-backed
-hallucination checks, SRS-v2, channel-conditioned evaluation, and latency /
-early-exit experiments. This section is intentionally a **Phase 3 snapshot**,
-not the final state of the current package.
+이후 phase들은 패킷 인식 검증, 시간적 지표, 로컬 VQA 기반 할루시네이션 점검,
+SRS-v2, 채널 조건화 평가, 지연/early-exit 실험을 추가한다. 이 절은 의도적으로
+현재 패키지의 최종 상태가 아니라 **Phase 3 스냅샷**이다.
