@@ -2,8 +2,57 @@
 
 # Phase 4 — Plan & Implementation Status
 
+- [Master Switch](#master-switch)
 - [Phase 4 Plan](#phase-4-plan)
 - [Phase 4 Implementation Status](#phase-4-implementation-status)
+
+---
+
+## Master Switch
+
+All Phase 4 features are **off by default**. A single top-level flag
+`use_phase4` controls the entire phase:
+
+```yaml
+# configs/eval/default.yaml (or your composed config)
+use_phase4: false   # default — all Phase 4-A/B features disabled
+```
+
+**Rule**: when `use_phase4: false`, every per-feature flag listed below
+(`use_packet_eval`, `use_adaptive_guidance`, `use_packet_regeneration`) is
+ignored at runtime, even if the flag is explicitly set to `true` in the config.
+Phase 4-B (`evaluate_video.py`) will exit with an error.
+
+### Enabling Phase 4 only
+
+```yaml
+use_phase4: true
+use_phase5: false   # Phase 5 stays off
+
+use_packet_eval: true
+use_adaptive_guidance: true
+use_packet_regeneration: false
+```
+
+### Enabling Phase 4 + Phase 5
+
+```yaml
+use_phase4: true
+use_phase5: true
+```
+
+See [phase5.md](./phase5.md) for Phase 5-specific flags.
+
+### Helper function
+
+All runtime checks go through `sgdjscc_lab.phase_gates.effective_flag`:
+
+```python
+from sgdjscc_lab.phase_gates import effective_flag, phase4_enabled
+
+# Returns False when use_phase4 is false, regardless of the raw flag value.
+use_packet = effective_flag(cfg, "use_packet_eval", phase=4)
+```
 
 ---
 

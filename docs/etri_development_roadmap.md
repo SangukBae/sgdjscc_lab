@@ -12,6 +12,33 @@ It combines:
 The ordering principle is simple: build the measurement and software baseline
 first, then add research improvements on top of that baseline.
 
+## Phase 마스터 스위치
+
+Phase 4와 Phase 5의 모든 확장 기능은 **기본값 `false`**로 꺼져 있다.
+두 개의 상위 게이트 플래그로 한 번에 제어한다.
+
+```yaml
+# configs/eval/default.yaml (또는 composed config)
+use_phase4: false   # Phase 4-A/B 전체 비활성화 (기본값)
+use_phase5: false   # Phase 5-A/B/C 전체 비활성화 (기본값)
+```
+
+| 조합 | 동작 |
+|------|------|
+| 둘 다 `false` | Phase 1~3 기본 경로만 실행 |
+| `use_phase4: true` | Phase 4-A/B 개별 플래그가 효력 발생 |
+| `use_phase5: true` | Phase 5-A/B/C 개별 플래그가 효력 발생 |
+| 둘 다 `true` | 전체 확장 기능 활성 가능 |
+
+**중요**: `use_phase5: true`여도 `use_phase4`는 자동으로 켜지지 않는다.
+
+개별 플래그(`use_packet_eval`, `use_channel_conditioning` 등)는 상위 마스터 스위치가
+`true`일 때만 실제로 반영된다. 마스터 스위치가 `false`이면 개별 플래그 값은 무시된다.
+
+자세한 사용법: [phase4.md#master-switch](./phase4.md#master-switch) / [phase5.md#master-switch](./phase5.md#master-switch)
+
+---
+
 ## Recommended Order
 
 | Step | Development item | Why this comes here | Main source |

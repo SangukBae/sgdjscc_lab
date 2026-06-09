@@ -2,8 +2,62 @@
 
 # Phase 5 — Plan & Implementation Status
 
+- [Master Switch](#master-switch)
 - [Phase 5 Plan](#phase-5-plan)
 - [Phase 5 Implementation Status](#phase-5-implementation-status)
+
+---
+
+## Master Switch
+
+All Phase 5 features are **off by default**. A single top-level flag
+`use_phase5` controls the entire phase:
+
+```yaml
+# configs/eval/default.yaml (or your composed config)
+use_phase5: false   # default — all Phase 5-A/B/C features disabled
+```
+
+**Rule**: when `use_phase5: false`, every per-feature flag listed below
+(`use_channel_conditioning`, `acceleration.*`, `use_srs_v2`,
+`use_vqa_hallucination`, `use_regeneration_search`) is ignored at runtime,
+even if the flag is explicitly set to `true` in the config.
+
+**Important**: `use_phase5: true` does **NOT** automatically enable Phase 4
+features. Phase 4 and Phase 5 are independent master switches.
+
+### Enabling Phase 5 only (no Phase 4)
+
+```yaml
+use_phase4: false   # Phase 4-A/B stays off
+use_phase5: true
+
+use_channel_conditioning: true
+use_srs_v2: true
+use_vqa_hallucination: false
+use_regeneration_search: false
+```
+
+### Enabling Phase 4 + Phase 5 (full stack)
+
+```yaml
+use_phase4: true
+use_phase5: true
+```
+
+The preset `configs/composed_phase5_full.yaml` has both switches set to true
+with all extended flags enabled.
+
+### Helper function
+
+All runtime checks go through `sgdjscc_lab.phase_gates.effective_flag`:
+
+```python
+from sgdjscc_lab.phase_gates import effective_flag, phase5_enabled
+
+# Returns False when use_phase5 is false, regardless of the raw flag value.
+use_channel_cond = effective_flag(cfg, "use_channel_conditioning", phase=5)
+```
 
 ---
 
