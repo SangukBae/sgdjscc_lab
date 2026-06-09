@@ -29,6 +29,23 @@ first, then add research improvements on top of that baseline.
 | 11 | Separate guide corruption models from channel noise | Once richer guidance exists, guide-specific corruption rules become necessary for realistic experiments. | [etri_overview.md](./etri_overview.md) |
 | 12 | Lock the fair comparison protocol | Final protocol fixing should come last, after the pipeline, metrics, and improved methods are all settled. | [etri_overview.md](./etri_overview.md) |
 
+## Current Implementation Status
+
+| Step | Status | What is implemented now | Remaining gap |
+|---|---|---|---|
+| 1 | Complete | The original SGD-JSCC forward path is preserved and all new features are opt-in extensions layered around it. | None at the framework-rule level. |
+| 2 | Complete | The package is already split into modular `channels/`, `guidance/`, `models/`, `pipelines/`, `evaluators/`, `controllers/`, `acceleration/`, and `video/` areas. | None for the main software structure. |
+| 3 | Complete | `scripts/evaluate.py` and `pipelines/eval_pipeline.py` provide an end-to-end evaluation path from input to reconstruction, metrics, and CSV logging. | None for the baseline image evaluation loop. |
+| 4 | Complete | The evaluation stack is semantic-first: CLIP, object preservation, hallucination, and SRS are first-class metrics beyond PSNR/SSIM/LPIPS. | None at the evaluation-policy level. |
+| 5 | Complete | Quality metrics, CLIP metrics, packet-aware metrics, temporal metrics, and VQA-based hallucination evaluation are implemented. | Some advanced semantic evaluators are still heuristic rather than fully learned. |
+| 6 | Complete | `srs_base`, `srs_packet`, and `srs_v2` are integrated into the evaluation path and can be enabled from config. | Final paper-level weight tuning may still change. |
+| 7 | Partial | Explicit semantic packets, packet matching, semantic delta, and temporal packet reuse are implemented. | Packets are still metadata-oriented; real semantic-packet transmission/coding is not complete yet. |
+| 8 | Partial | Richer semantic guidance exists through packet extraction, object/relation/attribute analysis, adaptive guidance, and staged prompts. | Guidance is still shallow/heuristic compared with full scene-graph-level semantic control. |
+| 9 | Partial | Keyframe reuse, semantic delta transmission simulation, and `overhead_reduction` reporting are implemented. | Compact/selective transmission is simulated, but true semantic side-information coding and drop handling remain incomplete. |
+| 10 | Partial / Scaffolded | DDIM step-budget control, dynamic routing, early exit, latency profiling, and benchmark CLIs are implemented. | A trained distilled consistency decoder is still a placeholder rather than a finished model. |
+| 11 | Limited | Supporting pieces exist, such as `packet_drop` channel support and segmentation-region dropout as an intended corruption mechanism. | A full guide-specific corruption framework matching the ETRI overview is not finished yet. |
+| 12 | Partial | The main evaluation loop already supports packet eval, channel conditioning, SRS-v2, regeneration search, and video evaluation under shared configs. | The final fixed comparison protocol across all baselines and ablations is not fully locked down yet. |
+
 ## Short Version
 
 ```text
