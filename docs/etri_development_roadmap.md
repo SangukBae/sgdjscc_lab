@@ -108,6 +108,27 @@ baseline preservation
 - Steps `11` to `12` finalize realistic experiment design and paper-quality
   comparison protocol.
 
+## Training Reproducibility (paper 3-stage + extension)
+
+A stage-aware training framework now backs paper reproduction (see
+[training_scaffold.md](./training_scaffold.md)):
+
+- **Stage 1 / 2 / 3** (`jscc`, `text_dm`, `controlnet`) are implemented as
+  separate runners with stage-specific datasets, losses, and a hard freeze
+  policy. Stage 3 supports two edge transports: `shared_vae` and a dedicated
+  `edge_jscc` link (`models/edge_jscc.py`).
+- **Operational scale**: step-based training (`max_steps`,
+  `save/val/log_every_steps`), gradient accumulation, and AMP enable the
+  paper's ~250k-step DM schedule on real data; `global_step` is checkpointed
+  and resumed.
+- **Extension**: an `end_to_end_ft` stage jointly fine-tunes JSCC + DM.
+
+Remaining gaps: the patch-GAN and `edge_jscc` codec weights are structural
+stand-ins (not the paper's LDM-GAN / BCE-Dice-trained edge codec), the
+`end_to_end_ft` recon path uses a single-step denoise rather than the full
+reverse process, and the ~14M-pair open dataset is not bundled (only the loader
+interface is provided).
+
 ## Related Documents
 
 - [etri_overview.md](./etri_overview.md) — ETRI task goals and framework scope

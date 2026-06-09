@@ -1,70 +1,86 @@
 > [← docs index](./README.md)
 
-# External References for Phase 4 and Phase 5
+# ETRI Priority Map for SGD-JSCC Limitations
 
-Phase 4 and Phase 5 were designed by combining the current `sgdjscc_lab`
-package with three papers and two local codebases already stored under
-`paper/`.
+This document reorganizes the SGD-JSCC limitation map for the current ETRI
+task objective.
 
-This document records the reference map that guided the Phase 4 / 5 design and
-still serves as the rationale for the current implementation status.
+The primary goal is not maximum `PSNR`, but reliable preservation of semantic
+intent after wireless transmission. In practice, the main priorities are:
 
-## Priority by SGD-JSCC limitation
+- semantic reliability
+- hallucination reduction
+- robust use of semantic side information
+- practical diffusion latency
+- later expansion to fading / blind-channel settings
 
-For the next research iterations, `sgdjscc_lab` will prioritize the following
-SGD-JSCC limitations first:
+## Priority by ETRI task goal
 
-- `1`: implicit semantics hidden only in latent transmission
-- `2`: weak explicit semantic guidance (`caption + canny` only)
-- `5`: high diffusion reconstruction cost
-- `6`: semantic side-information overhead
+For the next research iterations, `sgdjscc_lab` should prioritize the
+following SGD-JSCC limitations first:
+
+- `A`: hallucination and semantic inconsistency under semantic guidance
+- `B`: semantic side-information fragility and transmission overhead
+- `C`: high diffusion reconstruction cost and decoding latency
 
 These map directly to the ETRI task focus:
 
-- `1` and `2`: explicit semantic encoding, semantic reliability, hallucination
-  reduction
-- `5`: practical low-latency reconstruction for a usable prototype
-- `6`: compact / selective semantic transmission instead of always sending full
-  side information
+- `A`: stronger semantic verification, hallucination detection, adaptive
+  guidance, and reliable `SRS`
+- `B`: corrupted caption / edge robustness, selective semantic transmission,
+  and packet-aware regeneration
+- `C`: few-step decoding, consistency-style acceleration, and practical
+  prototype latency
 
-The following limitations remain important, but are treated as follow-up
-robustness tracks after the higher-priority semantic/reliability/latency work:
+The following limitations remain important, but are treated as the next
+expansion track after the higher-priority semantic/reliability/latency work:
 
-- `3`: weak channel adaptation and strong CSI assumptions
-- `4`: limited fast-fading support
+- `D`: weak channel adaptation and strong CSI assumptions in fading settings
+- `E`: limited evaluation scope beyond `128x128` image transmission
+- `F`: no MIMO / OFDM / multi-user extension yet
 
-In practice, this means `Phase 4` and `Phase 5-B/5-C` are the primary research
-focus first, while `Phase 5-A` channel/fading robustness is treated as the next
-expansion track.
+In practice, this means `Phase 5-C`, `Phase 4` packet-aware control, and
+`Phase 5-B` acceleration are the primary research focus first, while
+`Phase 5-A` channel/fading robustness and broader system extensions follow.
 
-## Reference table by limitation
+## Limitation table by ETRI priority
 
-| SGD-JSCC limitation | Why it matters in `sgdjscc_lab` | Reference papers to consult |
-|---|---|---|
-| `1`. Implicit semantics hidden only in latent transmission | We need explicit semantic units for packet extraction, semantic verification, and controllable reconstruction beyond black-box latent transport. | `Generative Semantic Communication for Joint Image Transmission and Segmentation` (2024); `Scene Graph Disentanglement and Composition for Generalizable Complex Image Generation` (NeurIPS 2024); `Preserving Semantics in Diffusion-based Communication` (2025) |
-| `2`. Weak explicit semantic guidance (`caption + canny` only) | The current baseline guidance is too weak for object/relation/attribute preservation and hallucination control. | `PixArt-δ: Fast and Controllable Image Generation with Latent Consistency Models` (2024); `Scene Graph-Grounded Image Generation` (AAAI 2025); `Generative Semantic Communication for Joint Image Transmission and Segmentation` (2024) |
-| `3`. Weak channel adaptation and strong CSI assumptions | Needed for future blind channel robustness, channel-token conditioning, and non-AWGN channel experiments. | `Semantics-Guided Diffusion for Deep Joint Source-Channel Coding in Wireless Image Transmission` (2025); `DiffCom: Channel Received Signal is a Natural Condition to Guide Diffusion Posterior Sampling` (2024); `Deep Joint Source-Channel Coding for Adaptive Image Transmission over MIMO Channels` (IEEE TWC 2024); `Channel Code-Book: Semantic Image-Adaptive Transmission in Diverse Channel Environments` (2025) |
-| `4`. Limited support for complex wireless conditions such as fast fading | Needed for later per-symbol / per-patch reliability modelling and fading-aware denoising. | `Semantics-Guided Diffusion for Deep Joint Source-Channel Coding in Wireless Image Transmission` (2025); `CDDM: Channel Denoising Diffusion Models for Wireless Semantic Communications` (2024); `DiffCom: Channel Received Signal is a Natural Condition to Guide Diffusion Posterior Sampling` (2024) |
-| `5`. High diffusion reconstruction cost | We need few-step decoding, consistency-style acceleration, and adaptive step control for a practical prototype. | `PixArt-δ: Fast and Controllable Image Generation with Latent Consistency Models` (2024); `FAST-GSC: Fast and Adaptive Semantic Transmission for Generative Semantic Communication` (2024); `Continuous-time Consistency Models` (2024); `Latent Diffusion Model-Enabled Low-Latency Semantic Communication in the Presence of Semantic Ambiguities and Wireless Channel Noises` |
-| `6`. Semantic side-information overhead | We need compact semantic packets, selective transmission, and request-based regeneration instead of always sending full side information. | `FAST-GSC: Fast and Adaptive Semantic Transmission for Generative Semantic Communication` (2024); `Diffusion-Aided Bandwidth-Efficient Semantic Communication with Adaptive Requests` (2026); `Preserving Semantics in Diffusion-based Communication` (2025) |
-
-## Reference mapping
-
-| Target | Primary reference | Local path | Planned role in `sgdjscc_lab` |
+| Priority | SGD-JSCC limitation to solve | Why it matters in `sgdjscc_lab` | Reference papers to consult |
 |---|---|---|---|
-| Video / keyframe semantic transmission | FAST-GSC | `paper/FAST-GSC: Fast and Adaptive Semantic Transmission for Generative Semantic Communication/FAST_GSC.tex` | semantic unit design, transmission order, semantic difference calculation, sequential conditional denoising, latency-oriented video pipeline |
-| CSI-free / blind channel-conditioned diffusion | DiffCom | `paper/diffcom/README.md`, `paper/diffcom/main_diffcom.py`, `paper/diffcom/conditioning_method/diffcom.py`, `paper/diffcom/guided_diffusion/measurement.py` | noisy received signal conditioning, operator-style channel observation abstraction, blind reconstruction experiments |
-| Few-step / low-latency diffusion | LDM-enabled low-latency SemCom | `paper/LDM-enabled-SemCom-system/README.md`, `paper/LDM-enabled-SemCom-system/train_DIV2K/consistency_models.py`, `paper/LDM-enabled-SemCom-system/train_DIV2K/consistency_model_training.py`, `paper/LDM-enabled-SemCom-system/train_DIV2K/t_calculate.py` | DDIM baseline, consistency distillation, EECD-style latency measurement, one-step / few-step decoder experiments |
-| Paper baseline continuity | SGD-JSCC | `paper/Semantics-Guided Diffusion for Deep Joint Source-Channel Coding in Wireless Image Transmission/SGDJSCC_arxiv.tex` | preserve the current image transmission path and keep all Phase 4/5 work as controlled extensions in `sgdjscc_lab/` |
+| `A1` | High-SNR guidance side effects and semantic inconsistency | At high SNR, text or edge guidance can interfere with faithful recovery and push the decoder toward plausible but incorrect content. This directly hurts `CLIP`, object preservation, hallucination score, and `SRS`. |  |
+| `A2` | Residual hallucination risk from generative reconstruction | If caption, edge, or diffusion guidance is wrong, the model can generate visually natural but semantically incorrect outputs. This is a core ETRI problem because the framework explicitly evaluates hallucination and semantic reliability. |  |
+| `B1` | Text side-information is assumed too idealistically | Caption transmission errors can mislead the decoder and invalidate semantic conditioning. The lab framework already models caption token corruption, so this must be handled as a first-class reliability issue. |  |
+| `B2` | Edge-map guidance introduces both overhead and error propagation | Edge maps consume part of the transmission budget and can become corrupted, which then injects wrong structural hints into the diffusion decoder. This directly affects packet-aware guidance and regeneration design. |  |
+| `C1` | Diffusion decoding is too slow for a usable prototype | The current multi-step denoising path is the main runtime bottleneck. ETRI needs quality-latency tradeoff experiments and a decoder that can run in fewer steps with bounded `SRS` loss. |  |
+| `D1` | Fast-fading support still depends on strong CSI assumptions | Blind or imperfect-CSI robustness is required for realistic wireless evaluation. This is important for `Phase 5-A`, but follows the core semantic/hallucination/latency work. |  |
+| `E1` | Evaluation scope is still narrow | Current experiments remain centered on resized `128x128` image transmission. ETRI needs stronger validation on time-aware pipelines, packet corruption, and broader semantic evaluation settings. |  |
+| `F1` | MIMO / OFDM / multi-user scenarios are not covered | This limits direct applicability to practical 5G/6G-style systems, but it is a follow-up expansion after the core reliability framework is stabilized. |  |
 
-## Why these references are split this way
+## Lower-priority limitations for the current task
 
-- `FAST-GSC` is the main reference for `Phase 4`, because it directly addresses
-  semantic-unit ordering, parallel extraction/inference, and late-arriving
-  condition handling in a latency-sensitive generative SemCom pipeline.
-- `DiffCom` is the main reference for `Phase 5-A`, because it already treats
-  the raw received channel signal as a natural diffusion condition and includes
-  a `blind_diffcom` path for unknown or imperfect channel settings.
-- `LDM-enabled-SemCom-system` is the main reference for `Phase 5-B`, because it
-  contains concrete consistency-model training and sampling code for reducing
-  denoising steps while retaining semantic quality.
+The following SGD-JSCC limitations are real, but are not the first blockers for
+the current ETRI objective:
+
+- `PSNR` is not always the best among JSCC baselines.
+  The ETRI target is semantic reliability rather than pixel-perfect recovery.
+- training cost and dataset scale are large.
+  This affects reproducibility and deployment cost, but is less direct than
+  hallucination, side-information fragility, and latency for the current task.
+
+## Planned mapping by workstream
+
+| Workstream | Primary reference | Local path | Planned role in `sgdjscc_lab` |
+|---|---|---|---|
+| Packet-aware semantic control and regeneration |  |  | adaptive guidance strength, packet-aware verifier, semantic retry policy |
+| Low-latency diffusion decoding |  |  | DDIM ablation, few-step decoding, consistency-style acceleration, latency profiling |
+| Stronger semantic verification |  |  | hallucination checks, `SRS-v2`, final-output selection by verified semantic reliability |
+| CSI-free / blind channel-conditioned diffusion |  |  | receiver evidence abstraction, blind reconstruction, channel-token conditioning |
+| Broader channel and system expansion |  |  | fading robustness, time-aware evaluation, later MIMO / OFDM extension planning |
+
+## Why the work is split this way
+
+- first solve the core ETRI-facing limits:
+  hallucination, semantic inconsistency, and unreliable side information
+- then reduce diffusion latency so the framework is runnable as a practical
+  prototype
+- then deepen blind-channel robustness and broader wireless-system coverage

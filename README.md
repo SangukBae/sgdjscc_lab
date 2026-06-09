@@ -75,34 +75,57 @@ python scripts/evaluate.py --config configs/dataset/kodak.yaml
 ```
 
 ## Training
-`sgdjscc_lab` currently does **not** provide a standalone training CLI such as
-`scripts/train.py`.
 
-Current status:
+`sgdjscc_lab` provides a training CLI scaffold via `scripts/train.py`.
+The loop is wired end-to-end (data → forward → loss → checkpoint → log),
+but the **forward pass is a placeholder** until a differentiable training
+target is selected.  All existing inference/evaluation paths are unaffected.
 
-- inference CLI: available
-- evaluation CLI: available
-- training CLI: not yet implemented in `sgdjscc_lab`
-
-This means there is **no supported training command** in the package yet.
-If training support is added later, it will be documented here as an explicit
-CLI command.
-
-For now, the practical workflow is:
+### Dry-run (no checkpoints, no GPU required)
 
 ```bash
-# Inference
-python scripts/infer_images.py --config configs/default.yaml
+cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
+conda activate ptest
 
-# Evaluation
-python scripts/evaluate.py --config configs/composed.yaml --snr 10
+python scripts/train.py \
+    --config configs/composed_train.yaml \
+    --train-list /path/to/images/ \
+    --no-models --epochs 1
 ```
 
-Notes:
+### Full run with GPU
 
-- The original [SGDJSCC README](../SGDJSCC/README.md) also exposes inference only.
-- Fine-tuning / training workflow for `sgdjscc_lab` is a future extension item,
-  not a completed feature of the current package.
+```bash
+python scripts/train.py \
+    --config configs/composed_train.yaml \
+    --train-list /data/kodak/train/ \
+    --val-list   /data/kodak/val/ \
+    --device cuda:0 --epochs 20
+```
+
+### Resume from checkpoint
+
+```bash
+python scripts/train.py \
+    --config configs/composed_train.yaml \
+    --train-list /data/train/ \
+    --resume outputs/checkpoints/latest.pth
+```
+
+### Key config options (`configs/train/default.yaml`)
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `train.epochs` | 10 | Number of training epochs |
+| `train.batch_size` | 4 | Batch size |
+| `train.lr` | 1e-4 | Learning rate (AdamW) |
+| `train.save_every` | 5 | Save `epoch_N.pth` every N epochs |
+| `trainable_modules.freeze_*` | `true` | Freeze each module (all frozen by default) |
+| `loss.reconstruction_type` | `"l1"` | `"l1"` / `"mse"` / `"huber"` |
+| `checkpoint_dir` | `outputs/checkpoints` | Where checkpoints are saved |
+| `train_log_path` | `outputs/train_log.jsonl` | JSONL training log |
+
+See [docs/README.md](./docs/README.md) for the full training scaffold design.
 
 ## Tests
 ```bash
@@ -127,6 +150,7 @@ extension guide, see:
 - [x] Phase 3: Evaluation framework and research metrics.
 - [x] Phase 4: Packet-aware verifier + adaptive guidance (4-A) and keyframe / temporal pipeline (4-B).
 - [x] Phase 5 (scaffold): channel-conditioned diffusion (Rayleigh/fast-fading/packet-drop, 5-A), low-latency sampling/consistency/early-exit (5-B), SRS-v2 + regeneration search (5-C).
+- [x] Training CLI scaffold: `scripts/train.py`, config-driven training loop, loss scaffold, checkpoint save/load, JSONL logging, dry-run mode.
 
 ## Acknowledgements
 The development of `sgdjscc_lab` is based on the original `SGDJSCC` project and
