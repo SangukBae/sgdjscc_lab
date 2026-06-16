@@ -1,6 +1,9 @@
 # Large model artifacts
 checkpoints/
 *.pth
+# Local datasets live in the repo-root data/ folder. Anchor to the root so the
+# source package src/sgdjscc_lab/data/ (the loaders) is NOT ignored.
+/data/
 
 # Runtime artifacts
 outputs/
