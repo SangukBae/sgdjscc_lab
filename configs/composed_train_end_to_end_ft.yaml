@@ -1,0 +1,52 @@
+# configs/composed_train_end_to_end_ft.yaml
+# Extension stage: joint end-to-end fine-tuning of the JSCC model and the
+# diffusion denoiser AFTER stages 1–3. This is a paper-appendix extension, NOT
+# one of the three core training stages — see docs/training_scaffold.md.
+#
+# Demonstrates step-based training (max_steps) + gradient accumulation. Resume
+# from the stage-1/2/3 checkpoints via --resume.
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train_end_to_end_ft.yaml \
+#       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0 \
+#       --resume outputs/checkpoints/controlnet/latest.pth
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+use_semantic:   true
+use_text:       true
+use_controlnet: true
+
+train:
+  stage: end_to_end_ft
+  dataset:
+    type: text_image          # set text_image_edge to also feed edge guidance
+    caption_source: sidecar
+    fallback_caption: "a photo"
+  transforms:
+    resize_to: 128
+    crop_mode: center
+
+  # Step-based schedule (large-scale fine-tuning).
+  max_steps:        2000
+  save_every_steps: 500
+  val_every_steps:  500
+  log_every_steps:  50
+  grad_accum_steps: 2
+  mixed_precision:  true        # auto-disabled on CPU
+
+  end_to_end_ft:
+    train_jscc:       true
+    train_diffusion:  true
+    train_controlnet: false
+    snr_db:           10.0
+    recon_weight:     1.0
+    diff_weight:      1.0
+
+checkpoint_dir:  "../outputs/checkpoints/end_to_end_ft"
+train_log_path:  "../outputs/end_to_end_ft_train_log.jsonl"

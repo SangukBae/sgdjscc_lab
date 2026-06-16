@@ -1,0 +1,53 @@
+# configs/composed_train_controlnet_shared_vae.yaml — Stage 3, ABLATION
+#
+# ABLATION of the Stage-3 edge transport: encode the edge map with the image VAE
+# (a simple stand-in) instead of the dedicated, BCE/Dice-trained edge JSCC link.
+# There is NO separate edge transmission path here — the edge rides the image
+# VAE's latent geometry. Use this to isolate the contribution of the dedicated
+# edge codec used by the baseline.
+#
+#   BASELINE (dedicated edge link): configs/composed_train_controlnet.yaml
+#   ABLATION (image-VAE stand-in):  this file
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train_controlnet_shared_vae.yaml \
+#       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0
+#   (or JourneyDB: --train-list data/journey_pairs/train --val-list data/journey_pairs/val)
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+use_semantic:   true
+use_text:       true
+use_controlnet: true
+
+train:
+  stage: controlnet
+  # ── Paper-scale schedule (match the baseline for a fair ablation; batch 64,
+  # ≈250k steps). STEP MODE: *_every_steps supersede the epoch-based events.
+  batch_size:       64
+  max_steps:        250000
+  log_every_steps:  100
+  save_every_steps: 5000
+  val_every_steps:  5000
+  dataset:
+    type: text_image_edge
+    caption_source: sidecar
+    fallback_caption: "a photo"
+    edge_source: canny
+  transforms:
+    resize_to: 128
+    crop_mode: center
+  dm:
+    use_masked_branch: true
+    mask_weight: 1.0
+  controlnet:
+    allow_unfrozen_base_dm: false
+    edge_transport: shared_vae          # ABLATION: image-VAE edge stand-in
+
+checkpoint_dir:  "../outputs/checkpoints/controlnet_shared_vae"
+train_log_path:  "../outputs/controlnet_shared_vae_train_log.jsonl"

@@ -1,0 +1,42 @@
+# configs/composed_train_jscc.yaml – Stage 1 (JSCC) training config
+#
+# Paper stage 1: jointly train the JSCC encoder/decoder under a fixed AWGN
+# channel (SNR = 10 dB) with MSE (+ optional patch-GAN). Image-only data.
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train_jscc.yaml \
+#       --train-list /data/imagenet/train/ --val-list /data/imagenet/val/ \
+#       --device cuda:0 --epochs 20
+#
+# Dry-run (wiring check, no checkpoints/GPU):
+#   python scripts/train.py --config configs/composed_train_jscc.yaml \
+#       --train-list /path/to/images/ --no-models --epochs 1
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+# Stage 1 needs only the JSCC autoencoder — the diffusion stack is irrelevant.
+use_semantic:   false
+use_controlnet: false
+
+train:
+  stage: jscc
+  dataset:
+    type: image
+  jscc:
+    snr_db: 10.0
+    gan:
+      enabled: true         # paper eq.7: L = ||x-x̂||² + λ·L_GAN (patch discriminator)
+      weight:  0.5          # λ — paper states no value; keep train/default.yaml default
+      mode:    hinge        # consistent with train/default.yaml
+
+# ── Data paths (set here or via --train-list / --val-list) ────────────────────
+# train_input_path: "../data/imagenet/train"
+# val_input_path:   "../data/imagenet/val"
+
+checkpoint_dir:  "../outputs/checkpoints/jscc"
+train_log_path:  "../outputs/jscc_train_log.jsonl"

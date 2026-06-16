@@ -1,0 +1,202 @@
+# configs/train/default.yaml – Stage-aware training defaults for sgdjscc_lab
+#
+# Expresses the paper's 3-stage SGD-JSCC training procedure
+# (jscc → text_dm → controlnet) — the CORE BASELINE — plus two non-core helpers:
+#   edge_codec     supporting step that trains the Stage-3 edge_jscc codec
+#   end_to_end_ft  optional extension run after the core stages
+# Loaded as a _defaults_ fragment by the composed_train_*.yaml configs; every
+# field is overridable at the composed config or CLI level.
+
+train:
+  enabled:      true
+
+  # ── Active stage ───────────────────────────────────────────────────────────
+  # Core baseline:  jscc | text_dm | controlnet
+  # Supporting:     edge_codec        (trains Stage-3's edge_jscc codec)
+  #                 csi_estimation    (trains the blind SNR estimator, eq. 15)
+  # Extension:      end_to_end_ft     (NOT part of the core baseline)
+  stage:        jscc
+
+  # ── Shared loop hyperparameters (epoch-based) ──────────────────────────────
+  epochs:       10
+  batch_size:   4
+  num_workers:  2
+  lr:           1.0e-4
+  weight_decay: 1.0e-5
+  save_every:   5               # save epoch_{N}.pth every N epochs (0 = off)
+  val_every:    1               # run validation every N epochs
+  log_every:    10              # print batch-level loss every N batches
+  resume:       null            # checkpoint to resume from (null = fresh run)
+  seed:         2025
+
+  # ── Step-based training (for large-scale runs; 0 = disabled) ───────────────
+  # When max_steps > 0 the run is driven by GLOBAL OPTIMIZER STEPS, and the
+  # save/val/log_every_steps events fire on completed optimizer updates.
+  max_steps:        0           # >0 → step mode (paper DM stages: ~250k steps)
+  save_every_steps: 0
+  val_every_steps:  0
+  log_every_steps:  0
+  grad_accum_steps: 1           # accumulate N micro-batches per optimizer step
+  mixed_precision:  false       # torch.cuda.amp; auto-disabled off-CUDA
+
+  # ── Dataset selection (stage-aware) ────────────────────────────────────────
+  dataset:
+    # type: auto → derived from stage
+    #   jscc       → image
+    #   text_dm    → text_image
+    #   controlnet → text_image_edge
+    #   edge_codec → edge            (edge maps only; no captions)
+    type:            auto
+    # Caption source for text_image / text_image_edge datasets.
+    #   sidecar  : per-image "<stem>.txt" file
+    #   manifest : JSON {filename: caption} or CSV(filename,caption) at caption_path
+    #   filename : derive a pseudo-caption from the filename (smoke tests only)
+    caption_source:  null
+    caption_path:    null
+    fallback_caption: ""
+    # Edge source for the text_image_edge (ControlNet) dataset.
+    #   canny   : compute a Canny edge map on the fly from the image
+    #   sidecar : read a precomputed edge map from edge_dir
+    edge_source:     null
+    edge_dir:        null
+
+  # ── Common image transforms ────────────────────────────────────────────────
+  # Paper reproduction (stage 2/3): center-crop + resize 128×128.
+  transforms:
+    resize_to:  128             # int → square, or [H, W]
+    crop_mode:  center          # center | random | none
+    normalize:  false           # keep [0,1]; JSCC encode applies x*2-1 itself
+
+  # ── Stage 1 (JSCC) settings ────────────────────────────────────────────────
+  jscc:
+    snr_db:     10.0            # fixed AWGN SNR for JSCC training (paper: 10 dB)
+    gan:
+      enabled:  false           # patch-discriminator GAN term
+      weight:   0.5             # λ in L = MSE + λ·L_GAN
+      mode:     hinge           # hinge | vanilla
+      lr:       1.0e-4          # discriminator optimizer lr
+      # PatchGAN (NLayerDiscriminator) structure — config-driven:
+      in_channels: 3
+      ndf:         64           # base feature width
+      n_layers:    3            # number of stride-2 downsampling blocks
+      norm:        batch        # batch | instance | none
+    # LPIPS perceptual term: loss += weight · LPIPS(2x-1, 2x̂-1). Matches the public
+    # SGD-JSCC MSE_LPIPS coupling (structural alignment, not exact reproduction).
+    # Default OFF; needs the 'lpips' package (graceful skip if absent).
+    lpips:
+      enabled:  false
+      weight:   0.1
+      net:      alex            # alex | vgg | squeeze (lpips backbone)
+
+  # ── Stage 2/3 (diffusion) settings ─────────────────────────────────────────
+  dm:
+    use_masked_branch: true     # compute the masked-latent loss term as well
+    mask_weight:       1.0      # weight on ||f0 - eps(f_hat_t)||²
+    # Classifier-free guidance (CFG) training: probability of replacing the text
+    # label with the NULL (zero) embedding per sample, so the DM learns the
+    # unconditional branch needed for CFG at inference (paper uses CFG scale 4.5).
+    # 0.1 follows the PixArt convention; the paper does not state the exact value.
+    # NULL = zeros is a simplification vs a learned null token (paper-like).
+    cfg_dropout_prob:  0.1
+    scheduler:                  # continuous sigmoid noise schedule S(t)
+      start:  0.0
+      end:    3.0
+      tau:    0.7
+
+  # ── Edge-codec stage (supporting step for Stage-3 edge_jscc transport) ──────
+  # Trains the dedicated edge JSCC (models/edge_jscc.py) as a real edge
+  # reconstruction codec with BCE + Dice. Its checkpoint is then loaded by the
+  # Stage-3 `edge_jscc` transport (train.controlnet.edge_jscc.checkpoint).
+  # Keep base_ch / norm consistent with train.controlnet.edge_jscc below so the
+  # checkpoint loads cleanly.
+  edge_codec:
+    arch:        conv           # conv (default) | vit (paper-like patch-embed transformer)
+    base_ch:     64             # conv arch only
+    norm:        group          # conv arch: group | batch | instance | none
+    snr_db:      10.0           # SNR of the edge channel during codec training
+    use_channel: true           # pass edge symbols through the AWGN channel
+    bce_weight:  1.0            # weight on BCE-with-logits term
+    dice_weight: 1.0            # weight on (1 - soft-Dice) term
+    vit:                        # used when arch == vit (patch = downsample factor = 8)
+      embed_dim:  128           # must be divisible by 4 and by num_heads
+      depth:      4
+      num_heads:  4
+      mlp_ratio:  2.0
+      # SNR conditioning via adaLN (WITT-style: SNR → adaLN in transformer blocks).
+      # CAVEAT: this codec trains at a FIXED SNR, so the conditioning is a CONSTANT
+      # modulation until trained across SNRs. Default off (paper-like, not WITT-exact).
+      snr_cond:   false
+
+  # ── CSI estimation stage (blind SNR estimator, paper Sec. IV-C eq. 15) ──────
+  # Self-supervised: f0=VAE(image), α~U(0,1), f̄=√α·f0+√(1-α)·n, regress α (MSE).
+  # Mirrors the public Prediction_Model. Phase/joint estimation are scaffolds and
+  # are NOT trained here (see models/csi_estimation.py).
+  csi_estimation:
+    latent_ch: 16               # JSCC VAE z-channels
+    # Regression target: "amplitude" → √α (inference squares the net output, so
+    # this is a drop-in for jscc.snr_prediction_net); "alpha" → α (paper eq. 15).
+    target:    amplitude
+
+  # ── Stage 3 (ControlNet) policy ────────────────────────────────────────────
+  controlnet:
+    # HARD POLICY: in the controlnet stage the base text-guided DM is frozen and
+    # only the ControlNet branches train.  This danger flag is the ONLY way to
+    # override that (deviates from the paper; risks forgetting the stage-2 prior).
+    allow_unfrozen_base_dm: false
+    # Edge conditioning transport for the ControlNet condition latent `c`:
+    #   edge_jscc  : BASELINE — dedicated edge encoder → channel → projector,
+    #                using a codec trained by the `edge_codec` stage (paper-like:
+    #                the edge has its OWN transmission link). Set edge_jscc.checkpoint.
+    #   shared_vae : ABLATION — encode the edge map with the image VAE. Simple
+    #                stand-in with no dedicated edge link; for comparison only.
+    edge_transport: edge_jscc
+    edge_jscc:                  # used when edge_transport == edge_jscc
+      # Trained edge codec from the edge_codec stage. REQUIRED for the baseline
+      # claim — without it the codec is a random stand-in (ablation-grade only).
+      checkpoint:  null         # e.g. ../outputs/checkpoints/edge_codec/best.pth
+      arch:        conv         # MUST match the edge_codec checkpoint (conv | vit)
+      base_ch:     64           # conv arch: must match the checkpoint
+      norm:        group        # conv arch: group | batch | instance | none
+      snr_db:      10.0         # SNR of the edge channel
+      use_channel: true         # pass edge symbols through the AWGN channel
+      vit:                      # vit arch: MUST match the edge_codec checkpoint
+        embed_dim:  128
+        depth:      4
+        num_heads:  4
+        mlp_ratio:  2.0
+        snr_cond:   false       # MUST match the edge_codec checkpoint
+
+  # ── Extension experiment: end-to-end JSCC↔DM fine-tuning ───────────────────
+  # NOT part of the core baseline (jscc → text_dm → controlnet). This is an
+  # optional extension run AFTER the core stages — see docs/training_scaffold.md.
+  end_to_end_ft:
+    train_jscc:       true      # fine-tune the JSCC encoder/decoder
+    train_diffusion:  true      # fine-tune the (whole) diffusion denoiser
+    train_controlnet: false     # if train_diffusion=false, train only ctrl branches
+    snr_db:           10.0      # channel SNR used in the recon path
+    recon_weight:     1.0       # weight on ||x - x̂||²
+    diff_weight:      1.0       # weight on ||f0 - eps(f_t)||²
+
+# ── Data paths (override at runtime / composed config) ────────────────────────
+# Resolved relative to the config file's directory (like all path fields).
+train_input_path: null           # e.g. "../data/imagenet/train"
+val_input_path:   null           # e.g. "../data/imagenet/val"
+
+# ── Trained blind SNR estimator (csi_estimation stage) ────────────────────────
+# When set, runtime.build_models loads it into jscc.snr_prediction_net so the
+# trained estimator drives the inference blind step-matching path (connects the
+# csi_estimation checkpoint to actual model behaviour). null = use the public net.
+snr_estimator_checkpoint: null   # e.g. "../outputs/checkpoints/csi_estimation/best.pth"
+
+# ── Output paths ──────────────────────────────────────────────────────────────
+checkpoint_dir:  "../outputs/checkpoints"
+train_log_path:  "../outputs/train_log.jsonl"
+
+# ── Legacy module freeze flags (superseded by the stage freeze policy) ────────
+# These can only freeze MORE than the active stage allows; the stage policy in
+# training/freeze.py is authoritative. Kept for backward compatibility.
+trainable_modules:
+  freeze_jscc:       false      # stage 'jscc' trains this by default
+  freeze_diffusion:  false      # stage 'text_dm' trains this by default
+  freeze_controlnet: false
+  freeze_guidance:   true

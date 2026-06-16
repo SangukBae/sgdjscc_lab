@@ -1,0 +1,44 @@
+# configs/composed_train_csi_estimation.yaml — blind SNR estimator training
+#
+# Supporting step (paper Sec. IV-C, eq. 15): train the SNR estimator ζ_P to
+# regress the signal level α = |h|²/(|h|²+σ²) from a noisy latent
+#   f̄ = √α·f0 + √(1-α)·n ,   f0 = VAE(image)  (frozen JSCC VAE)
+# Self-supervised on image-only data (no captions / edges). Mirrors the public
+# Prediction_Model (snr_prediction_net.py); the trained net can replace the
+# inference-time blind SNR predictor.
+#
+# Needs the JSCC VAE → use_semantic stays false (only JSCC loads). The phase
+# estimator / joint loop are SCAFFOLDS and are NOT trained here (no complex phase
+# in the real-gain latent path) — see models/csi_estimation.py.
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train_csi_estimation.yaml \
+#       --train-list /data/imagenet/train/ --val-list /data/imagenet/val/ \
+#       --device cuda:0 --epochs 100
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+use_semantic:   false           # only the JSCC VAE is needed (for image latents)
+use_text:       false
+use_controlnet: false
+
+train:
+  stage: csi_estimation
+  dataset:
+    type: image
+  transforms:
+    resize_to: 128
+    crop_mode: center
+  csi_estimation:
+    latent_ch: 16               # JSCC VAE z-channels
+
+# train_input_path: "../data/imagenet/train"
+# val_input_path:   "../data/imagenet/val"
+
+checkpoint_dir:  "../outputs/checkpoints/csi_estimation"
+train_log_path:  "../outputs/csi_estimation_train_log.jsonl"

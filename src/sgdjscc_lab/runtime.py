@@ -50,6 +50,17 @@ def build_models(cfg: DictConfig, device: torch.device) -> ModelBundle:
     jscc_model = build_jscc_model(model_root, device)
     jscc_model.snr = float(cfg.snr_db)
 
+    # Optionally replace the (public) blind SNR predictor with one trained by the
+    # `csi_estimation` stage — this is what connects that stage's checkpoint to the
+    # actual inference blind step-matching path (jscc.snr_prediction_net).
+    snr_ckpt = cfg.get("snr_estimator_checkpoint", None)
+    if snr_ckpt:
+        from sgdjscc_lab.models.csi_estimation import load_snr_estimator_into
+        _train = cfg.get("train", None)
+        _csi = _train.get("csi_estimation", None) if _train is not None else None
+        latent_ch = int(_csi.get("latent_ch", 16)) if _csi is not None else 16
+        load_snr_estimator_into(jscc_model, str(snr_ckpt), latent_ch=latent_ch, device=device)
+
     # ── 2. Semantic pipeline (diffusion + guidance) ───────────────────────────
     text_extractor = None
     edge_extractor = None

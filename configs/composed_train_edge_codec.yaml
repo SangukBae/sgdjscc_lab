@@ -1,0 +1,65 @@
+# configs/composed_train_edge_codec.yaml — Edge-codec training (supporting step)
+#
+# Trains the dedicated edge JSCC (models/edge_jscc.py) as a REAL edge
+# reconstruction codec with a BCE + Dice objective:
+#
+#   edge map → encoder → AWGN channel → projector → decoder → edge logits
+#   loss = bce_weight·BCE(logits, edge) + dice_weight·(1 - soft-Dice)
+#
+# The trained checkpoint is then loaded by the Stage-3 `edge_jscc` transport
+# (configs/composed_train_controlnet.yaml → train.controlnet.edge_jscc.checkpoint),
+# turning that baseline into a genuinely trained edge link rather than a random
+# stand-in. This stage is SELF-CONTAINED: no JSCC/diffusion checkpoints needed,
+# no captions needed — just images (edges via Canny) or precomputed edge maps.
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train_edge_codec.yaml \
+#       --train-list data/imagenet/train --val-list data/imagenet/val \
+#       --device cuda:0 --epochs 50
+#
+# Then evaluate:
+#   python scripts/eval_edge_codec.py --config configs/composed_train_edge_codec.yaml \
+#       --checkpoint outputs/checkpoints/edge_codec/best.pth --val-list data/imagenet/val
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+# Self-contained codec training — the heavy diffusion stack is not loaded.
+use_semantic:   false
+use_text:       false
+use_controlnet: false
+
+train:
+  stage: edge_codec
+  dataset:
+    type: edge
+    edge_source: canny          # canny (from images) | sidecar (edge_dir)
+    edge_dir: null
+  transforms:
+    resize_to: 128
+    crop_mode: center
+  edge_codec:
+    arch: vit                   # paper: ViT-based edge JSCC (patch-embed transformer)
+    base_ch: 64                 # conv-only (ignored for vit); keep == controlnet.edge_jscc
+    norm: group                 # conv-only (ignored for vit)
+    snr_db: 10.0
+    use_channel: true
+    bce_weight: 1.0
+    dice_weight: 1.0
+    vit:                        # MUST match controlnet.edge_jscc.vit (checkpoint compat)
+      embed_dim: 128            # divisible by 4 and by num_heads
+      depth: 4
+      num_heads: 4
+      mlp_ratio: 2.0
+      snr_cond: false           # fixed-SNR codec → constant modulation; off (paper-like)
+
+# edge_codec uses IMAGENET (image folder; Canny edges computed on the fly).
+# train_input_path: "../data/imagenet/train"
+# val_input_path:   "../data/imagenet/val"
+
+checkpoint_dir:  "../outputs/checkpoints/edge_codec"
+train_log_path:  "../outputs/edge_codec_train_log.jsonl"

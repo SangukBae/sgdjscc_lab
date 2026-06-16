@@ -1,0 +1,65 @@
+# configs/composed_train_controlnet_edge_jscc.yaml
+# Explicitly-named alias of the Stage-3 BASELINE (dedicated edge-JSCC transport).
+#
+# As of the baseline flip, `edge_jscc` IS the default Stage-3 transport, so this
+# file is equivalent to configs/composed_train_controlnet.yaml. It is kept for
+# ablation tables that want an unambiguous transport name in the filename.
+#
+#   shared_vae (ABLATION) : configs/composed_train_controlnet_shared_vae.yaml
+#   edge_jscc  (BASELINE) : this file == configs/composed_train_controlnet.yaml
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train_controlnet_edge_jscc.yaml \
+#       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0
+#   (or JourneyDB: --train-list data/journey_pairs/train --val-list data/journey_pairs/val)
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+use_semantic:   true
+use_text:       true
+use_controlnet: true
+
+train:
+  stage: controlnet
+  # ── Paper-scale schedule (DM stage ≈ 250k steps, batch 64; Table III) ────────
+  # max_steps > 0 → STEP MODE: *_every_steps supersede the epoch-based events.
+  batch_size:       64
+  max_steps:        250000
+  log_every_steps:  100
+  save_every_steps: 5000
+  val_every_steps:  5000
+  dataset:
+    type: text_image_edge
+    caption_source: sidecar
+    fallback_caption: "a photo"
+    edge_source: canny
+  transforms:
+    resize_to: 128
+    crop_mode: center
+  dm:
+    use_masked_branch: true
+    mask_weight: 1.0
+  controlnet:
+    allow_unfrozen_base_dm: false
+    edge_transport: edge_jscc      # BASELINE: dedicated edge link
+    edge_jscc:
+      checkpoint: ../outputs/checkpoints/edge_codec/best.pth
+      arch: vit                    # MUST match the edge_codec checkpoint (vit)
+      base_ch: 64                  # conv-only (ignored for vit)
+      norm: group                  # conv-only (ignored for vit)
+      snr_db: 10.0
+      use_channel: true
+      vit:                         # MUST match train.edge_codec.vit
+        embed_dim: 128
+        depth: 4
+        num_heads: 4
+        mlp_ratio: 2.0
+        snr_cond: false
+
+checkpoint_dir:  "../outputs/checkpoints/controlnet_edge_jscc"
+train_log_path:  "../outputs/controlnet_edge_jscc_train_log.jsonl"

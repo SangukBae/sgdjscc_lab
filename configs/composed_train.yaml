@@ -1,0 +1,33 @@
+# configs/composed_train.yaml – Composed training config
+#
+# Builds on the AWGN inference setup and overlays training-specific settings.
+# Override train_input_path / val_input_path at the CLI or here.
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train.yaml \
+#       --train-list /data/train/ --val-list /data/val/ --device cuda:0
+#
+# Dry-run (no checkpoints, no GPU):
+#   python scripts/train.py --config configs/composed_train.yaml \
+#       --train-list /data/train/ --no-models --epochs 1
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+# ── Override training settings here ───────────────────────────────────────────
+# train:
+#   epochs: 20
+#   batch_size: 8
+#   lr: 5.0e-5
+
+# ── Data paths (set here or pass --train-list / --val-list on the CLI) ────────
+# train_input_path: "../data/kodak/train"
+# val_input_path:   "../data/kodak/val"
+
+# ── Output ───────────────────────────────────────────────────────────────────
+checkpoint_dir:  "../outputs/checkpoints"
+train_log_path:  "../outputs/train_log.jsonl"

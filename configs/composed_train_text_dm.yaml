@@ -1,0 +1,55 @@
+# configs/composed_train_text_dm.yaml – Stage 2 (text-guided DM) training config
+#
+# Paper stage 2: with the JSCC model frozen, train the text-guided latent
+# diffusion model (MDTv2) to predict the clean latent f0 from a noised latent
+# f_t (Algorithm 1). Loss = ||f0 - eps(f_t)||² + ||f0 - eps(f_hat_t)||²
+# (unmasked + masked branches). Text-image pair data, center-crop+resize 128².
+#
+# Usage (captions via per-image .txt sidecars):
+#   python scripts/train.py --config configs/composed_train_text_dm.yaml \
+#       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0
+#   (or JourneyDB: --train-list data/journey_pairs/train --val-list data/journey_pairs/val)
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+# Stage 2 trains the base text-guided DM (no ControlNet yet).
+use_semantic:   true
+use_text:       true
+use_controlnet: false
+
+train:
+  stage: text_dm
+  # ── Paper-scale schedule (DM stage ≈ 250k steps, batch 64; Table III) ────────
+  # max_steps > 0 → STEP MODE: the run is driven by global optimizer steps, so the
+  # *_every_steps below supersede the epoch-based save/val/log_every (and the
+  # `epochs` default is ignored). No epoch/step conflict.
+  batch_size:       64
+  max_steps:        250000
+  log_every_steps:  100
+  save_every_steps: 5000
+  val_every_steps:  5000
+  dataset:
+    type: text_image
+    caption_source: sidecar     # per-image "<stem>.txt"; or manifest / filename
+    fallback_caption: "a photo"
+  transforms:
+    resize_to: 128
+    crop_mode: center
+  dm:
+    use_masked_branch: true
+    mask_weight: 1.0
+
+# text_dm uses COCO or JOURNEY_PAIRS (sidecar .txt captions). Pick one:
+#   coco:          train2017 / val2017
+#   journey_pairs: train / val   (training-ready pairs; NOT JourneyDB_subset, which
+#                                 is a raw archive of .tgz files — do not train on it)
+# train_input_path: "../data/coco/train2017"
+# val_input_path:   "../data/coco/val2017"
+
+checkpoint_dir:  "../outputs/checkpoints/text_dm"
+train_log_path:  "../outputs/text_dm_train_log.jsonl"

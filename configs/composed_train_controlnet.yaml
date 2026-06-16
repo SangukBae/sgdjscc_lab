@@ -1,0 +1,85 @@
+# configs/composed_train_controlnet.yaml – Stage 3 (edge ControlNet) — BASELINE
+#
+# Paper stage 3: starting from the frozen stage-2 text-guided DM, add edge-map
+# structural guidance via a ControlNet branch. "The parameters of the original
+# text-guided DM are frozen, and only the parameters of the DiT blocks handling
+# the structural semantic features are updated." Text-image-edge tuple data.
+#
+# BASELINE edge transport = `edge_jscc`: the edge map is transmitted over its
+# OWN dedicated DeepJSCC link (a codec trained with BCE+Dice by the `edge_codec`
+# stage) and aligned to the latent space — matching the paper. This requires a
+# trained edge codec checkpoint (train.controlnet.edge_jscc.checkpoint).
+#   • Train it first:   scripts/train.py --stage edge_codec
+#   • Ablation variant: configs/composed_train_controlnet_shared_vae.yaml
+#
+# The base-DM freeze is enforced as a HARD POLICY (training/freeze.py); override
+# only with train.controlnet.allow_unfrozen_base_dm: true (deviates from paper).
+#
+# Usage (edges computed on the fly via Canny):
+#   python scripts/train.py --config configs/composed_train_controlnet.yaml \
+#       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0
+#   (or JourneyDB: --train-list data/journey_pairs/train --val-list data/journey_pairs/val)
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+# Stage 3 needs the diffusion stack WITH the ControlNet branches.
+use_semantic:   true
+use_text:       true
+use_controlnet: true
+
+train:
+  stage: controlnet
+  # ── Paper-scale schedule (DM stage ≈ 250k steps, batch 64; Table III) ────────
+  # max_steps > 0 → STEP MODE: *_every_steps supersede the epoch-based events
+  # (epochs default is ignored once max_steps > 0). No epoch/step conflict.
+  batch_size:       64
+  max_steps:        250000
+  log_every_steps:  100
+  save_every_steps: 5000
+  val_every_steps:  5000
+  dataset:
+    type: text_image_edge
+    caption_source: sidecar     # captions still required (base DM is text-guided)
+    fallback_caption: "a photo"
+    edge_source: canny          # canny (on the fly) | sidecar (edge_dir)
+    edge_dir: null
+  transforms:
+    resize_to: 128
+    crop_mode: center
+  dm:
+    use_masked_branch: true
+    mask_weight: 1.0
+  controlnet:
+    allow_unfrozen_base_dm: false
+    edge_transport: edge_jscc            # BASELINE: dedicated edge link
+    edge_jscc:
+      # Point this at the codec trained by the edge_codec stage. Leaving it null
+      # falls back to a RANDOM codec (ablation-grade only — not a baseline claim).
+      checkpoint: ../outputs/checkpoints/edge_codec/best.pth
+      arch: vit                          # MUST match the edge_codec checkpoint (vit)
+      base_ch: 64                        # conv-only (ignored for vit)
+      norm: group                        # conv-only (ignored for vit)
+      snr_db: 10.0
+      use_channel: true
+      vit:                               # MUST match train.edge_codec.vit
+        embed_dim: 128
+        depth: 4
+        num_heads: 4
+        mlp_ratio: 2.0
+        snr_cond: false
+
+# controlnet uses COCO or JOURNEY_PAIRS (sidecar .txt captions; Canny edges on
+# the fly). Pick one:
+#   coco:          train2017 / val2017
+#   journey_pairs: train / val   (training-ready pairs; NOT JourneyDB_subset, which
+#                                 is a raw archive of .tgz files — do not train on it)
+# train_input_path: "../data/coco/train2017"
+# val_input_path:   "../data/coco/val2017"
+
+checkpoint_dir:  "../outputs/checkpoints/controlnet"
+train_log_path:  "../outputs/controlnet_train_log.jsonl"
