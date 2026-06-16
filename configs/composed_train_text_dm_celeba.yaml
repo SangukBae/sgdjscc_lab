@@ -1,0 +1,40 @@
+# configs/composed_train_text_dm_celeba.yaml — Stage 2 (text DM) on CelebA
+#
+# CelebA ships WITHOUT captions, so it is normally image-only. This config uses
+# it for the text-guided DM stage by reading per-image caption sidecars that you
+# generate first with scripts/generate_captions.py:
+#
+#   python scripts/generate_captions.py --input data/celeba/train --mode fixed
+#   python scripts/generate_captions.py --input data/celeba/val   --mode fixed
+#
+# Fidelity: auto-generated captions are paper-LIKE, not paper-faithful (see
+# docs/training_scaffold.md "Caption sources"). Use --mode model for BLIP-2
+# captions (GPU) if you want richer text than the fixed template.
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train_text_dm_celeba.yaml \
+#       --train-list data/celeba/train --val-list data/celeba/val --device cuda:0
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+use_semantic:   true
+use_text:       true
+use_controlnet: false
+
+train:
+  stage: text_dm
+  dataset:
+    type: text_image
+    caption_source: sidecar        # reads <stem>.txt written by generate_captions.py
+    fallback_caption: "a portrait photo of a person"
+  transforms:
+    resize_to: 128
+    crop_mode: center
+
+checkpoint_dir:  "../outputs/checkpoints/text_dm_celeba"
+train_log_path:  "../outputs/text_dm_celeba_train_log.jsonl"

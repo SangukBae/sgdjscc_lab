@@ -1,0 +1,44 @@
+# configs/composed_train_text_dm_coco_json.yaml — Stage 2 (text DM), COCO multi-caption
+#
+# Uses COCO's official captions_*.json (5 captions per image) instead of single
+# sidecar .txt files. One caption is picked per access via caption_select:
+#   first   — caps[0] (stable)
+#   longest — the longest caption (most descriptive, stable)
+#   random  — a random caption each access (training augmentation; the VAL loader
+#             falls back to "first" for reproducibility)
+#
+# This recovers the multi-caption information the single-sidecar path discards,
+# matching how the original SGD-JSCC code consumes COCO captions.
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train_text_dm_coco_json.yaml \
+#       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0
+# train/val read SEPARATE caption JSONs: caption_path (train) and
+# val_caption_path (val), so val images resolve against captions_val2017.json.
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+use_semantic:   true
+use_text:       true
+use_controlnet: false
+
+train:
+  stage: text_dm
+  dataset:
+    type: text_image
+    caption_source: coco_json
+    caption_path:     ../data/coco/annotations/captions_train2017.json   # train captions
+    val_caption_path: ../data/coco/annotations/captions_val2017.json     # val captions
+    caption_select: random         # first | longest | random  (val → first)
+    fallback_caption: "a photo"
+  transforms:
+    resize_to: 128
+    crop_mode: center
+
+checkpoint_dir:  "../outputs/checkpoints/text_dm_coco_json"
+train_log_path:  "../outputs/text_dm_coco_json_train_log.jsonl"

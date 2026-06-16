@@ -1,0 +1,45 @@
+# configs/composed_train_jscc_filelist.yaml — Stage 1 (JSCC) via a FILE LIST
+#
+# Large-scale alternative to recursive folder scanning: drive the dataset from an
+# explicit image-path list (DiffJSCC-style train.list / val.list) instead of
+# rglob-ing a directory. One image path per line; '#' comments and blank lines
+# are ignored. Relative entries resolve against the LIST FILE's directory,
+# absolute entries are used as-is.
+#
+# Build the lists (example):
+#   find "$PWD/data/celeba/train" -name '*.jpg' | sort > data/celeba/train.list
+#   find "$PWD/data/celeba/val"   -name '*.jpg' | sort > data/celeba/val.list
+#
+# file_list mode works for every dataset type (image / text_image /
+# text_image_edge / edge); caption/edge matching is unchanged (sidecar .txt,
+# <stem>_edge.png, or on-the-fly canny). No --train-list needed.
+#
+# Usage:
+#   python scripts/train.py --config configs/composed_train_jscc_filelist.yaml --device cuda:0
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+use_semantic:   false
+use_controlnet: false
+
+train:
+  stage: jscc
+  jscc:
+    snr_db: 10.0
+    gan:
+      enabled: true
+      weight:  0.5
+      mode:    hinge
+  dataset:
+    type: image
+    input_mode: file_list                       # folder | file_list
+    file_list_path:     ../data/celeba/train.list
+    val_file_list_path: ../data/celeba/val.list
+
+checkpoint_dir:  "../outputs/checkpoints/jscc_filelist"
+train_log_path:  "../outputs/jscc_filelist_train_log.jsonl"
