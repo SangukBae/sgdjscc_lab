@@ -1,0 +1,21 @@
+# configs/model/channel_conditioned.yaml – Channel-conditioned diffusion fragment (Phase 5-A)
+#
+# Enables the DiffCom-inspired channel-conditioned inference path. Off by default
+# elsewhere; including this fragment turns it on and selects the conditioning mode.
+
+use_channel_conditioning: true
+
+# Condition mode: "auto" lets ChannelConditionPolicy pick from CSI + confidence,
+# or pin one of: latent_conditioned | joint_conditioned | blind_conditioned
+condition_mode: "auto"
+
+# CSI regime seen by the receiver (also drives the channel equaliser):
+#   "perfect" | "imperfect" | "none" (blind)
+csi: "perfect"
+
+# Channel-condition encoder
+channel_condition:
+  token_grid: 4          # T = token_grid^2 condition tokens
+  token_dim: 8
+  encoder_mode: "stats"  # "stats" (training-free) | "linear" (learnable hook)
+  confidence_threshold: 0.5

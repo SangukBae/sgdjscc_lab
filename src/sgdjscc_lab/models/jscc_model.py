@@ -71,6 +71,10 @@ class JSCCModel(nn.Module):
             task_name="reconstruction",
         )
         self._awgn_channel = AWGNChannel()
+        # Phase 5-A: optional channel override. When None, behaviour is identical
+        # to the original AWGN path (algorithm-preservation invariant). Set this
+        # to a Rayleigh/fast-fading/packet-drop channel to transmit over it.
+        self.channel_model = None
 
     def normalize(self, x: torch.Tensor) -> torch.Tensor:
         """L2-normalise per sample and rescale to original energy."""
@@ -80,8 +84,14 @@ class JSCCModel(nn.Module):
         return x.reshape(batch_size, c, h, w)
 
     def channel(self, encode_features: torch.Tensor) -> torch.Tensor:
-        """Apply AWGN channel noise at self.snr dB."""
-        return self._awgn_channel.transmit(encode_features, self.snr)
+        """Apply channel noise at self.snr dB.
+
+        Uses ``self.channel_model`` when set (Phase 5-A Rayleigh / fading /
+        packet-drop), otherwise the original AWGN channel — so the default path
+        is numerically identical to ``inference_one.py``.
+        """
+        ch = self.channel_model if self.channel_model is not None else self._awgn_channel
+        return ch.transmit(encode_features, self.snr)
 
 
 def build_jscc_model(

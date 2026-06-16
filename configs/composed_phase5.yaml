@@ -1,0 +1,26 @@
+# configs/composed_phase5.yaml – Phase 5 composed config (channel-conditioned + accel + verifier)
+#
+# Demonstrates wiring the Phase 5 fragments on top of the SGD-JSCC image path.
+# Swap channel/rayleigh for channel/fast_fading or channel/packet_drop as needed.
+#
+# Usage:
+#   python scripts/evaluate.py --config configs/composed_phase5.yaml --snr 0
+
+_defaults_:
+  - channel/rayleigh          # Rayleigh fading channel + CSI regime
+  - model/sgdjscc             # SGD-JSCC model + guidance/diffusion settings
+  - model/channel_conditioned # DiffCom-inspired channel conditioning (Phase 5-A)
+  - infer/awgn                # input/output/device
+  - eval/default              # metrics + packet settings (Phase 3/4)
+  - acceleration/default      # low-latency sampler / early-exit (Phase 5-B)
+  - eval/phase5               # SRS-v2 + regeneration search (Phase 5-C)
+
+# Phase master switches (Phase 5-A/B/C only; Phase 4 features stay off)
+use_phase4: false
+use_phase5: true
+
+# Example blind experiment overrides:
+# csi: "none"
+# condition_mode: "blind_conditioned"
+# acceleration: { sampler: "ddim", sampler_steps: 20 }
+# use_srs_v2: true

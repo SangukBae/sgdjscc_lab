@@ -3,10 +3,44 @@
 # Loaded alongside the main config in evaluate.py.
 # These fields are used by eval_pipeline.py and scripts/evaluate.py.
 
-# ── Metrics to compute ────────────────────────────────────────────────────────
+# ── Phase master switches ──────────────────────────────────────────────────────
+# Top-level gates for Phase 4 / Phase 5 extended features.
+# Default: both OFF — baseline Phase 1-3 behaviour is preserved.
+#
+# Rule: per-feature flags below are only honoured when the corresponding
+# master switch is true.  Setting a per-feature flag to true while the
+# master switch is false has NO effect.
+#
+#   use_phase4: false  → all Phase 4-A/B features are disabled
+#   use_phase4: true   → use_packet_eval / use_adaptive_guidance /
+#                        use_packet_regeneration / temporal pipeline are
+#                        activated according to their own flags
+#
+#   use_phase5: false  → all Phase 5-A/B/C features are disabled
+#   use_phase5: true   → use_channel_conditioning / acceleration.* /
+#                        use_srs_v2 / use_vqa_hallucination /
+#                        use_regeneration_search are activated according
+#                        to their own flags
+#
+# use_phase5: true does NOT automatically enable Phase 4 features.
+# To run the full stack set both to true.
+use_phase4: false
+use_phase5: false
+
+# ── Metric profile (optional) ─────────────────────────────────────────────────
+# Selects a named metric set. Precedence: --profile (CLI) > metrics_profile >
+# the explicit `metrics` list below > built-in default. Profiles separate the
+# paper's reported set from the ETRI/extended metrics:
+#   paper    : PSNR / LPIPS / CLIP(img-img, txt-img) / FID   (paper §VI)
+#   extended : + SSIM, object preservation/miss/add, hallucination, SRS (no FID)
+#   full     : extended + FID
+# SSIM is kept (extended/full) but is a NON-paper metric (flagged in logs).
+# metrics_profile: extended
+
+# ── Metrics to compute (used when no profile is selected) ─────────────────────
 metrics:
   - psnr
-  - ssim
+  - ssim                       # NOTE: not in the paper's reported metric set
   - lpips
   - clip_image_image
   - clip_text_image
@@ -15,6 +49,7 @@ metrics:
   - additional_object_rate
   - hallucination_score
   - semantic_reliability_score
+  # - fid                      # paper §VI; enable via the 'paper'/'full' profile
 
 # ── SNR sweep settings ────────────────────────────────────────────────────────
 snr_list: [-5, 0, 5, 10, 15, 20, 25]   # Standard JSCC evaluation range
@@ -41,3 +76,32 @@ object_presence_threshold: 0.25        # CLIP similarity threshold for detection
 use_regeneration_loop: false           # Enable semantic-reliability-triggered retry
 regeneration_threshold: 0.5           # Retry when SRS < this value
 regeneration_max_retries: 1           # Max extra attempts (total = 1 + this)
+
+# ── Phase 4-A: packet-aware evaluation ────────────────────────────────────────
+use_packet_eval: false                 # Build semantic packets + srs_base/srs_packet
+packet_dir: "../outputs/packets"       # Where packet.json / error_report.json are saved
+packet_use_segmentation: false         # Add segmentation summary to packets (heavy DL)
+packet_use_depth: false                # Add depth summary to packets (heavy DL)
+packet_caption_objects: true           # Fold open-vocab caption nouns into packet objects
+                                       # (true: populate objects beyond COCO-80, e.g. "mushroom";
+                                       #  false: COCO-80 / CLIP detections only)
+packet_blend: 0.5                      # srs_packet = (1-b)*srs_base + b*packet_composite
+use_packet_regeneration: false         # Error-type-aware retry keyed on packet report
+# Optional packet-composite weights (defaults in semantic_reliability.py):
+# semantic_packet_weights:
+#   w_obj: 0.40
+#   w_rel: 0.20
+#   w_attr: 0.20
+#   w_seg: 0.10
+#   w_scene: 0.10
+#   w_add_penalty: 0.10
+
+# ── Phase 4-A: SNR-adaptive guidance controller ───────────────────────────────
+use_adaptive_guidance: false           # Scale guidance by SNR regime (off = legacy path)
+adaptive_guidance:
+  thresholds:
+    low: 0.0                            # SNR <= low  → strong guidance
+    high: 8.0                           # SNR >= high → weak guidance / optional skip
+  # strong / moderate / weak blocks may override the built-in multipliers, e.g.:
+  # weak:
+  #   skip_diffusion: true             # skip the diffusion prior at high SNR

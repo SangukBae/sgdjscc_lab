@@ -126,6 +126,35 @@ src/sgdjscc_lab/
 2. `channels/fast_fading.py`
    - 설정 가능한 블록 길이로 심볼/블록 레벨 fading 구현
    - 현재 패치 레벨 이미지 추론과의 호환성 유지
+   - 등화: 논문식 MMSE + 정규화(`y/√(g²+σ²)`), per-element 잡음 레벨
+     `noise_level`(`d_i=σ²/(g_i²+σ²)`, 논문 eq. 12)을 번들로 노출
+   - **fast-fading water-filling denoising (논문 Algorithm 4)**:
+     `acceleration/water_filling.py`에 구현. per-element 잡음 레벨 `b_t` 추적 →
+     모든 원소를 공통 목표 `β̄_t`로 water-fill(eq. 16) → DM 1-step f0 예측(eq. 17,
+     slow-fading sampler와 동일 형태) → `b_t,i ≥ β̄_s`인 원소만 선택적 갱신.
+     초기화 `t=S^{-1}(max_i d_i)`(`SigmoidNoiseScheduler.inverse_beta_bar`).
+     알고리즘은 **주입형 f0-predictor**로 합성(oracle) 테스트까지 검증됨
+     (`tests/test_water_filling.py`). training-free라 추가 학습은 불필요.
+   - **real-DM 어댑터**: `build_mdt_f0_predictor(pred_image_fn, labels, class_guidance,
+     c=, controlnet=, ...)`가 공개 `DiffusionGenerator.pred_image`
+     (`SGDJSCC/.../diffusion_element_wise.py`) 호출 규약에 맞춰
+     `f0_predict_fn(g_t, √β̄_t)→f̂0`를 만든다. 공개 코드가 **std σ=√β̄** 로
+     파라미터화(내부에서 CFG용 latent/noise 복제)하므로 어댑터는 우리 변수공간
+     (variance β̄)을 std로 변환해 넘긴다.
+   - **CSI 정책**: `fast_fading_water_filling_decode(bundle, f0_predict_fn, on_blind=...)`
+     — perfect: 실행, imperfect: 실행+경고(근사), blind(`csi='none'`): 기본
+     예외 / `on_blind='fallback'`이면 `fallback_fn`(표준 step-matched sampler)로 우회.
+   - **runtime decode-swap (연결됨)**: `pipelines/infer_pipeline.py::_run_water_filling_diffusion`이
+     fast-fading 분기에서 `cfg.use_water_filling`(Phase-5 게이트) + per-element
+     `noise_level`(채널 번들)이 있으면 기존 global step-matched decode 대신 위
+     어댑터+루프로 라우팅한다. `_decode_diffusion`은 `_water_filling_noise_level`로
+     **patch별** `artifacts.bundle.noise_level`을 우선 사용하고(one-pass multi-patch
+     정합성), 없으면 `jscc.channel_model.last_bundle`로 폴백(sequential single-image).
+     `_build_evidence_bundle`이 `noise_level`을 patch별로 복사하므로 마지막 patch의
+     d가 재사용되지 않는다. AWGN 등 미지원 채널은 None → 표준 경로 유지(기본 off).
+     라우팅·어댑터·patch별 evidence 선택은 stub로 CPU 검증(`tests/test_water_filling.py`).
+   - **남은 부분(수치만)**: 실제 MDTv2/`DiffusionGenerator` 체크포인트 로드 후의
+     **수치 산출**만 GPU/체크포인트 의존. 배선 자체는 연결 완료.
 3. 현재 SGD-JSCC 경로에서 수신기 측정값 노출
    - 내부 추론 반환 경로를 수정해 중간값을 선택적으로 수집 가능하게 함:
      - `encode_features_hat`

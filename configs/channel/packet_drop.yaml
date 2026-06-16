@@ -1,0 +1,6 @@
+# configs/channel/packet_drop.yaml – Erasure / packet-drop fragment (Phase 5-A)
+
+channel: packet_drop
+snr_db: 10
+drop_prob: 0.1        # per-packet erasure probability
+packet_length: 256    # latent elements per packet

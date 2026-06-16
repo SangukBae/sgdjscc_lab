@@ -1,0 +1,10 @@
+# configs/channel/rayleigh.yaml – Slow (flat) Rayleigh fading fragment (Phase 5-A)
+#
+# Merged into composed configs via _defaults_.  Selects the Rayleigh channel and
+# its CSI regime.  Used by JSCCModel.channel_model and the channel-conditioned
+# inference path (build_channel reads these keys).
+
+channel: rayleigh
+snr_db: 10
+csi: "perfect"        # "perfect" | "imperfect" | "none" (blind, no equalisation)
+csi_error_std: 0.1    # multiplicative gain-estimate error when csi="imperfect"

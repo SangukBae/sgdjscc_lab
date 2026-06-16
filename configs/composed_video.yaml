@@ -1,0 +1,26 @@
+# configs/composed_video.yaml – Phase 4-B composed config for video evaluation
+#
+# Adds the Phase 4-A packet machinery and the Phase 4-B temporal settings on top
+# of the standard SGD-JSCC image path.
+#
+# Usage:
+#   python scripts/evaluate_video.py --config configs/composed_video.yaml \
+#       --input /path/to/ordered_frames/ --snr 5
+
+_defaults_:
+  - channel/awgn       # snr_db, channel type
+  - model/sgdjscc      # model_root, guidance flags, diffusion settings
+  - infer/awgn         # input_path, output_dir, device
+  - eval/default       # metrics, CLIP model, SRS + packet settings
+  - video/default      # scene-change / keyframe / temporal settings
+
+# Phase master switch — required for evaluate_video.py to run
+use_phase4: true
+use_phase5: false
+
+# Packet-aware semantics are required for temporal delta / metrics:
+use_packet_eval: true
+
+# Optional per-run overrides:
+# snr_db: 5
+# use_adaptive_guidance: true

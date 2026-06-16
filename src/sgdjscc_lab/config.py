@@ -30,6 +30,31 @@ _PATH_KEYS = (
     "reference_path",
     "annotation_path",
     "caption_path",
+    # Output artefacts – resolved relative to the config dir so results land in a
+    # stable location regardless of the working directory the CLI is run from.
+    "csv_path",
+    "packet_dir",
+    "keyframe_json",
+    "temporal_csv",
+    "frame_log_csv",
+    # Training artefacts
+    "train_input_path",
+    "val_input_path",
+    "checkpoint_dir",
+    "train_log_path",
+    # Trained blind SNR estimator (csi_estimation stage) loaded at inference
+    "snr_estimator_checkpoint",
+)
+
+
+# Nested path fields (dotted) resolved the same way as the top-level ones, so
+# they land relative to the config dir regardless of the CWD the CLI runs from.
+_NESTED_PATH_KEYS = (
+    "train.controlnet.edge_jscc.checkpoint",   # trained edge codec for Stage 3
+    "train.dataset.caption_path",              # manifest / coco_json / multi_manifest (train)
+    "train.dataset.val_caption_path",          # manifest / coco_json / multi_manifest (val)
+    "train.dataset.file_list_path",            # file-list mode (train images)
+    "train.dataset.val_file_list_path",        # file-list mode (val images)
 )
 
 
@@ -40,6 +65,11 @@ def _resolve_paths(cfg: DictConfig, cfg_dir: Path) -> DictConfig:
             p = Path(val)
             if not p.is_absolute():
                 cfg[key] = str((cfg_dir / p).resolve())
+    for dotted in _NESTED_PATH_KEYS:
+        val = OmegaConf.select(cfg, dotted, default=None)
+        if val is not None and not Path(val).is_absolute():
+            OmegaConf.update(cfg, dotted, str((cfg_dir / Path(val)).resolve()),
+                             force_add=False)
     return cfg
 
 

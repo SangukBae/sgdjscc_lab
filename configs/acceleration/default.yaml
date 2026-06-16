@@ -1,0 +1,37 @@
+# configs/acceleration/default.yaml – Phase 5-B low-latency settings
+#
+# Off by default: when `sampler` is "baseline" with no `sampler_steps`, the legacy
+# diffusion path is used unchanged. Set values here to run DDIM / few-step / early-
+# exit / dynamic-routing experiments.
+
+acceleration:
+  sampler: "baseline"        # "baseline" | "ddim" | "fewstep" | "distilled_placeholder"
+  sampler_steps: 50          # DDIM step budget (e.g. 50 / 20 / 10 / 5)
+
+  # Few-step / distilled consistency decoder
+  consistency_steps: 2       # steps for fewstep / distilled_placeholder modes
+  sigma_min: 0.002
+  sigma_max: 2.0
+  rho: 7.0
+
+  # Early exit
+  early_exit: false
+  early_exit_mode: "intra_sampler"   # "intra_sampler" (stop the denoising loop mid-run)
+                                     # | "checkpoint_legacy" (re-render at step counts)
+  early_exit_metric: "heuristic"     # "heuristic" (latent-convergence, in-loop, cheap)
+                                     # | "srs" | "srs_v2" (verified; needs a decode+verifier)
+  early_exit_check_interval: 5       # evaluate every N steps inside the sampler
+  early_exit_checkpoints: [5, 10, 20, 50]   # used only by checkpoint_legacy mode
+  srs_threshold: 0.8         # stop once the score reaches this
+  improvement_delta: 0.01    # stop on diminishing returns
+  min_steps: 1
+
+  # Dynamic SNR -> step-budget routing
+  dynamic_routing: false
+  routing_high: 5            # high SNR + high confidence
+  routing_mid: 15            # mid SNR
+  routing_low: 40            # low SNR / blind
+
+  # Latency benchmark
+  benchmark_runs: 3
+  benchmark_warmup: 1

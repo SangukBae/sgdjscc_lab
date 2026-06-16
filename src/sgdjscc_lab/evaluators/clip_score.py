@@ -36,6 +36,12 @@ logger = logging.getLogger(__name__)
 # CLIP input size
 _CLIP_SIZE = 224
 
+# Process-level cache of loaded CLIP models keyed by (model_name, device_str).
+# Multiple CLIPScoreEvaluator instances (shared eval CLIP, packet extractor,
+# early-exit verifier, …) thus reuse a single set of weights — one GPU instance
+# and one "Loaded CLIP model" log per (model, device) instead of one per wrapper.
+_CLIP_MODEL_CACHE: dict = {}
+
 
 def _tensor_to_pil_list(tensor: torch.Tensor) -> List[Image.Image]:
     """Convert [N, 3, H, W] float [0,1] tensor to list of PIL images."""
@@ -81,6 +87,12 @@ class CLIPScoreEvaluator:
     def _load(self):
         if self._model is not None:
             return
+        cache_key = (self.model_name, str(self.device))
+        cached = _CLIP_MODEL_CACHE.get(cache_key)
+        if cached is not None:
+            # Reuse the already-loaded weights (no second GPU instance / log).
+            self._model, self._preprocess = cached
+            return
         try:
             import clip
         except ImportError as exc:
@@ -89,6 +101,7 @@ class CLIPScoreEvaluator:
             ) from exc
         self._model, self._preprocess = clip.load(self.model_name, device=self.device)
         self._model.eval()
+        _CLIP_MODEL_CACHE[cache_key] = (self._model, self._preprocess)
         logger.info("Loaded CLIP model: %s on %s", self.model_name, self.device)
 
     def _encode_images(self, tensor: torch.Tensor) -> torch.Tensor:

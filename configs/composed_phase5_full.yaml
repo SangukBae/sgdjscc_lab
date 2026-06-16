@@ -1,0 +1,81 @@
+# configs/composed_phase5_full.yaml – full-stack Phase 4/5 evaluation preset
+#
+# Purpose:
+# - exercise the Phase 5 path end-to-end instead of the light default preset
+# - keep the original composed_phase5.yaml unchanged
+# - enable packet-aware evaluation, adaptive guidance, channel conditioning,
+#   acceleration, SRS-v2, VQA-backed hallucination checks, and regeneration search
+#
+# Usage:
+#   python scripts/evaluate.py --config configs/composed_phase5_full.yaml --snr 0
+
+_defaults_:
+  - channel/rayleigh
+  - model/sgdjscc
+  - model/channel_conditioned
+  - infer/awgn
+  - eval/default
+  - acceleration/default
+  - eval/phase5
+
+# ---- Phase master switches ---------------------------------------------------
+use_phase4: true
+use_phase5: true
+
+# ---- Runtime / channel -------------------------------------------------------
+snr_db: 0
+csi: "perfect"                 # switch to "imperfect" or "none" for harsher tests
+condition_mode: "auto"
+
+# ---- Outputs ----------------------------------------------------------------
+csv_path: "../outputs/results_phase5_full.csv"
+packet_dir: "../outputs/packets_phase5_full"
+
+# ---- Phase 4 packet-aware evaluation -----------------------------------------
+use_packet_eval: true
+packet_use_segmentation: false
+packet_use_depth: false
+packet_blend: 0.5
+use_packet_regeneration: true
+
+# ---- Phase 4 adaptive guidance -----------------------------------------------
+use_adaptive_guidance: true
+
+# ---- Phase 5-B acceleration --------------------------------------------------
+acceleration:
+  sampler: "ddim"
+  sampler_steps: 20
+  consistency_steps: 2
+  sigma_min: 0.002
+  sigma_max: 2.0
+  rho: 7.0
+
+  early_exit: true
+  early_exit_mode: "intra_sampler"
+  early_exit_metric: "srs_v2"
+  early_exit_check_interval: 5
+  early_exit_checkpoints: [5, 10, 20, 50]
+  srs_threshold: 0.80
+  improvement_delta: 0.01
+  min_steps: 5
+
+  dynamic_routing: true
+  routing_high: 5
+  routing_mid: 15
+  routing_low: 40
+
+  benchmark_runs: 3
+  benchmark_warmup: 1
+
+# ---- Phase 5-C verifier / search ---------------------------------------------
+use_srs_v2: true
+use_vqa_hallucination: true
+vqa_backend:
+  type: "blip2"                # falls back to CLIP if backend init fails
+  model_id: null
+  device: "cpu"
+
+use_regeneration_search: true
+regeneration_search:
+  max_strategies: 3
+  verify_metric: "srs_v2"

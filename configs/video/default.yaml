@@ -1,0 +1,31 @@
+# configs/video/default.yaml – Phase 4-B temporal pipeline settings
+#
+# Loaded alongside the main config for video / keyframe evaluation
+# (scripts/evaluate_video.py).  All fields are optional and default-safe so the
+# image evaluation path is unaffected.
+
+# ── Master switch ─────────────────────────────────────────────────────────────
+use_temporal: true                     # Enable the keyframe/inter-frame pipeline
+
+# ── Scene-change detection ────────────────────────────────────────────────────
+scene_change:
+  threshold: 0.35                      # combined-distance threshold for a new scene
+  hist_weight: 1.0                     # colour-histogram delta weight (model-free)
+  clip_weight: 0.0                     # CLIP image-image distance weight (needs CLIP)
+  lpips_weight: 0.0                    # LPIPS distance weight (needs lpips package)
+  hist_bins: 16
+  use_lpips: false
+
+# ── Keyframe extraction ───────────────────────────────────────────────────────
+keyframe:
+  max_gop: 12                          # force a refresh keyframe every N frames
+
+# ── Temporal pipeline ─────────────────────────────────────────────────────────
+temporal:
+  reuse_threshold: 0.2                 # delta magnitude below which a frame reuses
+                                       # the keyframe reconstruction (no diffusion)
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
+keyframe_json: "../outputs/keyframes.json"        # GOP / keyframe structure
+temporal_csv: "../outputs/temporal_metrics.csv"   # per-sequence temporal metrics
+frame_log_csv: "../outputs/temporal_frames.csv"   # per-frame log

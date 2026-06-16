@@ -112,4 +112,34 @@ RESULT_COLUMNS: List[str] = [
     "additional_object_rate",
     "hallucination_score",
     "semantic_reliability_score",
+    # FID is a dataset/SNR-level metric (paper §VI): the same value is filled into
+    # every row of an SNR group (None when the metric is disabled / backend absent).
+    "fid",
+    # Which FID feature backend produced `fid`: "inception" (true Inception-FID),
+    # "proxy" (injected non-Inception feature_fn — NOT comparable to paper FID),
+    # "unavailable" / "" (no backend). Persisted so results files are unambiguous.
+    "fid_backend",
 ]
+
+#: Additional columns emitted when packet-aware evaluation is enabled
+#: (Phase 4-A).  Appended to RESULT_COLUMNS so legacy rows are unaffected;
+#: extra row keys are silently dropped by CSVLogger when not in the header.
+PACKET_RESULT_COLUMNS: List[str] = [
+    "srs_base",
+    "srs_packet",
+    "srs_v2",
+    "object_match_rate",
+    "relation_consistency",
+    "attribute_consistency",
+    "segmentation_consistency",
+    "scene_match",
+    "missing_object_count",
+    "additional_object_count",
+    "relation_error_count",
+    "attribute_error_count",
+    "guidance_regime",
+    "regeneration_strategy",
+]
+
+#: Full column set for packet-aware evaluation runs.
+PACKET_RESULT_COLUMNS_FULL: List[str] = RESULT_COLUMNS + PACKET_RESULT_COLUMNS

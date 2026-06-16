@@ -44,7 +44,9 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
 from sgdjscc_lab.config import load_config, merge_cli_overrides
-from sgdjscc_lab.utils.csv_logger import CSVLogger, RESULT_COLUMNS
+from sgdjscc_lab.utils.csv_logger import (
+    CSVLogger, RESULT_COLUMNS, PACKET_RESULT_COLUMNS_FULL,
+)
 from sgdjscc_lab.utils.metrics_io import summarize_metrics, format_summary_table
 from sgdjscc_lab.pipelines.eval_pipeline import EvalContext, evaluate_single_snr, evaluate_snr_sweep
 
@@ -105,6 +107,21 @@ def _parse_args() -> argparse.Namespace:
         "--no-clip",
         action="store_true",
         help="Disable CLIP / SRS metrics (quality metrics only)",
+    )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        choices=["paper", "extended", "full"],
+        help="Metric profile (overrides config.metrics / metrics_profile): "
+             "paper = PSNR/LPIPS/CLIP/FID (the paper's set); "
+             "extended = + SSIM/object/hallucination/SRS; full = extended + FID.",
+    )
+    parser.add_argument(
+        "--require-real-fid",
+        action="store_true",
+        help="Fail fast unless a real torchvision Inception-FID backend is "
+             "available (rejects proxy/unavailable FID). Use for paper-comparable "
+             "numbers; requires 'fid' to be an enabled metric.",
     )
     return parser.parse_args()
 
@@ -174,39 +191,132 @@ def main() -> None:
         if srs_weights_raw is not None else None
     )
 
-    # ── Build enabled_metrics (config base, then apply --no-clip) ────────────
+    # ── Build enabled_metrics ────────────────────────────────────────────────
+    # Precedence: --profile (CLI) > config.metrics_profile > config.metrics list
+    # > built-in extended default. Profiles separate the paper's reported metric
+    # set (PSNR/LPIPS/CLIP/FID) from the ETRI/extended metrics (SSIM/SRS/…).
+    from sgdjscc_lab.utils.metric_profiles import (
+        resolve_profile, columns_for_metrics, NON_PAPER_METRICS,
+    )
     _clip_metrics = {
         "clip_image_image", "clip_text_image",
         "object_preservation_rate", "missing_object_rate",
         "additional_object_rate", "hallucination_score",
         "semantic_reliability_score",
     }
-    if cfg_metrics is not None:
-        enabled: set = set(_OC.to_container(cfg_metrics, resolve=True))
+    cfg_profile = _OC.select(cfg, "metrics_profile", default=None)
+    active_profile = args.profile or (str(cfg_profile) if cfg_profile else None)
+    if active_profile is not None:
+        enabled: set = resolve_profile(active_profile)
+        logger.info("Metric profile: %s → %s", active_profile, sorted(enabled))
+    elif cfg_metrics is not None:
+        enabled = set(_OC.to_container(cfg_metrics, resolve=True))
     else:
         enabled = {"psnr", "ssim", "lpips"} | _clip_metrics
 
     if args.no_clip:
         enabled -= _clip_metrics
 
+    # Flag non-paper metrics that are active (transparency for paper comparisons).
+    _non_paper_active = sorted(enabled & NON_PAPER_METRICS)
+    if _non_paper_active:
+        logger.info("Active non-paper (ETRI/extended) metrics: %s", _non_paper_active)
+
+    # ── Phase master switches ─────────────────────────────────────────────────
+    from sgdjscc_lab.phase_gates import effective_flag as _eff, phase4_enabled, phase5_enabled
+    _p4 = phase4_enabled(cfg)
+    _p5 = phase5_enabled(cfg)
+    if not _p4:
+        logger.info("use_phase4=false: Phase 4 features disabled.")
+    if not _p5:
+        logger.info("use_phase5=false: Phase 5 features disabled.")
+
+    # ── Phase 4-A packet-aware settings (gated by use_phase4) ────────────────
+    use_packet = _eff(cfg, "use_packet_eval", phase=4)
+    packet_weights_raw = _OC.select(cfg, "semantic_packet_weights", default=None)
+    packet_weights = (
+        _OC.to_container(packet_weights_raw, resolve=True)
+        if packet_weights_raw is not None else None
+    )
+    packet_blend = float(_OC.select(cfg, "packet_blend", default=0.5))
+
+    # ── Phase 5-C SRS-v2 + VQA + regeneration search (gated by use_phase5) ──
+    use_srs_v2 = _eff(cfg, "use_srs_v2", phase=5)
+    use_vqa = _eff(cfg, "use_vqa_hallucination", phase=5)
+    use_regen_search = _eff(cfg, "use_regeneration_search", phase=5)
+    srs_v2_weights_raw = _OC.select(cfg, "srs_v2_weights", default=None)
+    srs_v2_weights = (
+        _OC.to_container(srs_v2_weights_raw, resolve=True)
+        if srs_v2_weights_raw is not None else None
+    )
+    vqa_backend_raw = _OC.select(cfg, "vqa_backend", default=None)
+    vqa_backend_cfg = (
+        _OC.to_container(vqa_backend_raw, resolve=True)
+        if vqa_backend_raw is not None else None
+    )
+
+    # Resolve the compute device up front so the eval-side models (CLIP / packet
+    # BLIP2 / VQA) run on the SAME device as the loaded models.  Otherwise they
+    # default to CPU and fp16 (Half) ops crash ("slow_conv2d_cpu not implemented
+    # for 'Half'"), silently emptying the semantic packets.
+    from sgdjscc_lab.runtime import resolve_device, build_models
+    from sgdjscc_lab.utils.seed import set_global_seed
+    device = resolve_device(cfg.device)
+
     eval_ctx = EvalContext(
         enabled_metrics=enabled,
         clip_model_name=clip_model_name,
         srs_weights=srs_weights,
+        packet_weights=packet_weights,
+        packet_blend=packet_blend,
+        use_srs_v2=use_srs_v2,
+        srs_v2_weights=srs_v2_weights,
+        use_vqa_hallucination=use_vqa,
+        vqa_backend_cfg=vqa_backend_cfg,
+        device=device,
     )
+    if use_srs_v2:
+        vqa_type = (vqa_backend_cfg or {}).get("type", "clip_fallback") if use_vqa else "off"
+        logger.info("SRS-v2 verifier enabled (VQA=%s).", vqa_type)
+    if use_regen_search:
+        logger.info("Regeneration search enabled.")
+
+    # CSV header: packet/SRS-v2/regen runs emit the extended packet columns;
+    # otherwise a selected profile narrows the header to its metric set, derived
+    # from the FINAL `enabled` set so --no-clip (and any other narrowing) keeps the
+    # header and the computed metrics in sync (no orphan CLIP columns), else default.
+    if use_packet or use_srs_v2 or use_regen_search:
+        csv_columns = PACKET_RESULT_COLUMNS_FULL
+    elif active_profile is not None:
+        csv_columns = columns_for_metrics(enabled)
+    else:
+        csv_columns = RESULT_COLUMNS
+    if use_packet:
+        logger.info("Packet-aware evaluation enabled (srs_base / srs_packet).")
+
+    # ── --require-real-fid: fail fast before the expensive eval ──────────────
+    if args.require_real_fid:
+        if "fid" not in enabled:
+            sys.exit("Error: --require-real-fid but 'fid' is not an enabled metric. "
+                     "Use --profile paper/full or add 'fid' to metrics_profile/metrics.")
+        probe = eval_ctx._get_fid()
+        if not probe.ensure_backend():
+            sys.exit(
+                "Error: --require-real-fid but no real Inception backend is "
+                f"available (backend={probe.backend_name!r}). Install torchvision "
+                "and ensure the Inception-v3 weights can be downloaded/cached "
+                "(network on first use), then retry. To allow a proxy/None FID, "
+                "drop --require-real-fid.")
+        logger.info("Real Inception-FID backend verified (backend=inception).")
 
     # ── Load models ──────────────────────────────────────────────────────────
-    from sgdjscc_lab.runtime import resolve_device, build_models
-    from sgdjscc_lab.utils.seed import set_global_seed
-
     set_global_seed(2025)
-    device = resolve_device(cfg.device)
 
     logger.info("Building models…")
     models = build_models(cfg, device)
 
     # ── Run evaluation ───────────────────────────────────────────────────────
-    with CSVLogger(csv_path, fieldnames=RESULT_COLUMNS) as csv_log:
+    with CSVLogger(csv_path, fieldnames=csv_columns) as csv_log:
         if len(snr_list) == 1:
             result = evaluate_single_snr(
                 cfg, models, eval_ctx, snr_list[0], csv_logger=csv_log
@@ -224,6 +334,15 @@ def main() -> None:
     print("  Evaluation complete")
     print("=" * 66)
     print(format_summary_table(summary))
+
+    # FID is dataset/SNR-level (not in the per-metric mean table) — surface it with
+    # its backend so a proxy FID is never mistaken for paper-comparable Inception-FID.
+    fid_backends = {r.get("fid_backend") for r in all_rows if r.get("fid") is not None}
+    if fid_backends:
+        backend = next(iter(fid_backends)) if len(fid_backends) == 1 else "mixed"
+        note = "" if backend == "inception" else "  (NOT paper-comparable)"
+        print(f"\n  FID backend: {backend}{note}")
+
     print(f"\n  CSV saved to: {csv_path}")
 
 

@@ -1,0 +1,16 @@
+# configs/channel/fast_fading.yaml – Block / fast Rayleigh fading fragment (Phase 5-A)
+
+channel: fast_fading
+snr_db: 10
+block_length: 64      # latent elements sharing one gain (1 = per-symbol fast fading)
+csi: "imperfect"      # "perfect" | "imperfect" | "none"
+csi_error_std: 0.1
+
+# Fast-fading water-filling denoising (paper Algorithm 4). When true (and Phase 5
+# is enabled), inference routes the decode through the per-element water-filling
+# loop instead of the global step-matched decode. Needs perfect/imperfect CSI
+# (the bundle's per-element noise level); blind csi="none" has no equalized latent.
+# Default off. Real numbers need the MDTv2 checkpoint (routing is CPU-tested).
+use_water_filling: false
+water_filling:
+  steps: 50           # T in s = t - 1/T

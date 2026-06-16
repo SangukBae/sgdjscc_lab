@@ -10,6 +10,10 @@
 목표는, 동일한 AWGN 시맨틱 이미지 전송 파이프라인을 알고리즘적으로는 유사하게
 유지하면서 연구·확장을 위해 구조적으로 어떻게 재구성했는지 보여주는 것이다.
 
+> 문서 하단의 [논문 정합 비교](#논문-정합-비교-paper--sgdjscc_lab)는 **SGD-JSCC
+> 논문**과 `sgdjscc_lab` 구현이 **어디까지 일치/상이한지**를 paper-faithful /
+> paper-like / scaffold / 미구현으로 구분해 정리한다.
+
 ---
 
 ## 나란히 본 블록 다이어그램
@@ -128,3 +132,68 @@ Phase 2는 다음과 같이 이해해야 한다:
 
 - **Phase 1**: "원본 AWGN 추론을 재현 가능하게 만든다"
 - **Phase 3**: "평가, 더 풍부한 가이드, 연구 기능을 추가한다"
+
+---
+
+## 논문 정합 비교 (Paper ↔ sgdjscc_lab)
+
+위의 구조 비교(원본 `SGDJSCC/` ↔ `sgdjscc_lab`)와 달리, 이 절은 **SGD-JSCC
+논문**("Semantics-Guided Diffusion for Deep Joint Source-Channel Coding")의
+방법론과 `sgdjscc_lab` 구현의 **정합 수준**을 정리한다.
+
+### 충실도 framing
+
+**추론 경로 = paper-faithful**(원본 SGDJSCC 코드를 런타임 재사용). 그 위에 (A)
+재학습 scaffold, (B) 채널/CSI, (C) 평가가 보강됐으며, 각 항목을
+**paper-faithful / paper-like / scaffold / 미구현** 으로 구분한다.
+
+### 본 매핑 표
+
+| # | 논문 구성요소 | 코드 상태 | 충실도 | 비고 / 남는 차이 |
+|---|---|---|---|---|
+| 1 | 추론 forward-pass 전반 | 원본 repo 재사용 | **paper-faithful** | `_SCALING_FACTOR=15.45`, step matching, canny 재전송, blind SNR |
+| 2 | 연속 timestep DiT, sigmoid schedule(e3,τ0.7), f0 예측, 결정적 역과정 | `SigmoidNoiseScheduler` + 추론 | **paper-faithful(구조)** | — |
+| 3 | MDTv2 masked+unmasked DM 손실 | `TextDMStageRunner` | **paper-like** | 구조 일치 |
+| 4 | CFG 학습(null-conditioning) | `apply_cfg_label_dropout` (`train.dm.cfg_dropout_prob=0.1`) | **paper-like** | null=zeros(학습형 null token 아님), 텍스트 label만 dropout |
+| 5 | Step matching `m=S⁻¹(σ²/(σ²+\|h\|²))` | 추론 경로 + `inverse_beta_bar` | **paper-faithful** | — |
+| 6 | Text guidance(BLIP2, 완벽전송 가정) | `guidance/text_extractor` | **paper-faithful** | — |
+| 7 | Edge codec: 출력=foreground 확률, BCE+Dice | `EdgeJSCC` `arch=conv`(기본)\|**`vit`**(`EdgeJSCCViT`) + `edge_codec` stage | **paper-like** | ⚠️ ViT 구조 선택 가능(patch-embed+transformer)이나 WITT-exact 아님·미학습; SNR-adaln 투영은 **보류**(고정 SNR codec); 추론 ViT canny와 별개 |
+| 8 | ControlNet(첫 N블록 control, base DM frozen) | freeze 정책/구조 일치 | **paper-like** | 학습 Stage3는 edge **latent c** 직결(추론은 수신 edge map→VAE, 논문 근접) |
+| 9 | JSCC enc/dec MSE+λGAN(+LPIPS) | `JSCCStageLoss`(MSE+patch-GAN+**LPIPS**) | **scaffold→구조정렬** | LPIPS 결합 추가(공개 `MSE_LPIPS`와 정렬), 기본 off; patch-GAN 수치 미보장 |
+| 10 | Blind SNR 추정망 | 원본 `Prediction_Model` | **paper-faithful** | — |
+| 11 | MMSE 등화 `y/√(g²+σ²)` | `channels/measurement.py::mmse_equalize` | **paper-faithful(실수 gain)** | ⚠️ 복소 위상 `e^{-jφ}` 미재현(실수 gain 모델) |
+| 12 | Fast-fading water-filling denoising(Alg.4) | 루프+어댑터+CSI정책 + **runtime decode-swap**(`infer_pipeline::_run_water_filling_diffusion`, `cfg.use_water_filling` gated) + **patch별 evidence**(`_water_filling_noise_level`, `_build_evidence_bundle`가 `noise_level` 복사) | **알고리즘 paper-faithful / 배선 connected / 수치=stub 검증** | single-image·one-pass multi-patch 양쪽에서 patch별 `d`로 라우팅(전역 last_bundle 재사용 버그 수정). 라우팅·어댑터·patch별 선택 CPU 검증. ⚠️ 실제 **수치**만 MDTv2 체크포인트 필요 |
+| 13 | per-element 잡음레벨 `dᵢ`(eq.12) | `MeasurementBundle.noise_level`(g_hat 기준 일관) | **paper-faithful** | imperfect CSI도 `(f̃,d)` 동일 추정치로 일관(경고 표기) |
+| 14 | Phase 추정 + joint 반복 CSI(Alg.3) | `phase_est` 필드만 | **미구현/부분** | 전용 phase망·반복 루프 없음(AWGN/실수 fading엔 무관) |
+| 15 | 평가지표 PSNR/LPIPS/CLIP/**FID** | `evaluators/fid.py` + eval 연결 + `fid_backend` + **`--require-real-fid`** | **연결됨** | `--require-real-fid`로 proxy/unavailable이면 fail-fast; 실제 Inception은 torchvision/가중치(네트워크) 필요 → 세션 외 |
+| 16 | 지표 세트(논문 vs 확장) | `utils/metric_profiles.py`(paper/extended/full) | **정합/리포팅** | SSIM은 유지하되 비논문 플래그 |
+
+### 코드에 있으나 논문에 없음 (ETRI 확장 — 의도된 차이)
+
+SRS·hallucination·object-preservation 평가, Phase 4/5(packet-drop, video/temporal,
+regeneration search/loop, channel-conditioning encoder, consistency decoder/early-exit),
+controllers, SSIM, `end_to_end_ft`(extension) 등. 반대로 논문의 FID는 이제 연결됨(#15).
+
+### 남는 갭 / 미구현 (정직하게)
+
+- **water-filling 수치 산출**(#12): 알고리즘·어댑터·runtime decode-swap·patch별
+  evidence까지 **배선 연결 완료**(CPU stub 검증). 남은 건 실제 MDTv2 체크포인트로
+  fast-fading 복원 **수치**를 내는 부분뿐 → GPU/체크포인트 의존.
+- **phase/joint CSI 추정망(Alg.3)**(#14): 학습 필요 → 미구현.
+- **edge codec ViT 학습**(#7): conv/ViT 구조·선택·체크포인트 로드는 연결됨. ViT
+  codec의 baseline급 평가(학습 성능)는 데이터/컴퓨트 의존(현재 미학습).
+- **patch-GAN/LPIPS 수치**(#9), **~14M-pair / 250k-step DM 재현**: 데이터/컴퓨트 의존.
+- **실제 Inception-FID 수치**(#15): torchvision/가중치(네트워크) 의존 → 세션 외.
+
+### 검증 상태
+
+`ptest` 환경 기준 단위/통합·synthetic 테스트 전부 통과(라우팅·어댑터·patch별
+evidence·CSI 정책·ViT codec·FID fail-fast·LPIPS 결합 포함). 단, **real-model stage
+smoke / 실제 DM water-filling 수치 / Inception-FID 수치**는 체크포인트·GPU·네트워크
+의존이라 코드 경로·테스트 내용 기준으로만 검증됨(수치 재현은 별도).
+
+### 관련 문서
+
+- [training_scaffold.md](./training_scaffold.md) — 학습 stage·edge codec·CFG·baseline/ablation
+- [phase5.md](./phase5.md) — 채널 조건화·MMSE 등화·water-filling(Alg.4)
+- [smoke_training.md](./smoke_training.md) — real-model smoke 검증 절차

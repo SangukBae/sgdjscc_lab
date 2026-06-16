@@ -1,0 +1,31 @@
+# configs/eval/phase5.yaml – Phase 5-C verifier / regeneration-search settings
+#
+# Loaded alongside eval/default.yaml; all off by default.
+
+# ── SRS-v2 (stronger verifier) ────────────────────────────────────────────────
+use_srs_v2: false
+srs_v2_weights:
+  w_base: 0.40
+  w_packet: 0.30
+  w_temporal: 0.20
+  w_hall: 0.10
+
+# ── VQA-style hallucination check ─────────────────────────────────────────────
+use_vqa_hallucination: false       # enable the VQA hallucination layer in SRS-v2
+vqa_backend:
+  type: "none"                     # "none" (CLIP fallback) | "mock" | "blip2" | "llava" | "mplug"
+  model_id: null                   # HF model id (backend default if null), e.g.
+                                   #   blip2 → Salesforce/blip2-opt-2.7b-coco (known-good here)
+                                   #   llava → llava-hf/llava-1.5-7b-hf
+  device: null                     # e.g. "cuda:0"; null → auto
+  # mock-backend behaviour:
+  # rules: {dog: "yes"}
+  # mock_answer: "no"
+
+# ── Multi-strategy regeneration search ────────────────────────────────────────
+use_regeneration_search: false
+regeneration_search:
+  max_strategies: 3
+  verify_metric: "srs_v2"          # "srs" | "srs_v2"
+  # Strategy pool is fixed in code: strong_text_weak_edge / weak_text_strong_edge
+  # / unconditional / channel_conditioned_retry (ordered by AdaptiveSearchPolicy).
