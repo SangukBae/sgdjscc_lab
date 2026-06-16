@@ -112,19 +112,26 @@ use_phase5: false   # Phase 5-A/B/C 전체 비활성화 (기본값)
 이제 stage 인식 학습 프레임워크가 논문 재현을 뒷받침한다
 ([training_scaffold.md](./training_scaffold.md) 참조).
 
-- **Stage 1 / 2 / 3** (`jscc`, `text_dm`, `controlnet`)이 각각 별도의 runner로
-  구현되며, stage별 데이터셋·손실·강제 freeze 정책을 가진다. Stage 3은 두 가지
-  엣지 transport를 지원한다: `shared_vae`와 전용 `edge_jscc` 링크
-  (`models/edge_jscc.py`).
+- **Core baseline = Stage 1 / 2 / 3** (`jscc`, `text_dm`, `controlnet`). 이
+  세 stage만이 baseline을 구성하며, 각각 별도 runner·데이터셋·손실·강제 freeze
+  정책을 가진다.
+- **Stage 3 엣지 transport**: baseline은 전용 `edge_jscc` 링크
+  (`models/edge_jscc.py`)이고, `shared_vae`(이미지 VAE stand-in)는 비교용
+  **ablation**이다.
+- **supporting stage `edge_codec`**: stage 3의 `edge_jscc` codec을 BCE+Dice로
+  실제 학습한다(encoder+projector+decoder). 그 체크포인트를 stage 3가 로드해
+  baseline을 구성한다 — codec은 더 이상 무작위 stand-in이 아니다.
 - **운영 규모**: step 기반 학습(`max_steps`, `save/val/log_every_steps`), gradient
   accumulation, AMP를 통해 논문의 약 250k-step DM 스케줄을 실제 데이터에서
   돌릴 수 있다. `global_step`은 체크포인트에 저장·복원된다.
-- **확장**: `end_to_end_ft` stage가 JSCC와 DM을 함께 미세조정한다.
+- **extension (baseline 아님)**: `end_to_end_ft`는 3-stage 이후의 *추가* 실험으로
+  JSCC와 DM을 함께 미세조정한다. baseline 비교표에는 포함하지 않는다.
 
-남은 차이: patch-GAN과 `edge_jscc` codec 가중치는 구조적 stand-in이며(논문의
-LDM-GAN / BCE-Dice로 학습된 엣지 codec이 아님), `end_to_end_ft` 복원 경로는 전체
-reverse 과정 대신 single-step denoise를 사용하고, 약 1,400만 pair 규모의 오픈
-데이터셋은 번들되어 있지 않다(loader 인터페이스만 제공).
+남은 차이: patch-GAN 가중치는 구조적 stand-in이고(논문 LDM-GAN 정확 수치 미보장),
+`edge_codec`의 학습 데이터·스케줄은 논문 수치와 동일함을 보장하지 않으며(구조·
+BCE+Dice 목적은 일치), `end_to_end_ft` 복원 경로는 전체 reverse 과정 대신
+single-step denoise를 사용하고, 약 1,400만 pair 규모의 오픈 데이터셋은 번들되어
+있지 않다(loader 인터페이스만 제공).
 
 ## 관련 문서
 

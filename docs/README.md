@@ -19,7 +19,8 @@
 | [etri_development_roadmap.md](./etri_development_roadmap.md) | ETRI 지향 개발 순서: 과제 목표 8가지와 우선순위 한계점 `1/2/5/6` 개선 |
 | [phase4.md](./phase4.md) | Phase 4 계획 + 구현 현황: 4-A 패킷 인식 검증기 + 적응형 가이드, 4-B 키프레임/시간적; 제공 모듈, config/CLI 사용법, 한계 |
 | [phase5.md](./phase5.md) | Phase 5 계획 + 구현 현황: 5-A 채널 조건화, 5-B 저지연/consistency, 5-C 검증기/search; 모듈별 `구현됨 / 연결됨 / 근사됨 / fallback / 미구현` 태그, 통합 현황, 해결된 한계 + 남은 한계 |
-| [training_scaffold.md](./training_scaffold.md) | 학습 CLI 설계: `scripts/train.py`, `data/`, `training/`, 파이프라인 모듈, 손실 스캐폴드, 체크포인트 전략, 확장 가이드 |
+| [training_scaffold.md](./training_scaffold.md) | 학습 CLI 설계: core baseline 3-stage(`jscc`/`text_dm`/`controlnet`), supporting `edge_codec`(BCE+Dice edge codec), extension `end_to_end_ft`; stage↔코드 매핑, edge transport(baseline `edge_jscc` vs ablation `shared_vae`), 체크포인트 전략 |
+| [smoke_training.md](./smoke_training.md) | real-model smoke 학습(최소 검증): stage별 체크포인트/데이터 준비, `--max-steps` 명령, 저장·resume 검증, 통과 기준, full training 전 남길 로그 |
 | [framework_comparison.md](./framework_comparison.md) | 원본 `SGDJSCC/` vs `sgdjscc_lab/` 구조 비교 |
 | [framework_file_roles.md](./framework_file_roles.md) | 실행 순서에 따른 파일별 프레임워크 역할 지도 |
 

@@ -76,40 +76,53 @@ python scripts/evaluate.py --config configs/dataset/kodak.yaml
 
 ## Training
 
-`sgdjscc_lab` provides a training CLI scaffold via `scripts/train.py`.
-The loop is wired end-to-end (data → forward → loss → checkpoint → log),
-but the **forward pass is a placeholder** until a differentiable training
-target is selected.  All existing inference/evaluation paths are unaffected.
+`sgdjscc_lab` provides a **stage-aware** training CLI via `scripts/train.py`.
+Each stage has a real, differentiable forward pass + loss; the core baseline is
+the paper's three stages (`jscc` → `text_dm` → `controlnet`), plus a supporting
+`edge_codec` step and an optional `end_to_end_ft` extension. All existing
+inference/evaluation paths are unaffected. Full design:
+[docs/training_scaffold.md](./docs/training_scaffold.md). To verify training
+actually runs with real models in 1–2 steps: [docs/smoke_training.md](./docs/smoke_training.md).
 
-### Dry-run (no checkpoints, no GPU required)
+### Core baseline stages
 
 ```bash
 cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
 conda activate ptest
 
-python scripts/train.py \
-    --config configs/composed_train.yaml \
-    --train-list /path/to/images/ \
-    --no-models --epochs 1
+# Stage 1 — JSCC (image-only, fixed AWGN SNR=10dB)
+python scripts/train.py --config configs/composed_train_jscc.yaml \
+    --train-list /data/imagenet/train/ --device cuda:0 --epochs 20
+
+# Stage 2 — text-guided DM (caption sidecars)
+python scripts/train.py --config configs/composed_train_text_dm.yaml \
+    --train-list /data/pairs/train/ --device cuda:0
+
+# Supporting — train the Stage-3 edge codec (BCE+Dice; no heavy checkpoints)
+python scripts/train.py --config configs/composed_train_edge_codec.yaml \
+    --train-list /data/edges/train/ --device cuda:0 --epochs 50
+
+# Stage 3 — edge ControlNet, BASELINE = dedicated edge_jscc transport
+#   (point train.controlnet.edge_jscc.checkpoint at the edge_codec result)
+python scripts/train.py --config configs/composed_train_controlnet.yaml \
+    --train-list /data/pairs/train/ --device cuda:0
 ```
 
-### Full run with GPU
+`--stage {jscc|text_dm|controlnet|edge_codec|end_to_end_ft}` overrides the
+config stage; `--max-steps N` switches to step-based training.
+
+### Dry-run (no checkpoints, no GPU required)
 
 ```bash
-python scripts/train.py \
-    --config configs/composed_train.yaml \
-    --train-list /data/kodak/train/ \
-    --val-list   /data/kodak/val/ \
-    --device cuda:0 --epochs 20
+python scripts/train.py --config configs/composed_train_jscc.yaml \
+    --train-list /path/to/images/ --no-models --epochs 1
 ```
 
 ### Resume from checkpoint
 
 ```bash
-python scripts/train.py \
-    --config configs/composed_train.yaml \
-    --train-list /data/train/ \
-    --resume outputs/checkpoints/latest.pth
+python scripts/train.py --config configs/composed_train_controlnet.yaml \
+    --train-list /data/train/ --resume outputs/checkpoints/controlnet/latest.pth
 ```
 
 ### Key config options (`configs/train/default.yaml`)
@@ -150,7 +163,7 @@ extension guide, see:
 - [x] Phase 3: Evaluation framework and research metrics.
 - [x] Phase 4: Packet-aware verifier + adaptive guidance (4-A) and keyframe / temporal pipeline (4-B).
 - [x] Phase 5 (scaffold): channel-conditioned diffusion (Rayleigh/fast-fading/packet-drop, 5-A), low-latency sampling/consistency/early-exit (5-B), SRS-v2 + regeneration search (5-C).
-- [x] Training CLI scaffold: `scripts/train.py`, config-driven training loop, loss scaffold, checkpoint save/load, JSONL logging, dry-run mode.
+- [x] Stage-aware training CLI: `scripts/train.py` with the paper's 3 core stages (`jscc`/`text_dm`/`controlnet`), a supporting `edge_codec` stage (BCE+Dice edge codec → Stage-3 `edge_jscc` baseline transport), and an optional `end_to_end_ft` extension; step/epoch modes, grad-accum, AMP, resume, JSONL logging; real-model smoke path (`docs/smoke_training.md`).
 
 ## Acknowledgements
 The development of `sgdjscc_lab` is based on the original `SGDJSCC` project and
