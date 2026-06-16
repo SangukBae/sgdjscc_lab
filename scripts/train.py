@@ -94,6 +94,8 @@ def _parse_args() -> argparse.Namespace:
                         "controlnet | edge_codec | csi_estimation | end_to_end_ft")
     p.add_argument("--max-steps", type=int, default=None,
                    help="Override train.max_steps (>0 → step-based training)")
+    p.add_argument("--batch-size", type=int, default=None,
+                   help="Override train.batch_size (useful for smoke/OOM recovery)")
     p.add_argument("--log-every-steps", type=int, default=None,
                    help="Override train.log_every_steps (step mode; set 1 to see "
                         "per-step loss — useful for smoke runs)")
@@ -150,6 +152,8 @@ def main() -> None:
         train_overrides["stage"] = args.stage
     if args.max_steps is not None:
         train_overrides["max_steps"] = args.max_steps
+    if args.batch_size is not None:
+        train_overrides["batch_size"] = args.batch_size
     if args.log_every_steps is not None:
         train_overrides["log_every_steps"] = args.log_every_steps
     if args.save_every_steps is not None:

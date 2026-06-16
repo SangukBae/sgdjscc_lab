@@ -49,7 +49,27 @@ CONTROLNET_BRANCH_ATTRS = ("en_inblocks_controlnet", "en_outblocks_controlnet")
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _unwrap_module(module):
+    """Return a real nn.Module from a wrapper object when possible.
+
+    Training bundles may carry lightweight wrappers such as TextExtractor /
+    EdgeExtractor that expose the underlying PyTorch module via ``model`` or
+    ``_model``. Freeze policy operates on parameters, so unwrap those wrappers
+    before touching ``requires_grad``.
+    """
+    if module is None or isinstance(module, nn.Module):
+        return module
+    inner = getattr(module, "model", None)
+    if isinstance(inner, nn.Module):
+        return inner
+    inner = getattr(module, "_model", None)
+    if isinstance(inner, nn.Module):
+        return inner
+    return None
+
+
 def _set_requires_grad(module, flag: bool) -> None:
+    module = _unwrap_module(module)
     if module is None:
         return
     for p in module.parameters():
@@ -66,6 +86,7 @@ def _controlnet_branches(denoiser) -> List[nn.Module]:
 
 
 def _trainable_param_count(module) -> int:
+    module = _unwrap_module(module)
     if module is None:
         return 0
     return sum(p.numel() for p in module.parameters() if p.requires_grad)

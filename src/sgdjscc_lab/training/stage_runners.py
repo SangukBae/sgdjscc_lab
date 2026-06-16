@@ -771,9 +771,15 @@ def _jscc_latent_encoder(jscc) -> Callable[[torch.Tensor], torch.Tensor]:
 
 
 def _clip_text_encoder(sem_pipeline, device) -> Callable[[List[str]], torch.Tensor]:
+    model_dtype = next(sem_pipeline.model.parameters()).dtype
+
     def _encode(captions: List[str]) -> torch.Tensor:
         labels = sem_pipeline.encode_text(captions, sem_pipeline.text_embed)
-        return labels.to(device)
+        # CLIP may emit fp16 embeddings on CUDA while the training denoiser stays
+        # in fp32. Align the label dtype to the denoiser so label_proj never sees
+        # Half x Float and stage-2/3 training matches the inference wrapper.
+        return labels.to(device=device, dtype=model_dtype)
+
     return _encode
 
 
