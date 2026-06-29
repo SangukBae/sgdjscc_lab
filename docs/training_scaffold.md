@@ -666,12 +666,207 @@ train:
 
 예시 config: [`composed_train_jscc_filelist.yaml`](../configs/composed_train_jscc_filelist.yaml).
 
+### (4) CC3M WebDataset → training pair 변환 (`scripts/prepare_cc3m.py`)
+
+대규모 text stage(stage 2/3) 학습 데이터로 `pixparse/cc3m-wds`를 쓴다. 다만
+데이터 로더(`data/datasets.py`)는 **WebDataset `.tar` shard를 직접 읽지 못하고**
+`이미지 + 같은 stem의 `.txt` 캡션 sidecar` 폴더만 소비한다. CC3M-WDS shard는 이미
+`{key}.jpg` + `{key}.txt`(캡션) + `{key}.json`(메타) triple을 담고 있으므로,
+**재캡셔닝 없이 추출 + stem 충돌 제거만** 하면 sidecar 포맷이 된다.
+
+```bash
+# 1) 어떤 결과가 나올지 먼저 dry-run (디스크에 아무것도 안 씀)
+python scripts/prepare_cc3m.py --split train --limit-shards 2 --dry-run
+
+# 2) train shard 일부만 변환 (현실적 부분 변환 — 전체 575 shard를 한 번에 X)
+python scripts/prepare_cc3m.py --split train --limit-shards 8
+python scripts/prepare_cc3m.py --split val   --limit-shards 1
+
+# 3) 총 샘플 수 상한 (빠른 stage-2 smoke set 만들 때)
+python scripts/prepare_cc3m.py --split train --limit-shards 8 --max-samples 2000
+
+# 4) 경로/글롭/덮어쓰기 커스텀
+python scripts/prepare_cc3m.py \
+    --shard-dir data/cc3m_wds --output-dir data/cc3m_pairs \
+    --split train --shard-glob 'cc3m-train-00*.tar' --overwrite
+```
+
+산출물(저장소 학습 포맷 그대로). **기본 레이아웃은 shard별 하위폴더**다 —
+전체 CC3M(~290만 쌍 ≈ 580만 파일)을 한 폴더에 평평하게 쌓으면 inode/파일시스템
+성능이 무너지므로, shard당 하위폴더(`<split>/<shard_tag>/`)로 분산한다. 로더는
+재귀 스캔(`_list_images` → `rglob`)이라 split 루트만 `--train-list`로 주면
+하위폴더를 투명하게 읽는다:
+
+```
+data/cc3m_pairs/
+├── train/
+│   ├── train0000/                       # shard별 하위폴더 (기본)
+│   │   ├── train0000_000000000.jpg
+│   │   └── train0000_000000000.txt      # 캡션 sidecar (stem 일치)
+│   ├── train0000/.shard_done            # sequential 모드 완료 마커(로더엔 안 보임)
+│   └── train0001/ …
+└── val/
+    └── val0000/ …
+```
+
+소수 shard만 다룰 땐 `--flat`으로 평평한 단일 폴더 출력도 가능하다
+(`<split>/train0000_000000000.jpg`). full-scale에선 **쓰지 말 것.**
+
+| 인자 | 의미 |
+|------|------|
+| `--shard-dir` | shard 디렉터리 (기본 `data/cc3m_wds`, 상대경로는 repo root 기준) |
+| `--output-dir` | 출력 루트 (기본 `data/cc3m_pairs`; pair는 `<out>/<split>/`에) |
+| `--split train\|val` | 기본 glob(`cc3m-train-*` / `cc3m-validation-*`)과 하위폴더 선택 |
+| `--shard-glob` | glob 직접 지정 (split 기본값 덮어씀) |
+| `--limit-shards N` | 앞에서 N개 shard만 처리 (부분 변환) |
+| `--max-samples N` | 누적 N pair 작성 후 중단 (sequential 모드와는 비호환) |
+| `--flat` | shard 하위폴더 대신 split 루트에 평평하게 출력 (소수 shard 전용; full-scale·sequential 금지) |
+| `--overwrite` | 비어있지 않은 출력 split을 **재생성**(쓰기 전에 split 폴더를 비움) |
+| `--append` | **sequential append**: split을 비우지 않고 새 shard만 이어서 추가(이미 변환된 shard는 skip). shard별 임시 디렉터리 staging → 원자적 commit |
+| `--delete-shard-on-success` | 각 shard 출력이 **commit 검증된 뒤에만** 원본 `.tar` 삭제(디스크 절약). sequential 경로 활성화 |
+| `--fail-on-existing` | sequential 모드에서 이미 변환된 shard(또는 마커 없는 기존 출력)를 만나면 skip 대신 **중단**(엄격 재실행 감지) |
+| `--rebuild-unmarked` | sequential 모드에서 마커 없는 기존 출력(legacy/`--overwrite` 결과)을 adopt하지 않고 **재빌드**. 기본은 adopt(마커 스탬프 후 skip) |
+| `--tmp-dir DIR` | sequential staging 위치(기본 `<output-dir>/.cc3m_tmp_<split>`; split 밖·동일 FS 권장) |
+| `--dry-run` | 스캔/카운트만, 파일 미작성·tar 미삭제. **sequential `--dry-run`은 실제 run과 동일하게** 완료 shard를 skip으로 미리보기 |
+
+- **shard별 하위폴더(기본)**: 디렉터리당 한 shard(~5k 쌍)만 두어 full-scale에서
+  단일 폴더에 수백만 파일이 몰리는 inode/파일시스템 병목을 피한다. 로더가 재귀
+  스캔하므로 split 루트 경로만 주면 된다.
+- **stem 충돌 방지**: CC3M의 key(`000000000`…)는 **shard마다 reset**되어 모든
+  shard에 `000000000`이 있다. shard 태그(`train0000_`)를 prefix해 `(shard,key)`를
+  전역 유일하게 만든다 — 하위폴더든 `--flat`이든 이미지/캡션 stem은 일치한다.
+- **건너뛰기 + 카운트**: 깨진 이미지(PIL `verify`)·이미지 없음·캡션 없음/공백
+  샘플은 건너뛰고 요약 로그에 개수를 남긴다(치명적 에러 아님). `.txt`가 비면
+  `.json`의 `caption` 필드로 폴백한다.
+- **비파괴 + 재생성**: 비어있지 않은 출력 split은 `--overwrite` 없이는 거부한다.
+  `--overwrite`는 "추가"가 아니라 **재생성**이다 — 쓰기 전에 `<output>/<split>/`을
+  통째로 비우므로, 더 작은 `--max-samples`로 재실행하면 데이터셋이 그만큼 **줄고**,
+  flat↔하위폴더 레이아웃이 한 split에 **혼재하지 않는다**(혼재 시 재귀 로더가
+  같은 stem을 중복 카운트해 분포를 왜곡한다). 원본 shard는 절대 건드리지 않는다.
+
+##### 세 가지 모드 — convert / regenerate / sequential append
+
+| 모드 | 트리거 | 비어있지 않은 split | 파괴적 동작 | 용도 |
+|------|--------|--------------------|-------------|------|
+| **convert** (기본) | (없음) | **거부** | 없음 | 빈 split에 일괄 변환 |
+| **regenerate** | `--overwrite` | **비우고** 재작성 | split 폴더 wipe | 전체 재생성·레이아웃 교체 |
+| **sequential append** | `--append` / `--delete-shard-on-success` | **유지**하고 이어붙임 | (옵션 시) 성공한 shard의 `.tar` 삭제 | full-scale을 디스크 압박 없이 순차 변환 |
+
+전체 CC3M를 풀면 tar(~수백 GB)와 변환 결과가 동시에 디스크를 점유한다.
+**sequential append + delete**는 "shard 1개 변환 → 검증 → 그 tar 삭제"를 반복해
+이 압박을 없앤다. 안전장치:
+
+- **원자적 commit**: 각 shard는 split 바깥 staging
+  (`<output>/.cc3m_tmp_<split>/<tag>.incoming/`)에 먼저 추출되고, 전체가 성공한
+  뒤에만 완료 마커(`.shard_done`)와 함께 `<split>/<tag>/`로 **원자적 rename**된다.
+  따라서 중간에 죽어도 split 안에는 **반쪽짜리 shard가 절대 안 남는다**(staging은
+  split 밖이라 학습 로더에도 안 잡힌다). 다음 실행이 stale staging을 정리하고 그
+  shard를 재시도한다.
+- **tar 삭제는 commit 검증 후에만**: `.tar` 삭제는 출력이 원자적으로 commit된
+  *뒤*에만 일어난다. 실패한 shard의 tar는 보존되고 요약에 `shards failed`로 집계,
+  종료코드도 0이 아니다(성공한 shard는 그대로 유지).
+- **재실행 멱등성**: `--append`는 `.shard_done`이 있는 shard를 skip하므로 같은
+  명령을 반복하면 남은 shard만 이어서 처리한다. 이미 변환된 shard의 tar가 아직
+  있으면(예: 재다운로드) `--delete-shard-on-success`가 그 tar도 정리한다.
+- **마커 없는 기존 출력 = adopt**: legacy/`--overwrite`로 만든(=마커 없는) 출력
+  디렉터리를 sequential이 만나면, 기본적으로 **adopt**한다 — 그 안의 pair 수를 세어
+  `.shard_done` 마커를 스탬프하고 skip한다(좋은 데이터를 재빌드하지 않음). 원자적
+  commit은 마커 없는 *비어있지 않은* 디렉터리를 절대 안 남기므로, 이런 디렉터리는
+  다른 경로(legacy/overwrite)에서 만든 **완전한** 출력으로 간주해도 안전하다.
+  강제로 재빌드하려면 `--rebuild-unmarked`를 준다. **dry-run도 동일하게** adopt/skip을
+  미리보기한다(용량·재개 계획이 실제 run과 일치).
+- **금지 조합**: sequential은 `--flat`(shard 단위 skip/commit 불가)·`--max-samples`
+  (shard를 중간에 끊으면 부분 출력을 done으로 표시/삭제할 위험)와 비호환이며
+  실행 전에 명확한 에러로 막는다. 순차 실행의 분량은 `--limit-shards`로 조절한다.
+
+> ⚠️ **안전 주의**: `--delete-shard-on-success`는 원본 tar를 **영구 삭제**한다.
+> 재다운로드 비용이 크거나 원본을 보존해야 하면 이 플래그 없이 `--append`만 써서
+> 변환만 하고 tar는 수동으로 정리하라. `--tmp-dir`는 출력과 **같은 파일시스템**에
+> 두어야 rename이 원자적이다(다른 FS면 복사 후 교체로 폴백 — 여전히 안전하지만
+> 느리다).
+
+검증(이 저장소에서 실제 수행): `--limit-shards 2 --dry-run` → shard당 5046 pair
+(15138 member / 3). 기본 하위폴더 레이아웃으로 2 shard(6000 쌍) 변환 시
+`train/train0000/`·`train/train0001/`로 분산되고, split 루트(`/.../train`)를 준
+`TextImageDataset`가 재귀로 6000개를 모두 로드(`image [3,128,128]` + 중첩 경로의
+sidecar 캡션). `--overwrite` 재생성도 확인: 20쌍 출력 후 `--max-samples 5
+--overwrite` 재실행 → 정확히 5쌍만 남고(잔존 파일 없음), 하위폴더 출력에
+`--flat --overwrite`로 재실행해도 하위폴더가 사라져 레이아웃 혼재가 없었다.
+**sequential append + delete**(임시 sandbox, 원본 미사용): 2 shard commit 후
+해당 tar 2개 삭제, 재실행 시 done shard skip + 남은 shard만 처리,
+손상 tar는 FAILED로 표시되고 tar 보존·split에 부분 출력 없음·종료코드 1,
+`.shard_done` 마커는 로더에 안 잡힘 확인. **dry-run 정확도**: 1 shard commit 후
+`--append --dry-run`이 그 shard를 `would SKIP (already converted)`로, 다음 shard만
+`would commit`으로 미리보기(실제 run과 일치). **adopt**: 마커를 지운 출력에
+`--append` 실행 시 재빌드 대신 `adopted existing output (stamped marker)` 후 skip,
+`--rebuild-unmarked`면 재빌드.
+시드 세트 `data/cc3m_pairs/{train,val}`는 **sequential 규약대로 마이그레이션**됨 —
+`train/train0000/`(5046쌍)·`val/val0000/`(840쌍) 모두 `.shard_done` 마커를 갖춘
+full-shard commit이라 그대로 `--append` 가능(재빌드 안 함). 원본 tar는 보존.
+
+#### 전체 흐름 예시 (이 머신 현재 상태 기준 → Stage 3까지)
+
+> 이 머신엔 이미 `outputs/checkpoints/text_dm_coco_json/latest.pth`(진행 중인
+> Stage 2 체크포인트)가 있다. 따라서 **주 흐름은 "이어서 학습(resume)"** 이다.
+> 아래 (2)가 기본 경로이고, "처음부터 새로 시작"은 그 아래 선택지로 둔다.
+
+```bash
+cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
+conda activate ptest
+
+# (0) CC3M-WDS는 이미 data/cc3m_wds/ 아래에 다운로드되어 있다고 가정.
+
+# (1) shard 일부 → training pair 변환 (train 8 shard ≈ 4만 쌍, val 1 shard)
+#     기본 shard별 하위폴더 레이아웃 → split 루트만 --train-list로 넘기면 된다.
+python scripts/prepare_cc3m.py --split train --limit-shards 8
+python scripts/prepare_cc3m.py --split val   --limit-shards 1
+
+# (2) [주 흐름] Stage 2 — 기존 체크포인트에서 이어서 학습 (resume)
+python scripts/train.py --config configs/composed_train_text_dm.yaml \
+    --train-list data/cc3m_pairs/train --val-list data/cc3m_pairs/val \
+    --device cuda:0 --max-steps 250000 \
+    --resume outputs/checkpoints/text_dm_coco_json/latest.pth
+#    └ (선택) 처음부터 새로 시작하려면 --resume 없이 동일 명령을 쓴다.
+
+# (3) Stage 2 산출물 → 추론용 backbone export
+#     (resume 산출물 디렉터리 그대로: text_dm_coco_json/best.pth)
+python scripts/export_checkpoint.py --stage text_dm \
+    --input outputs/checkpoints/text_dm_coco_json/best.pth \
+    --output checkpoints/diffusion_backbone.pth
+
+# (4) Stage 3 — edge ControlNet 학습 (같은 pair 폴더, edge는 on-the-fly canny)
+python scripts/train.py --config configs/composed_train_controlnet.yaml \
+    --train-list data/cc3m_pairs/train --val-list data/cc3m_pairs/val \
+    --device cuda:0
+python scripts/export_checkpoint.py --stage controlnet \
+    --input outputs/checkpoints/controlnet/best.pth \
+    --output checkpoints/diffusion_controlnet.pth
+```
+
+> **데이터를 늘리는 두 방법**:
+> - **재생성**: `--limit-shards`를 키워(또는 생략=전체) `--overwrite`로 split을
+>   비우고 다시 쓴다 — shard 수를 늘린 명령이 곧 새 전체 데이터셋이 된다(잔존 파일·
+>   레이아웃 혼재 없음). 디스크에 tar+출력을 동시에 둘 여유가 있을 때.
+> - **순차 추가(권장, full-scale)**: 디스크가 빠듯하면 아래처럼 shard를 하나씩
+>   변환하며 성공한 tar를 바로 지운다. 같은 명령을 반복하면 남은 shard만 이어서
+>   처리하므로 중단/재개가 자유롭다.
+>   ```bash
+>   # 한 번에 N개씩 끊어서(원하면 --limit-shards 생략 → 전체) — 안전하게 재개 가능
+>   python scripts/prepare_cc3m.py --split train --append \
+>       --delete-shard-on-success --limit-shards 50
+>   python scripts/prepare_cc3m.py --split val   --append --delete-shard-on-success
+>   ```
+>   `--delete-shard-on-success`는 **commit 검증된 shard의 tar만** 지운다(실패 tar 보존).
+>   원본 tar를 남기고 싶으면 `--delete-shard-on-success` 없이 `--append`만 쓴다.
+> full-scale 변환은 기본 shard별 하위폴더 레이아웃을 유지하라(`--flat`/`--max-samples`는
+> sequential과 비호환).
+
 ### stage별 데이터 적용 (요약)
 
 | stage | sidecar | coco_json/multi_manifest | file_list | caption 생성 필요? |
 |-------|---------|--------------------------|-----------|--------------------|
 | `jscc`/`edge_codec`/`csi_estimation` | — (image-only) | — | ✅ | 불필요 |
-| `text_dm`/`controlnet` | ✅ | ✅ | ✅ | celeba는 필요(generate_captions) |
+| `text_dm`/`controlnet` | ✅ | ✅ | ✅ | celeba는 필요(generate_captions); CC3M은 `prepare_cc3m.py` 변환만 |
 
 테스트: [`tests/test_data_extensions.py`](../tests/test_data_extensions.py) — sidecar 회귀,
 coco_json first/longest/random, file_list(절대/상대), caption 생성, controlnet canny+sidecar.
