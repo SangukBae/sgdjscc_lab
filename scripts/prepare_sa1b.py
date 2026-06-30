@@ -268,8 +268,18 @@ def run(shards: List[Path], out_root: Path, tmp_root: Path,
                 shard.unlink(); counters["tars_deleted"] += 1
                 logger.info("%s %-14s tar deleted (output already verified)", prog, shard.name)
             continue
-        if final_dir.exists():                   # unmarked leftover → rebuild
-            logger.warning("%s %-14s unmarked/partial output — rebuilding", prog, shard.name)
+        if final_dir.exists():                   # output dir exists but has no marker
+            # A committed shard always carries its `.shard_done` marker (it is
+            # stamped before the atomic rename), so an *unmarked* final dir is an
+            # ambiguous leftover (legacy/external/partial). Don't destroy it by
+            # default — skip and keep the tar. `--rebuild-unmarked` opts into wiping.
+            if not args.rebuild_unmarked:
+                counters["shards_unmarked"] += 1
+                logger.warning("%s %-14s unmarked output exists — skipping (tar kept; "
+                               "pass --rebuild-unmarked to wipe + rebuild)", prog, shard.name)
+                continue
+            logger.warning("%s %-14s unmarked output — wiping + rebuilding "
+                           "(--rebuild-unmarked)", prog, shard.name)
             shutil.rmtree(final_dir, ignore_errors=True)
 
         try:
@@ -310,6 +320,13 @@ def dry_run(shards: List[Path], out_root: Path, args: argparse.Namespace,
             if args.delete_shard_on_success:
                 logger.info("%s %-14s would delete tar (verified)", prog, shard.name)
             continue
+        if final_dir.exists():                   # unmarked leftover (see run())
+            if not args.rebuild_unmarked:
+                counters["shards_unmarked"] += 1
+                logger.warning("%s %-14s would SKIP (unmarked output exists; "
+                               "tar kept; needs --rebuild-unmarked)", prog, shard.name)
+                continue
+            logger.warning("%s %-14s would WIPE + rebuild (--rebuild-unmarked)", prog, shard.name)
         try:
             with tarfile.open(shard, "r") as tar:
                 n = _extract_images(tar, final_dir, counters=counters, dry_run=True)
@@ -346,9 +363,10 @@ def _parse_args() -> argparse.Namespace:
                    help="DELETE each source .tar after its output is committed AND a "
                         "sample image decodes (verified). Failed shards keep their tar.")
     p.add_argument("--rebuild-unmarked", action="store_true",
-                   help="Rebuild an existing output dir that lacks a completion marker "
-                        "(default: such a dir is wiped + rebuilt anyway, since a "
-                        "marker-less dir is a partial/legacy leftover).")
+                   help="If an output dir exists WITHOUT a completion marker, wipe and "
+                        "rebuild it. Default: such a dir is left untouched and the shard "
+                        "is skipped (tar kept) — a marker-less dir is ambiguous "
+                        "(legacy/external/partial), so it is not destroyed automatically.")
     p.add_argument("--tmp-dir", default=None,
                    help="Staging dir (default <output-dir>/.sa1b_tmp; keep on the SAME "
                         "filesystem as the output for an atomic rename).")
@@ -390,6 +408,9 @@ def main() -> None:
     logger.info("──────── summary ────────")
     logger.info("shards converted:     %d", counters["shards_done"])
     logger.info("shards skipped (done):%d", counters["shards_skipped"])
+    if counters["shards_unmarked"]:
+        logger.info("shards skipped (unmarked, kept): %d  (use --rebuild-unmarked)",
+                    counters["shards_unmarked"])
     logger.info("shards failed:        %d", counters["shards_failed"])
     if counters["shards_empty"]:
         logger.info("shards empty:         %d", counters["shards_empty"])

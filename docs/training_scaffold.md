@@ -889,7 +889,10 @@ python scripts/prepare_sa1b.py --delete-shard-on-success
 `.shard_done` 마커 기록 → **그 다음에야** `--delete-shard-on-success` 시 원본 `.tar` 삭제.
 따라서 원본 tar와 추출 이미지가 **동시에 쌓이지 않는다**. 같은 명령을 다시 실행하면 **resume**:
 `.shard_done`이 있는 shard는 skip(그리고 `--delete-shard-on-success`면 그 tar 삭제),
-마커 없는 미완성 잔재(`*.incoming`/마커 없는 디렉터리)는 다시 만든다.
+임시 staging 잔재(`*.incoming`/temp)는 자동 정리한다. 반면 **마커 없는 최종 출력
+디렉터리**는 기본적으로 **건드리지 않고 skip(tar 보존)** 한다 — commit된 shard는 항상
+마커를 갖기 때문에, 마커 없는 디렉터리는 모호한 잔재(legacy/외부/부분)로 보고 자동 삭제하지
+않는다. 그것을 비우고 다시 만들려면 `--rebuild-unmarked`를 명시한다.
 
 | 플래그 | 의미 |
 |--------|------|
@@ -900,12 +903,17 @@ python scripts/prepare_sa1b.py --delete-shard-on-success
 | `--val-every K` | split 규칙: `shard_number % K == 0`이면 val (기본 10). shard **이름** 기준이라 tar 삭제에도 안정적 |
 | `--all-train` | 모든 shard를 train으로 |
 | `--dry-run` | 결정만 출력, 쓰기/삭제 없음 |
-| `--rebuild-unmarked` | 마커 없는 기존 출력 디렉터리를 강제 재생성 |
+| `--rebuild-unmarked` | 마커 없는 기존 출력 디렉터리를 **비우고 재생성**(미지정 시 그 shard는 skip + tar 보존) |
 
 > ⚠️ `--delete-shard-on-success`는 원본 tar를 **영구 삭제**한다. commit 검증된 shard의
 > tar만 지우며(실패 shard의 tar는 보존), 검증 전에는 절대 삭제하지 않는다. 원본을 남기려면
-> 이 플래그 없이 실행한다. SA-1B tar가 root 소유이면 컨테이너 내부(root)에서 실행해야
-> 읽기+쓰기+삭제가 모두 가능하다.
+> 이 플래그 없이 실행한다.
+>
+> ⚠️ **실행 주체**: SA-1B tar가 root 소유이므로 이 스크립트는 **컨테이너 내부(root)에서
+> 실행**해야 한다 — 그래야 tar 읽기 + 출력 디렉터리(`.sa1b_tmp` staging 포함) 쓰기 + tar
+> 삭제가 모두 된다. 일반 호스트 계정(`wilco`)으로 돌리면 root 소유 `data/sa1b/raw` 아래
+> staging/삭제에서 `PermissionError`가 나고, 출력도 root 소유라 권한이 어긋난다. 원격 검증도
+> 컨테이너 root 셸 기준이다(호스트 `wilco` 셸 아님).
 
 ### stage별 데이터 적용 (요약)
 
