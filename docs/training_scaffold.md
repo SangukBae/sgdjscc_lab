@@ -861,12 +861,58 @@ python scripts/export_checkpoint.py --stage controlnet \
 > full-scale 변환은 기본 shard별 하위폴더 레이아웃을 유지하라(`--flat`/`--max-samples`는
 > sequential과 비호환).
 
+### (5) SA-1B tar → image-only 변환 (`scripts/prepare_sa1b.py`)
+
+SA-1B(Segment Anything, `data/sa1b/raw/sa_*.tar`)는 이미지 + per-image **세그멘테이션
+마스크(`.json`)** 로 구성되며 **caption이 없다**. 이 저장소의 어떤 학습 dataset도
+세그멘테이션 마스크를 소비하지 않으므로(근거: 이미지 로더 `data/image_dataset.py::_list_images`
+가 `_IMG_EXTS` 확장자만 재귀 스캔, 마스크 전용 dataset 부재), SA-1B는 **image-only**
+코퍼스로만 사용 가능하다 → stage `jscc` / `csi_estimation` / `edge_codec`
+(edge는 Canny 온더플라이라 마스크 불필요). text stage(`text_dm`/`controlnet`)에는
+caption이 없어 **그대로는 사용 불가**(쓰려면 `generate_captions.py`로 caption 생성 필요).
+
+```bash
+# 미리보기 — 아무것도 쓰지/지우지 않음
+python scripts/prepare_sa1b.py --dry-run
+# 1개만 실제 변환(원본 tar 보존)
+python scripts/prepare_sa1b.py --limit-shards 1
+# 디스크 압박 하에서 full-scale: tar 한 개씩 순차 변환 + commit 검증 후 그 tar만 삭제
+python scripts/prepare_sa1b.py --delete-shard-on-success
+```
+
+출력: `data/sa1b_images/{train,val}/<shard_tag>/*.jpg` (JSON 마스크는 버림). 로더가
+재귀 스캔하므로 `--train-list data/sa1b_images/train`(val은 `.../val`)로 전달한다.
+
+**디스크-안전 순차 처리** (~11G tar × 68, 디스크 여유 부족 대응): tar 한 개씩만 처리한다 —
+임시 디렉터리에 추출(`.jpg`만, `.json` 드롭, 깨진 이미지 PIL `verify` 스킵) → 검증(이미지
+≥1개 + 표본 이미지 1장 full decode) → 최종 shard 디렉터리로 **원자적 `rename`** →
+`.shard_done` 마커 기록 → **그 다음에야** `--delete-shard-on-success` 시 원본 `.tar` 삭제.
+따라서 원본 tar와 추출 이미지가 **동시에 쌓이지 않는다**. 같은 명령을 다시 실행하면 **resume**:
+`.shard_done`이 있는 shard는 skip(그리고 `--delete-shard-on-success`면 그 tar 삭제),
+마커 없는 미완성 잔재(`*.incoming`/마커 없는 디렉터리)는 다시 만든다.
+
+| 플래그 | 의미 |
+|--------|------|
+| `--shard-dir` | 입력 tar 디렉터리 (기본 `data/sa1b/raw`) |
+| `--output-dir` | 출력 루트 (기본 `data/sa1b_images`; `train/`+`val/` 생성) |
+| `--delete-shard-on-success` | shard 출력이 **commit 검증된 뒤에만** 원본 `.tar` 삭제 |
+| `--limit-shards N` | 이번 실행에서 처리할 tar 개수 상한 |
+| `--val-every K` | split 규칙: `shard_number % K == 0`이면 val (기본 10). shard **이름** 기준이라 tar 삭제에도 안정적 |
+| `--all-train` | 모든 shard를 train으로 |
+| `--dry-run` | 결정만 출력, 쓰기/삭제 없음 |
+| `--rebuild-unmarked` | 마커 없는 기존 출력 디렉터리를 강제 재생성 |
+
+> ⚠️ `--delete-shard-on-success`는 원본 tar를 **영구 삭제**한다. commit 검증된 shard의
+> tar만 지우며(실패 shard의 tar는 보존), 검증 전에는 절대 삭제하지 않는다. 원본을 남기려면
+> 이 플래그 없이 실행한다. SA-1B tar가 root 소유이면 컨테이너 내부(root)에서 실행해야
+> 읽기+쓰기+삭제가 모두 가능하다.
+
 ### stage별 데이터 적용 (요약)
 
 | stage | sidecar | coco_json/multi_manifest | file_list | caption 생성 필요? |
 |-------|---------|--------------------------|-----------|--------------------|
-| `jscc`/`edge_codec`/`csi_estimation` | — (image-only) | — | ✅ | 불필요 |
-| `text_dm`/`controlnet` | ✅ | ✅ | ✅ | celeba는 필요(generate_captions); CC3M은 `prepare_cc3m.py` 변환만 |
+| `jscc`/`edge_codec`/`csi_estimation` | — (image-only) | — | ✅ | 불필요 (SA-1B는 `prepare_sa1b.py` 변환만) |
+| `text_dm`/`controlnet` | ✅ | ✅ | ✅ | celeba는 필요(generate_captions); CC3M은 `prepare_cc3m.py` 변환만; SA-1B는 caption 없어 그대로 불가 |
 
 테스트: [`tests/test_data_extensions.py`](../tests/test_data_extensions.py) — sidecar 회귀,
 coco_json first/longest/random, file_list(절대/상대), caption 생성, controlnet canny+sidecar.
