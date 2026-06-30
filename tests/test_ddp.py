@@ -187,3 +187,21 @@ def test_entrypoint_torchrun_dryrun(tmp_path):
     assert r.returncode == 0, combined[-3000:]
     assert "DDP: rank=" in combined                 # setup_distributed ran (world>1)
     assert combined.count("Dry-run complete") >= 2  # both ranks reached the dry-run
+
+
+def test_run_epoch_is_sample_weighted():
+    """run_epoch aggregates by SAMPLE count, not mean-of-batch-means (regression
+    guard for the DDP validation-average bias on uneven batches)."""
+    from sgdjscc_lab.pipelines.train_pipeline import run_epoch
+
+    class _StubRunner:
+        def validation_step(self, batch):
+            return {"loss": float(batch["v"])}       # batch-mean loss (constant here)
+
+    # batch sizes derived from the first tensor (4 and 1), with losses 1.0 and 10.0.
+    loader = [{"image": torch.zeros(4, 1), "v": 1.0},
+              {"image": torch.zeros(1, 1), "v": 10.0}]
+    out = run_epoch(_StubRunner(), loader, epoch=1, training=False)
+    # sample-weighted: (1.0*4 + 10.0*1) / 5 = 2.8   (mean-of-means would be 5.5)
+    assert abs(out["loss"] - 2.8) < 1e-6
+    assert out["n_samples"] == 5 and out["n_batches"] == 2
