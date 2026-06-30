@@ -104,16 +104,70 @@ python scripts/evaluate.py --config configs/paper_eval_awgn.yaml \
                                        # extension or shared_vae → hard exit.
 ```
 
+## Multi-GPU training (DDP)
+
+`sgdjscc_lab` supports **PyTorch DistributedDataParallel** via `torchrun`. The
+single-process / CPU path is unchanged (every DDP helper degrades to a no-op).
+
+**Status (honest):**
+- **Stage 2 (`text_dm`) — supported & validated.** DDP-wrapped denoiser + the
+  learned CFG null token are gradient-synced; verified by a world_size=2 Gloo CPU
+  smoke (`tests/test_ddp.py`: param + null-token sync, DistributedSampler, rank0
+  checkpoint) and on the remote 3×GPU box (NCCL).
+- **Stage 3 (`controlnet`) — structure-ready.** Same runner plumbing
+  (DDP-wrapped denoiser; `edge_transport` left unwrapped as fixed `no_grad` side
+  info). It sets `find_unused_parameters=True` **conservatively** because the base
+  DM is frozen and only the ControlNet branches train, so some wrapped-module
+  params may receive no grad on a step (DDP would otherwise hang). This can be set
+  False if profiling shows all trainable params always get a grad — not yet
+  validated end-to-end on multi-GPU, hence "structure-ready", not "validated".
+- **Stage 1 (`jscc`) / `edge_codec` — not DDP-validated.** The plumbing is generic
+  but the GAN path (Stage 1) and the self-contained codec are untested under DDP.
+
+**What changed for DDP:** `src/sgdjscc_lab/distributed.py` (helpers:
+`setup_distributed`/`is_rank0`/`unwrap_module`/`reduce_metric_sums`/`all_reduce_grads`/
+`maybe_set_epoch`); `scripts/train.py` (torchrun init/cleanup, `cuda:{LOCAL_RANK}`);
+`data/datasets.py` (DistributedSampler when distributed); `train_pipeline.py`
+(rank0-only checkpoint + JSONL log, `sampler.set_epoch`, validation metric via
+sum+count all-reduce); `stage_runners.py` (DDP-wrapped denoiser called in forward;
+grad-accum uses `no_sync` on non-boundary micro-steps + a grad all-reduce at the
+epoch-boundary flush; **learned CFG null token rebuilt EAGER** — a real `nn.Module`
+created at runner construction with the probed label shape, DDP-wrapped, and
+optimizer-registered once, so it is no longer a rank-local lazy parameter).
+
+**Batch size:** `train.batch_size` is **per-rank**.
+`global_batch = batch_size × world_size × grad_accum_steps`. To keep a paper-like
+global batch (e.g. 64) on 3 GPUs use `batch_size≈21–22` (or raise `grad_accum_steps`).
+
+**Run (3 GPUs):**
+```bash
+torchrun --standalone --nproc_per_node=3 scripts/train.py \
+    --config configs/paper_train_text_dm.yaml \
+    --train-list data/coco/train2017 --val-list data/coco/val2017
+# single-process is unchanged:  python scripts/train.py --config … --device cuda:0
+# torchrun --nproc_per_node=1 … behaves exactly like the single-process path.
+```
+Export + evaluation stay single-process (DDP is training-only here).
+
+**Remaining DDP limitations:** validation `DistributedSampler` pads the last
+batch to a multiple of world_size (duplicate samples) — the sum+count all-reduce
+makes this a negligible bias, not exact. `prepare_muge_edges.py` is not
+DDP-parallelised (split the input folder for manual parallelism).
+
 ## Files changed (summary)
-- **new**: `src/sgdjscc_lab/paper_mode.py`, `src/sgdjscc_lab/channels/complex_ops.py`,
+- **new**: `src/sgdjscc_lab/paper_mode.py`, `src/sgdjscc_lab/distributed.py`,
+  `src/sgdjscc_lab/channels/complex_ops.py`, `tests/test_ddp.py`,
   `scripts/prepare_muge_edges.py`, `configs/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml`,
   `configs/paper_eval_awgn.yaml`, `tests/test_paper_mode.py`, this doc.
 - **edited**: `training/stages.py` (MuGE edge sources + `muge_repr` validation),
-  `data/datasets.py` (MuGE loading + extractor reuse + multi-channel reprs),
-  `training/stage_runners.py` (learned null
-  token, multi-SNR edge codec), `models/edge_jscc.py` (per-step SNR override,
-  `arch='paper'` guardrail + multi-channel edge I/O), `training/edge_transport.py`
-  (edge-codec `in_ch` derived from `muge_repr`), `scripts/generate_captions.py` (provenance sentinel),
-  `scripts/train.py` (paper_mode training hook), `scripts/evaluate.py`
-  (paper_mode **eval** hook), `configs/train/default.yaml`
-  (`paper_mode`, `cfg_null_mode`, `edge_codec.multi_snr`, `dataset.muge_repr`).
+  `data/datasets.py` (MuGE loading + extractor reuse + multi-channel reprs +
+  DistributedSampler), `training/stage_runners.py` (learned null token →
+  DDP-safe eager, multi-SNR edge codec, DDP-wrapped denoiser + no_sync grad-accum),
+  `models/edge_jscc.py` (per-step SNR override, `arch='paper'` guardrail +
+  multi-channel edge I/O), `training/edge_transport.py` (edge-codec `in_ch` from
+  `muge_repr`), `pipelines/train_pipeline.py` (rank0 save/log, set_epoch, val
+  all-reduce), `scripts/generate_captions.py` (provenance sentinel),
+  `scripts/train.py` (paper_mode hook + torchrun init/cleanup/device),
+  `scripts/evaluate.py` (paper_mode **eval** hook), `configs/train/default.yaml`
+  (`paper_mode`, `cfg_null_mode`, `edge_codec.multi_snr`, `dataset.muge_repr`,
+  per-rank `batch_size` note).
