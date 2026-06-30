@@ -230,7 +230,9 @@ class StageRunner:
                     {"params": [core.token], "name": "cfg_null_token"})
                 core._opt_registered = True
             return core.token
-        return self.null_module()                       # eager (DDP hook fires)
+        # Pass labels as a scatter anchor so the DDP-wrapped null module's forward
+        # works on GPU (device_ids scatter needs a positional input).
+        return self.null_module(labels)                 # eager (DDP hook fires)
 
     def _cfg_null_state(self) -> Dict[str, nn.Module]:
         """Checkpoint the learned null token (UNWRAPPED; empty for zero mode)."""
@@ -383,7 +385,11 @@ class LearnedNullToken(nn.Module):
             self.token = nn.Parameter(torch.zeros_like(state_dict[key]))
         return super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
 
-    def forward(self) -> torch.Tensor:  # pragma: no cover - trivial
+    def forward(self, *args, **kwargs) -> torch.Tensor:
+        # Accepts (and ignores) a dummy input so the module can be called THROUGH
+        # a DDP wrapper: GPU DDP scatters the positional input across device_ids,
+        # and a no-input forward would raise IndexError on the empty scatter. The
+        # caller passes ``labels`` purely as that scatter anchor.
         return self.token
 
 
