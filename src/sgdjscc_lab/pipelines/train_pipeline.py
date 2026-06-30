@@ -184,8 +184,11 @@ def run_epoch(runner, loader, epoch: int, log_every: int = 10, training: bool = 
 
     Returns SAMPLE-WEIGHTED mean metrics plus ``n_batches`` / ``n_samples`` /
     ``epoch_s``. Each batch's metric (a batch-mean) is weighted by its sample
-    count, so uneven last batches and DistributedSampler padding do not bias the
-    mean — unlike a plain mean-of-batch-means.
+    count, so an uneven last batch does not bias the mean (unlike a plain
+    mean-of-batch-means). NOTE: under DDP the validation ``DistributedSampler``
+    still PADS the dataset with a few duplicate samples to make it divisible by
+    world_size, so a tiny residual bias from those duplicates remains (to remove
+    it entirely needs drop-last / de-duplication) — see docs/paper_gap_closure.md.
     """
     t0 = time.time()
     accum: Dict[str, float] = {}        # SUM over samples (metric × batch_size)
@@ -205,9 +208,11 @@ def run_epoch(runner, loader, epoch: int, log_every: int = 10, training: bool = 
             logger.info("  [epoch %d | %d/%d]  loss=%.6f",
                         epoch, batch_idx + 1, len(loader), float(metrics.get("loss", 0.0)))
 
-    # Validation under DDP: exact global mean = all-reduce of the sample-weighted
-    # SUMS + the total sample count (correct under uneven batches / padding).
-    # Training epoch means stay local (informational). Non-distributed → local.
+    # Validation under DDP: global mean = all-reduce of the sample-weighted SUMS
+    # + the total sample count (exact under uneven batch sizes; a tiny residual
+    # bias remains from DistributedSampler padding duplicates — see the docstring).
+    # Training epoch means stay local here (the run_training loop reduces the
+    # epoch monitor separately). Non-distributed → local mean.
     if not training and ddp.is_distributed():
         out = ddp.reduce_metric_sums(accum, n_samples)
     else:
@@ -592,15 +597,18 @@ def run_training(
         ddp.maybe_set_epoch(train_loader, epoch)
         logger.info("─── Epoch %d%s  (stage=%s) ───",
                     epoch, "" if step_mode else f" / {epochs}", stage)
-        ep_acc: Dict[str, float] = {}
+        ep_acc: Dict[str, float] = {}    # SAMPLE-WEIGHTED sums (metric × batch_size)
         ep_n = 0
+        ep_samples = 0
 
         for batch in train_loader:
             metrics = runner.training_step(batch)
+            bs = _batch_size(batch)
             for k, v in metrics.items():
-                ep_acc[k] = ep_acc.get(k, 0.0) + float(v)
+                ep_acc[k] = ep_acc.get(k, 0.0) + float(v) * bs
                 run_acc[k] = run_acc.get(k, 0.0) + float(v)
             ep_n += 1
+            ep_samples += bs
             run_n += 1
             last_metrics = metrics
 
@@ -624,7 +632,7 @@ def run_training(
                 done = True
 
         # ── Epoch-boundary events (epoch mode) ────────────────────────────────
-        ep_mean = {k: ep_acc[k] / max(ep_n, 1) for k in ep_acc}
+        ep_mean = {k: ep_acc[k] / max(ep_samples, 1) for k in ep_acc}  # sample-weighted (local)
         if not step_mode:
             record: Dict = {"epoch": epoch, "global_step": global_step,
                             "stage": stage, **ep_mean}
@@ -634,7 +642,16 @@ def run_training(
                 runner.set_mode(True)
             record["lr"] = _lr_now()
             train_log.log(record)
-            monitor = float(val_metrics.get("loss", ep_mean.get("loss", float("inf"))))
+            # best.pth monitor must be a GLOBAL metric (not a rank-local shard):
+            # prefer the reduced validation loss; else the across-rank sample-
+            # weighted training loss (all-reduce of the weighted SUMS + samples).
+            if "loss" in val_metrics:
+                monitor = float(val_metrics["loss"])
+            elif ddp.is_distributed():
+                monitor = ddp.reduce_metric_sums(
+                    {"loss": ep_acc.get("loss", float("inf"))}, ep_samples)["loss"]
+            else:
+                monitor = float(ep_mean.get("loss", float("inf")))
             _save(epoch, monitor)
             if epoch >= epochs:
                 done = True

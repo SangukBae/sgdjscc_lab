@@ -130,10 +130,12 @@ single-process / CPU path is unchanged (every DDP helper degrades to a no-op).
 `data/datasets.py` (DistributedSampler when distributed); `train_pipeline.py`
 (rank0-only checkpoint + JSONL log, `sampler.set_epoch`; **sample-weighted**
 validation average — each batch metric is weighted by its batch size and the
-weighted SUMS + total sample count are all-reduced, so uneven last batches don't
-bias the mean; **step-mode `best.pth` uses a GLOBAL metric** — the reduced
-validation loss if `val_every_steps` ran at that step, else the across-rank
-all-reduced training loss, never a rank-local shard loss); `stage_runners.py`
+weighted SUMS + total sample count are all-reduced, so an uneven last batch
+doesn't bias the mean (a tiny residual bias remains from DistributedSampler
+padding duplicates); **`best.pth` uses a GLOBAL metric in BOTH epoch- and
+step-mode** — the reduced validation loss if validation ran, else the across-rank
+sample-weighted (epoch) / all-reduced (step) training loss, never a rank-local
+shard loss); `stage_runners.py`
 (DDP-wrapped denoiser called in forward; grad-accum uses `no_sync` on non-boundary
 micro-steps + a grad all-reduce at the epoch-boundary flush; **learned CFG null
 token rebuilt EAGER** — a real `nn.Module` created at runner construction with the
