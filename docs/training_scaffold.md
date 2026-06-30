@@ -930,4 +930,5 @@ coco_json first/longest/random, file_list(절대/상대), caption 생성, contro
 - [smoke_training.md](./smoke_training.md) — real-model smoke 학습(최소 검증) 가이드
 - [etri_development_roadmap.md](./etri_development_roadmap.md) — Phase별 개발 계획
 - [phase5.md](./phase5.md) — Phase 5 (채널 조건화 + 저지연 + SRS-v2)
-- [../data/README.md](../data/README.md) — 로컬 데이터셋 역할/매핑 (imagenet/coco/journey_pairs/celeba)
+- [dataset_status.md](./dataset_status.md) — git 추적되는 데이터셋 역할/매핑 기준 문서
+- `python scripts/report_datasets.py` — 현재 머신의 실제 데이터 보유 상태를 `data/_reports/dataset_status.md`로 생성
