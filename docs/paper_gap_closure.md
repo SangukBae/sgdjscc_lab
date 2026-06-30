@@ -128,12 +128,18 @@ single-process / CPU path is unchanged (every DDP helper degrades to a no-op).
 `setup_distributed`/`is_rank0`/`unwrap_module`/`reduce_metric_sums`/`all_reduce_grads`/
 `maybe_set_epoch`); `scripts/train.py` (torchrun init/cleanup, `cuda:{LOCAL_RANK}`);
 `data/datasets.py` (DistributedSampler when distributed); `train_pipeline.py`
-(rank0-only checkpoint + JSONL log, `sampler.set_epoch`, validation metric via
-sum+count all-reduce); `stage_runners.py` (DDP-wrapped denoiser called in forward;
-grad-accum uses `no_sync` on non-boundary micro-steps + a grad all-reduce at the
-epoch-boundary flush; **learned CFG null token rebuilt EAGER** — a real `nn.Module`
-created at runner construction with the probed label shape, DDP-wrapped, and
-optimizer-registered once, so it is no longer a rank-local lazy parameter).
+(rank0-only checkpoint + JSONL log, `sampler.set_epoch`; **sample-weighted**
+validation average — each batch metric is weighted by its batch size and the
+weighted SUMS + total sample count are all-reduced, so uneven last batches don't
+bias the mean; **step-mode `best.pth` uses a GLOBAL metric** — the reduced
+validation loss if `val_every_steps` ran at that step, else the across-rank
+all-reduced training loss, never a rank-local shard loss); `stage_runners.py`
+(DDP-wrapped denoiser called in forward; grad-accum uses `no_sync` on non-boundary
+micro-steps + a grad all-reduce at the epoch-boundary flush; **learned CFG null
+token rebuilt EAGER** — a real `nn.Module` created at runner construction with the
+probed label shape, DDP-wrapped (called with `labels` as the scatter anchor so it
+works on GPU), and optimizer-registered once, so it is no longer a rank-local lazy
+parameter).
 
 **Batch size:** `train.batch_size` is **per-rank**.
 `global_batch = batch_size × world_size × grad_accum_steps`. To keep a paper-like
@@ -149,10 +155,19 @@ torchrun --standalone --nproc_per_node=3 scripts/train.py \
 ```
 Export + evaluation stay single-process (DDP is training-only here).
 
-**Remaining DDP limitations:** validation `DistributedSampler` pads the last
-batch to a multiple of world_size (duplicate samples) — the sum+count all-reduce
-makes this a negligible bias, not exact. `prepare_muge_edges.py` is not
-DDP-parallelised (split the input folder for manual parallelism).
+**Remaining DDP limitations:** the validation average is now sample-weighted
+(exact under uneven batch sizes), but `DistributedSampler` still **pads** the
+final batch to a multiple of world_size by duplicating a few samples — those
+duplicates are double-counted, so a *tiny* residual bias remains (to remove it
+entirely would need drop-last or de-duplication). `prepare_muge_edges.py` is not
+DDP-parallelised (split the input folder for manual parallelism). Stage 1's GAN
+two-optimizer path and the `edge_codec` stage are not DDP-validated.
+
+**Tests:** `tests/test_ddp.py` covers (a) helper no-ops single-process, (b) a
+world_size=2 Gloo CPU smoke of the Stage-2 runner (param + null-token grad sync,
+DistributedSampler, rank0 save), and (c) an **entrypoint** test that runs the real
+`torchrun → scripts/train.py → setup_distributed` path (Gloo CPU, `--no-models`) so
+launcher/init regressions are caught in CI, not only on the GPU box.
 
 ## Files changed (summary)
 - **new**: `src/sgdjscc_lab/paper_mode.py`, `src/sgdjscc_lab/distributed.py`,

@@ -169,39 +169,55 @@ def _mean_metrics(accum: Dict[str, float], n: int) -> Dict[str, float]:
     return {k: (v / max(n, 1)) for k, v in accum.items()}
 
 
+def _batch_size(batch) -> int:
+    """Number of samples in a collated batch dict (first tensor / list field)."""
+    for v in batch.values():
+        if torch.is_tensor(v):
+            return int(v.shape[0])
+        if isinstance(v, (list, tuple)):
+            return len(v)
+    return 1
+
+
 def run_epoch(runner, loader, epoch: int, log_every: int = 10, training: bool = True) -> Dict:
     """Iterate one epoch over *loader*, driving *runner* per batch.
 
-    Returns aggregated mean metrics plus ``n_batches`` / ``epoch_s``.
+    Returns SAMPLE-WEIGHTED mean metrics plus ``n_batches`` / ``n_samples`` /
+    ``epoch_s``. Each batch's metric (a batch-mean) is weighted by its sample
+    count, so uneven last batches and DistributedSampler padding do not bias the
+    mean — unlike a plain mean-of-batch-means.
     """
     t0 = time.time()
-    accum: Dict[str, float] = {}
+    accum: Dict[str, float] = {}        # SUM over samples (metric × batch_size)
     n_batches = 0
+    n_samples = 0
     step_fn = runner.training_step if training else runner.validation_step
 
     for batch_idx, batch in enumerate(loader):
         metrics = step_fn(batch)
+        bs = _batch_size(batch)
         for k, v in metrics.items():
-            accum[k] = accum.get(k, 0.0) + float(v)
+            accum[k] = accum.get(k, 0.0) + float(v) * bs   # → sample-weighted sum
         n_batches += 1
+        n_samples += bs
 
         if training and (batch_idx + 1) % log_every == 0:
             logger.info("  [epoch %d | %d/%d]  loss=%.6f",
                         epoch, batch_idx + 1, len(loader), float(metrics.get("loss", 0.0)))
 
-    # Validation under DDP: average via all-reduce of metric SUMS + total count
-    # (a mean-of-means is wrong when ranks see different sample counts). Training
-    # epoch means stay local (informational). Non-distributed → local mean.
+    # Validation under DDP: exact global mean = all-reduce of the sample-weighted
+    # SUMS + the total sample count (correct under uneven batches / padding).
+    # Training epoch means stay local (informational). Non-distributed → local.
     if not training and ddp.is_distributed():
-        out = ddp.reduce_metric_sums(accum, n_batches)
-        n_batches = int(round(n_batches * ddp.get_world_size()))  # global count (approx)
+        out = ddp.reduce_metric_sums(accum, n_samples)
     else:
-        out = _mean_metrics(accum, n_batches)
+        out = {k: (v / max(n_samples, 1)) for k, v in accum.items()}
     out["n_batches"] = n_batches
+    out["n_samples"] = n_samples
     out["epoch_s"] = time.time() - t0
     tag = "Epoch" if training else "Validation"
-    logger.info("%s %d done — loss=%.6f  batches=%d  time=%.1fs",
-                tag, epoch, out.get("loss", 0.0), n_batches, out["epoch_s"])
+    logger.info("%s %d done — loss=%.6f  batches=%d  samples=%d  time=%.1fs",
+                tag, epoch, out.get("loss", 0.0), n_batches, n_samples, out["epoch_s"])
     return out
 
 
@@ -542,18 +558,32 @@ def run_training(
         """
         nonlocal run_acc, run_n
         if log_every_steps and global_step % log_every_steps == 0:
-            avg = {k: run_acc[k] / max(run_n, 1) for k in run_acc}
+            # GLOBAL window mean across ranks (sum-of-batch-means + batch count
+            # all-reduced) so the logged loss is not rank0-local.
+            avg = (ddp.reduce_metric_sums({k: run_acc[k] for k in run_acc}, run_n)
+                   if ddp.is_distributed() else
+                   {k: run_acc[k] / max(run_n, 1) for k in run_acc})
             logger.info("  [step %d] loss=%.6f", global_step, avg.get("loss", 0.0))
             train_log.log({"global_step": global_step, "epoch": epoch, "stage": stage,
                            "lr": _lr_now(), **avg})
             run_acc, run_n = {}, 0
+        vm_this: Dict = {}
         if val_every_steps and val_loader is not None and global_step % val_every_steps == 0:
-            vm = _validate(epoch)
+            vm_this = _validate(epoch)
             train_log.log({"global_step": global_step, "epoch": epoch, "stage": stage,
-                           **{f"val_{k}": v for k, v in vm.items()}})
+                           **{f"val_{k}": v for k, v in vm_this.items()}})
             runner.set_mode(True)
         if save_every_steps and global_step % save_every_steps == 0:
-            _save(epoch, float(monitor_loss))
+            # best.pth decision must use a GLOBAL metric (not rank0's shard loss):
+            # prefer the just-computed (already-reduced) validation loss, else
+            # all-reduce this step's training loss across ranks.
+            if "loss" in vm_this:
+                monitor = float(vm_this["loss"])
+            elif ddp.is_distributed():
+                monitor = ddp.reduce_metric_sums({"loss": float(monitor_loss)}, 1)["loss"]
+            else:
+                monitor = float(monitor_loss)
+            _save(epoch, monitor)
         return bool(step_mode and global_step >= max_steps)
 
     while not done:

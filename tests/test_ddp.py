@@ -21,6 +21,7 @@ import pytest
 import torch
 import torch.multiprocessing as mp
 import torch.nn as nn
+from PIL import Image
 
 _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
@@ -150,3 +151,39 @@ def test_ddp_stage2_gloo_smoke(tmp_path):
     world = 2
     mp.spawn(_ddp_worker, args=(world, str(tmp_path), _free_port()),
              nprocs=world, join=True)
+
+
+# ── entrypoint coverage: real torchrun → scripts/train.py → setup_distributed ──
+
+def test_entrypoint_torchrun_dryrun(tmp_path):
+    """Drive the ACTUAL CLI entrypoint under torchrun (world_size=2, Gloo CPU).
+
+    This exercises scripts/train.py → distributed.setup_distributed() (process-
+    group init + device) → DistributedSampler dataloader → cleanup — the path the
+    in-process smoke (which inits dist itself) does not cover. ``--no-models`` keeps
+    it a fast dry-run (no checkpoints / GPU). CUDA is hidden so the Gloo CPU backend
+    is used regardless of host GPUs.
+    """
+    import subprocess
+
+    repo = Path(__file__).resolve().parents[1]
+    train, val = tmp_path / "train", tmp_path / "val"
+    for d in (train, val):
+        d.mkdir()
+        for i in range(4):
+            Image.new("RGB", (16, 16), (10 * i, 20, 30)).save(d / f"{i}.png")
+            (d / f"{i}.txt").write_text("a photo")
+
+    env = dict(os.environ)
+    env["CUDA_VISIBLE_DEVICES"] = ""          # force the Gloo CPU backend
+    cmd = [sys.executable, "-m", "torch.distributed.run", "--standalone",
+           "--nproc_per_node=2", str(repo / "scripts" / "train.py"),
+           "--config", str(repo / "configs" / "composed_train_text_dm.yaml"),
+           "--train-list", str(train), "--val-list", str(val),
+           "--no-models", "--epochs", "1", "--device", "cpu"]
+    r = subprocess.run(cmd, cwd=str(repo), env=env,
+                       capture_output=True, text=True, timeout=300)
+    combined = r.stdout + r.stderr
+    assert r.returncode == 0, combined[-3000:]
+    assert "DDP: rank=" in combined                 # setup_distributed ran (world>1)
+    assert combined.count("Dry-run complete") >= 2  # both ranks reached the dry-run
