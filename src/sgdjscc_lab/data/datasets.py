@@ -283,31 +283,175 @@ def _canny_edge(img: torch.Tensor) -> torch.Tensor:
         return mag.squeeze(0)
 
 
+def muge_reduce(data: torch.Tensor) -> torch.Tensor:
+    """Reduce MuGE multi-channel soft-edge output to a single ``[1,H,W]`` map.
+
+    MuGE's ``generate_canny`` returns ``[N,11,H,W]`` soft-edge data; the training
+    edge condition is single-channel, so we take the channel-mean intensity and
+    min-max normalise to ``[0,1]``. This 11→1 reduction is **paper-like** (the
+    inference pipeline consumes the full multi-channel MuGE output; the training
+    ControlNet condition here is reduced). Documented in docs/paper_gap_closure.md.
+    """
+    if data.dim() == 4:
+        data = data[0]
+    if data.dim() == 3 and data.shape[0] > 1:
+        m = data.float().mean(dim=0, keepdim=True)
+    else:
+        m = data.float().reshape(1, *data.shape[-2:])
+    mn, mx = m.amin(), m.amax()
+    return ((m - mn) / (mx - mn + 1e-8)).clamp(0, 1)
+
+
+# MuGE edge representations for the training edge condition (see
+# docs/paper_gap_closure.md "Stage-3 edge path alignment"):
+#   reduced          1ch mean edge — LEGACY default; matches the inference edge
+#                    CHANNEL COUNT (inference also means 11→1) but DROPS uncertainty.
+#   edge_uncertainty 2ch [mean-edge, mean-uncertainty] — the inference path carries
+#                    BOTH (canny_transmission_net input is edge+uncertainty), so this
+#                    is the CLOSEST-to-inference representation (recommended).
+#   multi            11ch all MuGE edge channels (per-channel min-max) — preserves
+#                    the full map; OPT-IN. Inference collapses these, so multi is
+#                    information-preserving but NOT "more inference-aligned".
+_MUGE_REPRS = ("reduced", "edge_uncertainty", "multi")
+_MUGE_REPR_CHANNELS = {"reduced": 1, "edge_uncertainty": 2, "multi": 11}
+
+
+def muge_repr_channels(repr_name: str) -> int:
+    """Edge channel count for a MuGE representation (1 | 2 | 11)."""
+    r = str(repr_name).lower()
+    if r not in _MUGE_REPR_CHANNELS:
+        raise StageConfigError(
+            f"train.dataset.muge_repr must be one of {_MUGE_REPRS}, got {repr_name!r}")
+    return _MUGE_REPR_CHANNELS[r]
+
+
+def muge_channels(data: torch.Tensor, uncertainty: Optional[torch.Tensor],
+                  repr_name: str = "reduced") -> torch.Tensor:
+    """MuGE output → the chosen training edge representation ``[C,H,W]`` in [0,1].
+
+    See ``_MUGE_REPRS``. ``reduced`` → 1ch; ``edge_uncertainty`` → 2ch (edge +
+    uncertainty, the closest match to what the inference path carries); ``multi``
+    → 11ch (full map, opt-in).
+    """
+    r = str(repr_name).lower()
+    edge = muge_reduce(data)                                   # [1,H,W]
+    if r == "reduced":
+        return edge
+    if r == "edge_uncertainty":
+        unc = muge_reduce(uncertainty) if uncertainty is not None else torch.zeros_like(edge)
+        return torch.cat([edge, unc], dim=0)                  # [2,H,W]
+    if r == "multi":
+        d = data[0] if data.dim() == 4 else data              # [11,H,W]
+        d = d.float()
+        flat = d.reshape(d.shape[0], -1)
+        mn = flat.amin(dim=1, keepdim=True)
+        mx = flat.amax(dim=1, keepdim=True)
+        return ((flat - mn) / (mx - mn + 1e-8)).reshape_as(d).clamp(0, 1)  # [11,H,W]
+    raise StageConfigError(
+        f"train.dataset.muge_repr must be one of {_MUGE_REPRS}, got {repr_name!r}")
+
+
+class LazyMugeExtractor:
+    """Lazily build + cache a MuGE :class:`EdgeExtractor` for ``muge_runtime``.
+
+    Reuses ``guidance/edge_extractor.build_edge_extractor`` (the same network the
+    *inference* path uses) so training and inference share the MuGE structure.
+    Runs on CPU by default (safe inside DataLoader workers). For speed/large
+    datasets, **precompute** edges with ``scripts/prepare_muge_edges.py`` and use
+    ``edge_source: muge_sidecar`` instead — runtime MuGE in every worker is slow.
+    """
+
+    def __init__(self, model_root, device: str = "cpu",
+                 repr_name: str = "reduced") -> None:
+        self.model_root = model_root
+        self.device = torch.device(device)
+        self.repr_name = str(repr_name).lower()
+        self._ex = None
+
+    def __call__(self, img: torch.Tensor) -> torch.Tensor:
+        if self._ex is None:
+            from sgdjscc_lab.guidance.edge_extractor import build_edge_extractor
+            self._ex = build_edge_extractor(self.model_root, self.device)
+        data, unc = self._ex.extract(img.unsqueeze(0).to(self.device), self.device)
+        return muge_channels(data, unc, self.repr_name).to(img.device)
+
+
+def _resize_edge_tensor(edge: torch.Tensor, target_hw) -> torch.Tensor:
+    """Resize a C-channel edge tensor to ``target_hw`` with bilinear sampling."""
+    if tuple(edge.shape[-2:]) == tuple(target_hw):
+        return edge
+    import torch.nn.functional as F
+    return F.interpolate(
+        edge.unsqueeze(0), size=tuple(target_hw),
+        mode="bilinear", align_corners=False,
+    ).squeeze(0)
+
+
 def _load_edge_map(
     fpath: Path,
     img: torch.Tensor,
     edge_source: str,
     edge_dir: Optional[Path],
     transform: Optional[ImageTransform],
+    muge_extractor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+    muge_repr: str = "reduced",
 ) -> torch.Tensor:
-    """Resolve a single-channel edge map ``[1,H,W]`` for *fpath*.
+    """Resolve an edge tensor ``[C,H,W]`` for *fpath*.
 
     Shared by :class:`TextImageEdgeDataset` (stage 3) and
-    :class:`EdgeOnlyDataset` (edge_codec).  ``canny`` computes the edge on the
-    fly from *img*; ``sidecar`` reads a precomputed map from *edge_dir* (or
-    ``<stem>_edge.png`` next to the image).
+    :class:`EdgeOnlyDataset` (edge_codec). Sources:
+
+    * ``canny``        compute a Canny edge on the fly from *img* (paper-like).
+    * ``sidecar``      read a generic precomputed map ``<stem>_edge.<ext>``.
+    * ``muge_sidecar`` read a precomputed MuGE soft edge ``<stem>_muge.<ext>``
+                       (``.png`` reduced 1ch, or ``.npy`` multi-channel repr).
+    * ``muge_runtime`` run *muge_extractor* on *img* (reuses the inference MuGE).
     """
     if edge_source == "canny":
         return _canny_edge(img)
+    if edge_source == "muge_runtime":
+        if muge_extractor is None:
+            raise StageConfigError(
+                "edge_source='muge_runtime' needs a MuGE extractor but none was "
+                "provided (model_root missing?). Either set model_root so the "
+                "MuGE checkpoint can be loaded, or precompute edges with "
+                "scripts/prepare_muge_edges.py and use edge_source='muge_sidecar'."
+            )
+        return muge_extractor(img)
+
+    # File-based sources: sidecar (<stem>_edge) | muge_sidecar (<stem>_muge).
+    suffix = "_muge" if edge_source == "muge_sidecar" else "_edge"
+    # muge_sidecar may carry a MULTI-channel representation saved as .npy
+    # (edge_uncertainty=2ch / multi=11ch) — prefer it; it is returned as-is
+    # (NOT mean-collapsed), so multi-channel MuGE conditioning flows to the codec.
+    muge_repr = str(muge_repr).lower()
+    if edge_source == "muge_sidecar":
+        npy_cands = []
+        if edge_dir is not None:
+            npy_cands.append(edge_dir / f"{fpath.stem}_muge.npy")
+        npy_cands.append(fpath.with_name(f"{fpath.stem}_muge.npy"))
+        for cand in npy_cands:
+            if cand.exists():
+                import numpy as _np
+                arr = _np.load(cand)
+                t = torch.from_numpy(arr).float()
+                if t.dim() == 2:
+                    t = t.unsqueeze(0)
+                return _resize_edge_tensor(t, img.shape[-2:])  # [C,H,W] in [0,1]
+        if muge_repr != "reduced":
+            raise FileNotFoundError(
+                "edge_source='muge_sidecar' with "
+                f"train.dataset.muge_repr={muge_repr!r} requires a multi-channel "
+                f"NumPy sidecar <stem>_muge.npy for {fpath.name}, but none was "
+                "found. Re-run scripts/prepare_muge_edges.py with "
+                f"--repr {muge_repr}."
+            )
     candidates = []
     if edge_dir is not None:
-        # Support both "<stem>.<ext>" and "<stem>_edge.<ext>" inside edge_dir
-        # (the latter matches the "<stem>_edge.png" convention used next to images
-        # and in the docs / make_tiny_dataset.py --edges output).
         for ext in _IMG_EXTS:
             candidates.append(edge_dir / f"{fpath.stem}{ext}")
-            candidates.append(edge_dir / f"{fpath.stem}_edge{ext}")
-    candidates.append(fpath.with_name(f"{fpath.stem}_edge.png"))
+            candidates.append(edge_dir / f"{fpath.stem}{suffix}{ext}")
+    candidates.append(fpath.with_name(f"{fpath.stem}{suffix}.png"))
     for cand in candidates:
         if cand.exists():
             from sgdjscc_lab.io import load_image_as_tensor
@@ -316,15 +460,17 @@ def _load_edge_map(
                 edge = transform(edge)
             return edge.mean(dim=0, keepdim=True)  # → single channel
     raise FileNotFoundError(
-        f"edge_source='sidecar' but no edge map found for {fpath.name} "
-        f"(looked in edge_dir={edge_dir} and <stem>_edge.png)."
+        f"edge_source={edge_source!r} but no edge map found for {fpath.name} "
+        f"(looked in edge_dir={edge_dir} and <stem>{suffix}.png). "
+        + ("Precompute MuGE edges with scripts/prepare_muge_edges.py."
+           if edge_source == "muge_sidecar" else "")
     )
 
 
 class TextImageEdgeDataset(TextImageDataset):
     """Stage 3 (ControlNet): text-image-edge tuple dataset.
 
-    Returns ``{"image", "caption", "edge": Tensor[1,H,W], "path"}``.
+    Returns ``{"image", "caption", "edge": Tensor[C,H,W], "path"}``.
 
     Edge source
     -----------
@@ -339,8 +485,10 @@ class TextImageEdgeDataset(TextImageDataset):
         caption_resolver: _CaptionResolver,
         edge_source: str = "canny",
         edge_dir: Optional[str] = None,
+        muge_repr: str = "reduced",
         transform: Optional[ImageTransform] = None,
         files: Optional[List[Path]] = None,
+        muge_extractor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ) -> None:
         super().__init__(input_path, caption_resolver, transform, files=files)
         edge_source = str(edge_source).lower()
@@ -350,9 +498,12 @@ class TextImageEdgeDataset(TextImageDataset):
             )
         self.edge_source = edge_source
         self.edge_dir = Path(edge_dir) if edge_dir else None
+        self.muge_repr = str(muge_repr).lower()
+        self.muge_extractor = muge_extractor
 
     def _load_edge(self, fpath: Path, img: torch.Tensor) -> torch.Tensor:
-        return _load_edge_map(fpath, img, self.edge_source, self.edge_dir, self.transform)
+        return _load_edge_map(fpath, img, self.edge_source, self.edge_dir,
+                              self.transform, self.muge_extractor, self.muge_repr)
 
     def __getitem__(self, idx: int) -> Dict:
         fpath = self.files[idx]
@@ -368,9 +519,10 @@ class TextImageEdgeDataset(TextImageDataset):
 class EdgeOnlyDataset(_BaseImageDataset):
     """edge_codec stage: edge-map-only dataset (no captions).
 
-    Returns ``{"edge": Tensor[1,H,W], "path": str}``.  The edge map is the
+    Returns ``{"edge": Tensor[C,H,W], "path": str}``.  The edge map is the
     codec's input *and* its reconstruction target (self-supervised BCE+Dice).
-    Edge source matches :class:`TextImageEdgeDataset` (``canny`` | ``sidecar``).
+    Edge source matches :class:`TextImageEdgeDataset` (``canny`` | ``sidecar`` |
+    ``muge_sidecar`` | ``muge_runtime``).
     """
 
     def __init__(
@@ -378,8 +530,10 @@ class EdgeOnlyDataset(_BaseImageDataset):
         input_path,
         edge_source: str = "canny",
         edge_dir: Optional[str] = None,
+        muge_repr: str = "reduced",
         transform: Optional[ImageTransform] = None,
         files: Optional[List[Path]] = None,
+        muge_extractor: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     ) -> None:
         super().__init__(input_path, transform, files=files)
         edge_source = str(edge_source).lower()
@@ -389,11 +543,14 @@ class EdgeOnlyDataset(_BaseImageDataset):
             )
         self.edge_source = edge_source
         self.edge_dir = Path(edge_dir) if edge_dir else None
+        self.muge_repr = str(muge_repr).lower()
+        self.muge_extractor = muge_extractor
 
     def __getitem__(self, idx: int) -> Dict:
         fpath = self.files[idx]
         img = self._load_image(fpath)
-        edge = _load_edge_map(fpath, img, self.edge_source, self.edge_dir, self.transform)
+        edge = _load_edge_map(fpath, img, self.edge_source, self.edge_dir,
+                              self.transform, self.muge_extractor, self.muge_repr)
         return {"edge": edge, "path": str(fpath)}
 
 
@@ -500,9 +657,12 @@ def build_dataset_for_stage(
     if ds_type == "edge":
         edge_source = OmegaConf.select(cfg, "train.dataset.edge_source", default="canny")
         edge_dir = OmegaConf.select(cfg, "train.dataset.edge_dir", default=None)
+        muge_repr = OmegaConf.select(cfg, "train.dataset.muge_repr", default="reduced")
         return EdgeOnlyDataset(
             input_path, edge_source=str(edge_source), edge_dir=edge_dir,
+            muge_repr=str(muge_repr),
             transform=transform, files=files,
+            muge_extractor=_maybe_muge_extractor(cfg, str(edge_source)),
         )
 
     resolver = _make_caption_resolver(cfg, training=training)
@@ -513,11 +673,32 @@ def build_dataset_for_stage(
     # text_image_edge
     edge_source = OmegaConf.select(cfg, "train.dataset.edge_source", default="canny")
     edge_dir = OmegaConf.select(cfg, "train.dataset.edge_dir", default=None)
+    muge_repr = OmegaConf.select(cfg, "train.dataset.muge_repr", default="reduced")
     return TextImageEdgeDataset(
         input_path, resolver,
-        edge_source=str(edge_source), edge_dir=edge_dir, transform=transform,
+        edge_source=str(edge_source), edge_dir=edge_dir, muge_repr=str(muge_repr),
+        transform=transform,
         files=files,
+        muge_extractor=_maybe_muge_extractor(cfg, str(edge_source)),
     )
+
+
+def _maybe_muge_extractor(cfg, edge_source: str):
+    """Build a :class:`LazyMugeExtractor` when edge_source is ``muge_runtime``.
+
+    Resolves ``model_root`` (where ``muge-epoch-19-checkpoint.pth`` lives). Runs
+    on CPU so it is safe inside DataLoader workers (precompute via
+    scripts/prepare_muge_edges.py + ``muge_sidecar`` is faster for large data).
+    """
+    if str(edge_source).lower() != "muge_runtime":
+        return None
+    model_root = OmegaConf.select(cfg, "model_root", default="../checkpoints")
+    repr_name = str(OmegaConf.select(cfg, "train.dataset.muge_repr", default="reduced"))
+    logger.warning(
+        "edge_source='muge_runtime' (repr=%s): MuGE runs in DataLoader workers on "
+        "CPU (slow). For large datasets precompute edges with "
+        "scripts/prepare_muge_edges.py and use edge_source='muge_sidecar'.", repr_name)
+    return LazyMugeExtractor(model_root, device="cpu", repr_name=repr_name)
 
 
 def build_dataloader_for_stage(

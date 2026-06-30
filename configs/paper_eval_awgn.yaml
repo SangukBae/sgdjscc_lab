@@ -1,0 +1,39 @@
+# configs/paper_eval_awgn.yaml – PAPER reproduction: AWGN evaluation
+#
+# Paper-faithful evaluation path: the paper's reported metrics over the standard
+# AWGN SNR sweep, with ALL extensions OFF (Phase 4 packet eval, Phase 5
+# channel-conditioning / SRS-v2 / VQA hallucination / regeneration search, video,
+# shared_vae ablation). Use the 'paper' metric profile (PSNR/SSIM/LPIPS/CLIP/FID).
+#
+# Usage:
+#   python scripts/evaluate.py --config configs/paper_eval_awgn.yaml \
+#       --snr-list -5,0,5,10,15,20,25 --input data/kodak
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+
+paper_mode: true
+
+# Paper-faithful guidance: text + structural (edge) semantic guidance ON;
+# extension guidance (depth/seg/packet) OFF.
+use_semantic:   true
+use_text:       true
+use_controlnet: true
+
+# Paper's reported metric set (PSNR/SSIM/LPIPS/CLIP[/FID]) — not the extended
+# ETRI SRS/object/hallucination stack.
+metrics_profile: paper
+
+# Disable every extension feature so the eval is the paper baseline only.
+use_phase4: false                # packet eval / adaptive guidance / temporal
+use_phase5: false                # channel-conditioning / acceleration / SRS-v2 / VQA
+use_packet_eval: false
+use_regeneration_loop: false
+use_regeneration_search: false
+
+# Standard JSCC AWGN sweep.
+snr_list: [-5, 0, 5, 10, 15, 20, 25]
+csv_path: "../outputs/paper_eval_results.csv"

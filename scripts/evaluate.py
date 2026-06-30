@@ -157,6 +157,15 @@ def main() -> None:
     logger.info("  input_path = %s", cfg.input_path)
     logger.info("  device     = %s", cfg.device)
 
+    # ── paper_mode (default off): enforce the paper-baseline EVAL guardrails ──
+    # A config named "paper eval" must actually run the paper baseline: block
+    # every extension feature (Phase 4/5, packet, regeneration, shared_vae).
+    from sgdjscc_lab import paper_mode as _paper_mode
+    try:
+        _paper_mode.enforce_eval(cfg)
+    except _paper_mode.PaperModeError as exc:
+        sys.exit(f"Error: paper_mode eval guardrail violated.\n  {exc}")
+
     # ── Resolve CSV path ─────────────────────────────────────────────────────
     csv_path = args.output_csv
     if csv_path is None:
@@ -221,6 +230,13 @@ def main() -> None:
     _non_paper_active = sorted(enabled & NON_PAPER_METRICS)
     if _non_paper_active:
         logger.info("Active non-paper (ETRI/extended) metrics: %s", _non_paper_active)
+
+    # paper_mode: now that --profile / --no-clip overrides are applied, verify the
+    # FINAL metric set is the paper's (else the earlier "paper eval" intent is a lie).
+    try:
+        _paper_mode.enforce_eval_metrics(cfg, enabled, args.no_clip)
+    except _paper_mode.PaperModeError as exc:
+        sys.exit(f"Error: paper_mode eval guardrail violated.\n  {exc}")
 
     # ── Phase master switches ─────────────────────────────────────────────────
     from sgdjscc_lab.phase_gates import effective_flag as _eff, phase4_enabled, phase5_enabled

@@ -1,0 +1,36 @@
+# configs/paper_train_jscc.yaml – PAPER reproduction: Stage 1 (JSCC)
+#
+# Paper-faithful path (paper_mode=true). Stage 1 trains the JSCC autoencoder
+# under a FIXED AWGN channel SNR = 10 dB (paper Sec. VI). Image-only data; the
+# JSCC model is frozen after this stage.
+#
+# Usage:
+#   python scripts/train.py --config configs/paper_train_jscc.yaml \
+#       --train-list data/imagenet/train --val-list data/imagenet/val --device cuda:0
+#
+# See docs/paper_gap_closure.md for what paper_mode enforces and the remaining gaps.
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+paper_mode: true            # enforce paper-faithful guardrails (paper_mode.py)
+
+use_semantic:   false       # Stage 1 is image-only JSCC (no DM/guidance yet)
+use_text:       false
+use_controlnet: false
+
+train:
+  stage: jscc
+  batch_size: 64            # paper-scale
+  jscc:
+    snr_db: 10.0            # FIXED AWGN SNR for JSCC training (paper)
+    gan:
+      enabled: false        # MSE-only by default; the paper couples MSE (+GAN/LPIPS)
+                            # — enable train.jscc.gan/lpips for the perceptual term.
+
+checkpoint_dir:  "../outputs/checkpoints/paper_jscc"
+train_log_path:  "../outputs/paper_jscc_train_log.jsonl"

@@ -97,6 +97,7 @@ def generate_captions(
         extractor = build_text_extractor(dev)
 
     written = skipped = 0
+    caption_dirs = set()
     for i, fpath in enumerate(files):
         txt_path = fpath.with_suffix(".txt")
         if txt_path.exists() and not overwrite:
@@ -114,12 +115,45 @@ def generate_captions(
             out = extractor.extract(img.to(dev), dev)    # list-of-lists
             caption = (out[0][0] if out and out[0] else text)
         txt_path.write_text(str(caption).strip() + "\n", encoding="utf-8")
+        caption_dirs.add(txt_path.parent)
         written += 1
         if (i + 1) % 5000 == 0:
             logger.info("  %d/%d processed (%d written)", i + 1, total, written)
 
+    # Provenance marker: drop a sentinel in every directory that received an
+    # auto-caption (and the input root) so paper_mode can REFUSE to train a
+    # text stage on these (auto-captions are NOT paper-faithful — see
+    # sgdjscc_lab/paper_mode.py and docs/paper_gap_closure.md).
+    _write_provenance(set(caption_dirs) | {Path(input_dir)}, mode=mode, text=text,
+                      written=written)
+
     logger.info("Done: %d written, %d skipped, %d total", written, skipped, total)
     return {"written": written, "skipped": skipped, "total": total}
+
+
+def _write_provenance(dirs, *, mode: str, text: str, written: int) -> None:
+    """Write the auto-caption provenance sentinel into each directory."""
+    import json
+    import time
+
+    from sgdjscc_lab.paper_mode import AUTOCAPTION_SENTINEL
+    payload = {
+        "tool": "scripts/generate_captions.py",
+        "mode": mode,
+        "fixed_text": text if mode == "fixed" else None,
+        "written": int(written),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "fidelity": "paper-like (auto-generated; NOT paper-faithful)",
+        "note": ("These .txt captions are auto-generated and are blocked under "
+                 "paper_mode. Use a dataset whose captions ship with it for the "
+                 "paper-faithful path."),
+    }
+    for d in dirs:
+        try:
+            (Path(d) / AUTOCAPTION_SENTINEL).write_text(
+                json.dumps(payload, indent=2), encoding="utf-8")
+        except OSError:
+            pass
 
 
 def _parse_args(argv=None):

@@ -157,6 +157,40 @@ class StageRunner:
             out = self.forward(batch)
         return _to_floats(out)
 
+    # ── CFG null-token helpers (text-guided DM runners opt in) ───────────────
+    def _setup_cfg_null(self) -> None:
+        """Init the CFG null mode. ``learned`` creates a trainable null token."""
+        self.cfg_null_mode = str(OmegaConf.select(
+            self.cfg, "train.dm.cfg_null_mode", default="zero")).lower()
+        self.null_token = (LearnedNullToken().to(self.device)
+                           if self.cfg_null_mode == "learned" else None)
+
+    def _cfg_null_token(self, labels: torch.Tensor):
+        """Null embedding tensor for CFG dropout (None → zero-vector path).
+
+        Materialises the learned token to the label shape if it does not exist
+        yet (fresh run), then registers it with the optimizer **exactly once** —
+        whether the token was just created OR restored from a checkpoint by
+        :meth:`LearnedNullToken._load_from_state_dict` (resume). The registration
+        flag (not ``materialize``'s return) drives this so a resumed token is also
+        added to the optimizer.
+        """
+        nt = getattr(self, "null_token", None)
+        if nt is None:
+            return None
+        if nt.token is None:
+            nt.materialize(labels)
+        if not nt._opt_registered and self.optimizer is not None:
+            self.optimizer.add_param_group(
+                {"params": [nt.token], "name": "cfg_null_token"})
+            nt._opt_registered = True
+        return nt.token
+
+    def _cfg_null_state(self) -> Dict[str, nn.Module]:
+        """Checkpoint the learned null token (empty for the zero-vector path)."""
+        tok = getattr(self, "null_token", None)
+        return {"cfg_null_token": tok} if tok is not None else {}
+
     # ── optimizers / scalers (subclasses override to add e.g. the GAN pair) ───
     def optimizers(self) -> Dict[str, object]:
         return {"optimizer": self.optimizer}
@@ -253,7 +287,53 @@ def _to_floats(out: Dict) -> Dict[str, float]:
     return {k: float(v.detach()) for k, v in out.items() if torch.is_tensor(v)}
 
 
-def apply_cfg_label_dropout(labels: torch.Tensor, prob: float, training: bool) -> torch.Tensor:
+class LearnedNullToken(nn.Module):
+    """Trainable CFG null token, lazily sized to the label-embedding shape.
+
+    The ``learned`` ``cfg_null_mode`` replaces the dropped text condition with
+    this *trainable* unconditional token (closer to the conditional/unconditional
+    branch the paper relies on for CFG scale 4.5) instead of the zero vector. The
+    parameter is created on first use (``materialize``) to match the label
+    embedding shape, and the owning runner adds it to its optimizer then.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.token: Optional[nn.Parameter] = None
+        # Whether the token has been added to the runner's optimizer yet.
+        self._opt_registered: bool = False
+
+    def materialize(self, like: torch.Tensor) -> bool:
+        """Create the parameter to match ``like``'s feature shape. True if created."""
+        if self.token is None:
+            self.token = nn.Parameter(
+                torch.zeros((1, *like.shape[1:]), dtype=like.dtype, device=like.device))
+            return True
+        return False
+
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        """Materialise ``token`` from a checkpoint BEFORE copying values in.
+
+        The token is created lazily on the first forward, but resume restores
+        state *before* any forward — so without this, a saved ``token`` would be
+        dropped and re-initialised to zeros. Here we create the Parameter with
+        the checkpointed shape so ``load_state_dict`` copies the saved values.
+        """
+        key = prefix + "token"
+        if self.token is None and key in state_dict:
+            self.token = nn.Parameter(torch.zeros_like(state_dict[key]))
+        return super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
+    def forward(self) -> torch.Tensor:  # pragma: no cover - trivial
+        return self.token
+
+
+def apply_cfg_label_dropout(
+    labels: torch.Tensor,
+    prob: float,
+    training: bool,
+    null_token: Optional[torch.Tensor] = None,
+) -> torch.Tensor:
     """Classifier-free guidance (CFG) label-dropout for the text-guided DM.
 
     CFG inference (the paper uses a CFG scale of 4.5, Table III) requires the DM
@@ -262,19 +342,26 @@ def apply_cfg_label_dropout(labels: torch.Tensor, prob: float, training: bool) -
     drops each sample's label embedding to the null embedding with probability
     *prob* (only while *training*).
 
-    paper-like / simplification
-    --------------------------
-    The paper reuses PixArt/CLIP cross-attention conditioning but does not state
-    the dropout probability; we expose it config-driven (``train.dm.cfg_dropout_prob``,
-    default 0.1, the PixArt convention). The NULL embedding here is the **zero**
-    vector — a common, simple choice — rather than a *learned* null token, so this
-    is paper-like, not bit-exact.
+    null embedding (``train.dm.cfg_null_mode``)
+    -------------------------------------------
+    * ``null_token is None`` → **zero** vector (``cfg_null_mode=zero``): simple,
+      common, paper-LIKE (the paper does not publish its null token).
+    * ``null_token`` given → a **learned** unconditional token
+      (``cfg_null_mode=learned``): trainable, closer to a true unconditional
+      branch — the paper-mode default.
+
+    The paper does not state the dropout probability; we expose it config-driven
+    (``train.dm.cfg_dropout_prob``, default 0.1, the PixArt convention).
     """
     if prob <= 0.0 or not training:
         return labels
     keep = (torch.rand(labels.shape[0], device=labels.device) >= float(prob))
     view = [labels.shape[0]] + [1] * (labels.dim() - 1)
-    return labels * keep.view(view).to(labels.dtype)
+    keep_f = keep.view(view).to(labels.dtype)
+    if null_token is None:
+        return labels * keep_f                                   # zero null (paper-like)
+    null = null_token.to(device=labels.device, dtype=labels.dtype)
+    return labels * keep_f + null * (1.0 - keep_f)               # learned null token
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -436,9 +523,10 @@ class TextDMStageRunner(StageRunner):
         self.loss = loss if loss is not None else build_stage_loss(cfg, self.stage)
         self.use_masked = bool(OmegaConf.select(cfg, "train.dm.use_masked_branch", default=True))
         self.cfg_dropout_prob = float(OmegaConf.select(cfg, "train.dm.cfg_dropout_prob", default=0.0))
+        self._setup_cfg_null()
 
     def state_modules(self) -> Dict[str, nn.Module]:
-        return {"diffusion": self.denoiser}
+        return {"diffusion": self.denoiser, **self._cfg_null_state()}
 
     def _denoise(self, ft, noise_level, labels, *, enable_mask: bool) -> torch.Tensor:
         return self.denoiser(ft, noise_level, labels, enable_mask=enable_mask)
@@ -455,7 +543,8 @@ class TextDMStageRunner(StageRunner):
             labels = self.encode_text_fn(captions).to(self.device).detach()
         # CFG: drop labels to the null embedding (training only) so the DM learns
         # the unconditional branch needed for classifier-free guidance at inference.
-        labels = apply_cfg_label_dropout(labels, self.cfg_dropout_prob, self._training)
+        labels = apply_cfg_label_dropout(labels, self.cfg_dropout_prob,
+                                         self._training, self._cfg_null_token(labels))
 
         ft, noise_level, _noise, _t = self.scheduler.add_noise(f0)
         noise_level = noise_level.to(self.device)
@@ -511,9 +600,10 @@ class ControlNetStageRunner(StageRunner):
         self.loss = loss if loss is not None else build_stage_loss(cfg, self.stage)
         self.use_masked = bool(OmegaConf.select(cfg, "train.dm.use_masked_branch", default=True))
         self.cfg_dropout_prob = float(OmegaConf.select(cfg, "train.dm.cfg_dropout_prob", default=0.0))
+        self._setup_cfg_null()
 
     def state_modules(self) -> Dict[str, nn.Module]:
-        mods = {"diffusion": self.denoiser}
+        mods = {"diffusion": self.denoiser, **self._cfg_null_state()}
         if self.edge_module is not None:
             mods["edge_jscc"] = self.edge_module
         return mods
@@ -534,7 +624,8 @@ class ControlNetStageRunner(StageRunner):
             labels = self.encode_text_fn(captions).to(self.device).detach()
         # CFG text-label dropout (training only). The edge condition `c` is kept;
         # only the text label is dropped, matching the paper's text-CFG scale.
-        labels = apply_cfg_label_dropout(labels, self.cfg_dropout_prob, self._training)
+        labels = apply_cfg_label_dropout(labels, self.cfg_dropout_prob,
+                                         self._training, self._cfg_null_token(labels))
 
         ft, noise_level, _n, _t = self.scheduler.add_noise(f0)
         noise_level = noise_level.to(self.device)
@@ -676,13 +767,27 @@ class EdgeCodecStageRunner(StageRunner):
         super().__init__(cfg, device, param_groups)
         self.edge_codec = edge_codec
         self.loss = loss if loss is not None else build_stage_loss(cfg, STAGE_EDGE_CODEC)
+        # Multi-SNR training: sample the edge-link SNR per step from
+        # [min,max] dB so the SNR conditioning is actually exercised (otherwise
+        # the codec trains at a single fixed SNR and the conditioning is a
+        # constant). Paper-like: WITT-style codecs train across SNRs.
+        ms = OmegaConf.select(cfg, "train.edge_codec.multi_snr", default=None)
+        self.multi_snr = bool(OmegaConf.select(ms, "enabled", default=False)) if ms else False
+        self.snr_min = float(OmegaConf.select(ms, "min_db", default=0.0)) if ms else 0.0
+        self.snr_max = float(OmegaConf.select(ms, "max_db", default=20.0)) if ms else 20.0
 
     def state_modules(self) -> Dict[str, nn.Module]:
         return {"edge_jscc": self.edge_codec}
 
+    def _sample_snr(self) -> Optional[float]:
+        """Uniform SNR in [min,max] dB for multi-SNR training, else None (fixed)."""
+        if not (self.multi_snr and self._training):
+            return None
+        return float(self.snr_min + (self.snr_max - self.snr_min) * torch.rand(()).item())
+
     def forward(self, batch: Dict) -> Dict[str, torch.Tensor]:
         edge = batch["edge"].to(self.device)
-        logits = self.edge_codec.reconstruct(edge)
+        logits = self.edge_codec.reconstruct(edge, snr_db=self._sample_snr())
         return self.loss(logits, edge)
 
 

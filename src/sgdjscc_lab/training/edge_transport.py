@@ -45,6 +45,22 @@ _LATENT_CH = 16
 _VAE_DOWNSAMPLE = 8
 
 
+def edge_in_channels(cfg: DictConfig) -> int:
+    """Edge input channel count from the dataset edge representation.
+
+    ``canny`` / ``sidecar`` are 1-channel. ``muge_sidecar`` / ``muge_runtime`` use
+    ``train.dataset.muge_repr`` (reduced=1 | edge_uncertainty=2 | multi=11), so the
+    edge codec ``in_ch`` matches the data the dataset produces. See
+    docs/paper_gap_closure.md "Stage-3 edge path alignment".
+    """
+    src = str(OmegaConf.select(cfg, "train.dataset.edge_source", default="canny")).lower()
+    if src in ("muge_sidecar", "muge_runtime"):
+        from sgdjscc_lab.data.datasets import muge_repr_channels
+        return muge_repr_channels(
+            OmegaConf.select(cfg, "train.dataset.muge_repr", default="reduced"))
+    return 1
+
+
 def resolve_edge_transport(cfg: DictConfig) -> str:
     mode = str(OmegaConf.select(
         cfg, "train.controlnet.edge_transport", default=EDGE_TRANSPORT_SHARED_VAE)).lower()
@@ -71,11 +87,14 @@ def build_edge_transport(cfg: DictConfig, jscc, device) -> Callable[[torch.Tenso
         base = _jscc_latent_encoder(jscc)
 
         def _shared_vae(edge: torch.Tensor) -> torch.Tensor:
-            if edge.shape[1] == 1:
-                edge = edge.repeat(1, 3, 1, 1)
-            return base(edge)
+            # Mirror inference's _encode_canny_latent: use the primary edge
+            # channel (channel 0 = mean-edge for the MuGE reprs) repeated to 3 and
+            # encoded by the IMAGE VAE. Handles 1/2/11-channel edge inputs.
+            e = edge[:, :1]
+            return base(e.repeat(1, 3, 1, 1))
 
-        logger.info("Stage-3 edge transport: shared_vae (image VAE stand-in).")
+        logger.info("Stage-3 edge transport: shared_vae (image VAE on the edge "
+                    "channel — structurally matches inference _encode_canny_latent).")
         return _shared_vae
 
     # edge_jscc
@@ -99,7 +118,7 @@ def build_edge_transport(cfg: DictConfig, jscc, device) -> Callable[[torch.Tenso
     edge_codec = EdgeJSCC(
         latent_ch=_LATENT_CH, base_ch=base_ch, downsample_factor=_VAE_DOWNSAMPLE,
         norm=norm, channel=channel, snr_db=snr_db,  # transport needs no decoder
-        arch=arch, vit_cfg=vit_cfg,
+        arch=arch, vit_cfg=vit_cfg, in_ch=edge_in_channels(cfg),
     ).to(device)
 
     # Load the trained edge codec → this is what makes edge_jscc a paper-like
@@ -173,14 +192,15 @@ def build_edge_codec(cfg: DictConfig, device):
     if use_channel:
         from sgdjscc_lab.channels.awgn import AWGNChannel
         channel = AWGNChannel()
+    in_ch = edge_in_channels(cfg)
     codec = EdgeJSCC(
         latent_ch=_LATENT_CH, base_ch=base_ch, downsample_factor=_VAE_DOWNSAMPLE,
         norm=norm, channel=channel, snr_db=snr_db, with_decoder=True,
-        arch=arch, vit_cfg=vit_cfg,
+        arch=arch, vit_cfg=vit_cfg, in_ch=in_ch,
     ).to(device)
     logger.info("edge_codec: EdgeJSCC(arch=%s, base_ch=%d, norm=%s, snr=%.1f dB, "
-                "channel=%s) — trainable encoder+projector+decoder.",
-                arch, base_ch, norm, snr_db, channel is not None)
+                "channel=%s, in_ch=%d) — trainable encoder+projector+decoder.",
+                arch, base_ch, norm, snr_db, channel is not None, in_ch)
     return codec
 
 

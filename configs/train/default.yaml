@@ -7,6 +7,14 @@
 # Loaded as a _defaults_ fragment by the composed_train_*.yaml configs; every
 # field is overridable at the composed config or CLI level.
 
+# ── Paper-faithful reproduction mode ──────────────────────────────────────────
+# When true, sgdjscc_lab/paper_mode.py enforces the paper's intended config and
+# BLOCKS non-faithful stand-ins (auto-captions, Canny edges, shared_vae edge
+# transport, zero-vector CFG null, single-fixed-SNR edge codec). Default false →
+# all extensions remain available. See docs/paper_gap_closure.md and the
+# configs/paper_train_*.yaml bundle.
+paper_mode: false
+
 train:
   enabled:      true
 
@@ -55,10 +63,22 @@ train:
     caption_path:    null
     fallback_caption: ""
     # Edge source for the text_image_edge (ControlNet) dataset.
-    #   canny   : compute a Canny edge map on the fly from the image
-    #   sidecar : read a precomputed edge map from edge_dir
+    #   canny        : compute a Canny edge map on the fly from the image
+    #   sidecar      : read a precomputed edge map from edge_dir
+    #   muge_sidecar : read a precomputed MuGE soft edge (paper-faithful structure)
+    #   muge_runtime : run MuGE at train time (reuses guidance/edge_extractor)
     edge_source:     null
     edge_dir:        null
+    # MuGE edge representation (muge_sidecar / muge_runtime only):
+    #   reduced          1ch mean edge — LEGACY default; matches the inference edge
+    #                    CHANNEL COUNT (inference also means 11→1) but drops uncertainty.
+    #   edge_uncertainty 2ch [mean-edge, mean-uncertainty] — CLOSEST to inference
+    #                    (its canny_transmission_net input is edge+uncertainty). Recommended.
+    #   multi            11ch full MuGE map — OPT-IN, information-preserving (inference
+    #                    collapses these → not "more inference-aligned", just richer).
+    # The edge codec in_ch is derived from this (training/edge_transport.edge_in_channels),
+    # so the edge_codec checkpoint and the Stage-3 transport must use the SAME muge_repr.
+    muge_repr:       reduced
 
   # ── Common image transforms ────────────────────────────────────────────────
   # Paper reproduction (stage 2/3): center-crop + resize 128×128.
@@ -96,8 +116,14 @@ train:
     # label with the NULL (zero) embedding per sample, so the DM learns the
     # unconditional branch needed for CFG at inference (paper uses CFG scale 4.5).
     # 0.1 follows the PixArt convention; the paper does not state the exact value.
-    # NULL = zeros is a simplification vs a learned null token (paper-like).
     cfg_dropout_prob:  0.1
+    # CFG null embedding mode:
+    #   zero    : the dropped text condition becomes the ZERO vector (simple,
+    #             paper-LIKE; the paper does not publish its null token).
+    #   learned : a TRAINABLE null token (closer to a true unconditional branch;
+    #             the paper_mode default). Added to the optimizer on first use and
+    #             checkpointed under modules.cfg_null_token.
+    cfg_null_mode:     zero
     scheduler:                  # continuous sigmoid noise schedule S(t)
       start:  0.0
       end:    3.0
@@ -113,8 +139,15 @@ train:
     arch:        conv           # conv (default) | vit (paper-like patch-embed transformer)
     base_ch:     64             # conv arch only
     norm:        group          # conv arch: group | batch | instance | none
-    snr_db:      10.0           # SNR of the edge channel during codec training
+    snr_db:      10.0           # SNR of the edge channel during codec training (fixed-SNR)
     use_channel: true           # pass edge symbols through the AWGN channel
+    # Multi-SNR training: sample the edge-link SNR per step from [min,max] dB so
+    # the SNR conditioning is actually exercised (paper-like; WITT-style codecs
+    # train across SNRs). When disabled the codec trains at the fixed snr_db above.
+    multi_snr:
+      enabled:   false
+      min_db:    0.0
+      max_db:    20.0
     bce_weight:  1.0            # weight on BCE-with-logits term
     dice_weight: 1.0            # weight on (1 - soft-Dice) term
     vit:                        # used when arch == vit (patch = downsample factor = 8)

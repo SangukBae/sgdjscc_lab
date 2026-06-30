@@ -72,10 +72,12 @@ class EdgeJSCCEncoder(nn.Module):
         base_ch: int = 64,
         downsample_factor: int = 8,
         norm: str = "group",
+        in_ch: int = 1,
     ) -> None:
         super().__init__()
+        self.in_ch = int(in_ch)
         n_down = max(0, int(round(math.log2(max(1, downsample_factor)))))
-        layers = [nn.Conv2d(1, base_ch, 3, padding=1), nn.SiLU()]
+        layers = [nn.Conv2d(self.in_ch, base_ch, 3, padding=1), nn.SiLU()]
         ch = base_ch
         for _ in range(n_down):
             out = min(ch * 2, 256)
@@ -89,7 +91,9 @@ class EdgeJSCCEncoder(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, edge: torch.Tensor) -> torch.Tensor:
-        if edge.shape[1] != 1:
+        # Legacy 1-ch codec: collapse any multi-channel edge to the mean (keeps
+        # backward compatibility). Multi-channel codecs (in_ch>1) pass through.
+        if self.in_ch == 1 and edge.shape[1] != 1:
             edge = edge.mean(dim=1, keepdim=True)
         return self.net(edge)
 
@@ -120,6 +124,7 @@ class EdgeJSCCDecoder(nn.Module):
         base_ch: int = 64,
         upsample_factor: int = 8,
         norm: str = "group",
+        out_ch: int = 1,
     ) -> None:
         super().__init__()
         n_up = max(0, int(round(math.log2(max(1, upsample_factor)))))
@@ -134,7 +139,7 @@ class EdgeJSCCDecoder(nn.Module):
                 nn.SiLU(),
             ]
             ch = out
-        layers += [nn.Conv2d(ch, 1, 3, padding=1)]
+        layers += [nn.Conv2d(ch, int(out_ch), 3, padding=1)]
         self.net = nn.Sequential(*layers)
 
     def forward(self, c: torch.Tensor) -> torch.Tensor:
@@ -271,18 +276,19 @@ class EdgeJSCCViTEncoder(nn.Module):
 
     def __init__(self, latent_ch: int = 16, patch_size: int = 8, embed_dim: int = 128,
                  depth: int = 4, num_heads: int = 4, mlp_ratio: float = 2.0,
-                 snr_cond: bool = False) -> None:
+                 snr_cond: bool = False, in_ch: int = 1) -> None:
         super().__init__()
         self.patch_size = int(patch_size)
         self.embed_dim = int(embed_dim)
         self.snr_cond = bool(snr_cond)
-        self.patch = nn.Conv2d(1, embed_dim, patch_size, stride=patch_size)
+        self.in_ch = int(in_ch)
+        self.patch = nn.Conv2d(self.in_ch, embed_dim, patch_size, stride=patch_size)
         self.blocks = (_AdaLNTransformer(embed_dim, depth, num_heads, mlp_ratio)
                        if self.snr_cond else _transformer(embed_dim, depth, num_heads, mlp_ratio))
         self.to_latent = nn.Linear(embed_dim, latent_ch)
 
     def forward(self, edge: torch.Tensor, snr: Optional[torch.Tensor] = None) -> torch.Tensor:
-        if edge.shape[1] != 1:
+        if self.in_ch == 1 and edge.shape[1] != 1:
             edge = edge.mean(dim=1, keepdim=True)
         x = self.patch(edge)                              # [B, D, gh, gw]
         b, d, gh, gw = x.shape
@@ -299,27 +305,29 @@ class EdgeJSCCViTDecoder(nn.Module):
 
     def __init__(self, latent_ch: int = 16, patch_size: int = 8, embed_dim: int = 128,
                  depth: int = 4, num_heads: int = 4, mlp_ratio: float = 2.0,
-                 snr_cond: bool = False) -> None:
+                 snr_cond: bool = False, out_ch: int = 1) -> None:
         super().__init__()
         self.patch_size = int(patch_size)
         self.embed_dim = int(embed_dim)
         self.snr_cond = bool(snr_cond)
+        self.out_ch = int(out_ch)
         self.from_latent = nn.Linear(latent_ch, embed_dim)
         self.blocks = (_AdaLNTransformer(embed_dim, depth, num_heads, mlp_ratio)
                        if self.snr_cond else _transformer(embed_dim, depth, num_heads, mlp_ratio))
-        self.to_pixels = nn.Linear(embed_dim, patch_size * patch_size)
+        self.to_pixels = nn.Linear(embed_dim, self.out_ch * patch_size * patch_size)
 
     def forward(self, c: torch.Tensor, snr: Optional[torch.Tensor] = None) -> torch.Tensor:
         b, lc, h, w = c.shape
         p = self.patch_size
+        oc = self.out_ch
         tok = c.flatten(2).transpose(1, 2)                # [B, N, latent_ch]
         tok = self.from_latent(tok)                       # [B, N, D]
         tok = tok + _sincos_pos_embed(h, w, tok.shape[-1], tok.device, tok.dtype)[None]
         tok = self.blocks(tok, snr) if self.snr_cond else self.blocks(tok)
-        px = self.to_pixels(tok)                          # [B, N, p*p]
-        # fold tokens back to a [B,1,h*p,w*p] image
-        px = px.reshape(b, h, w, p, p).permute(0, 1, 3, 2, 4).reshape(b, h * p, w * p)
-        return px.unsqueeze(1)
+        px = self.to_pixels(tok)                          # [B, N, oc*p*p]
+        # fold tokens back to a [B, oc, h*p, w*p] image
+        px = px.reshape(b, h, w, p, p, oc).permute(0, 5, 1, 3, 2, 4).reshape(b, oc, h * p, w * p)
+        return px
 
 
 class EdgeJSCC(nn.Module):
@@ -348,9 +356,15 @@ class EdgeJSCC(nn.Module):
         with_decoder: bool = False,
         arch: str = "conv",
         vit_cfg: Optional[dict] = None,
+        in_ch: int = 1,
     ) -> None:
         super().__init__()
         self.arch = str(arch).lower()
+        # Edge input/output channel count. ``in_ch=1`` (default) is the legacy
+        # 1-channel soft edge; ``in_ch=2`` is the inference-aligned edge+uncertainty
+        # representation; ``in_ch=11`` the full MuGE multi-channel map (opt-in). The
+        # self-supervised codec reconstructs the SAME channel count (out_ch=in_ch).
+        self.in_ch = int(in_ch)
         if self.arch == "vit":
             # ViT codec: patch = downsample_factor so the latent grid matches the
             # conv variant (H/downsample). vit_cfg: embed_dim/depth/num_heads/mlp_ratio.
@@ -365,41 +379,63 @@ class EdgeJSCC(nn.Module):
             snr_cond = bool(vc.get("snr_cond", False))
             self._snr_cond = snr_cond
             self.encoder = EdgeJSCCViTEncoder(
-                latent_ch, downsample_factor, embed_dim, depth, heads, mlp_ratio, snr_cond)
+                latent_ch, downsample_factor, embed_dim, depth, heads, mlp_ratio,
+                snr_cond, in_ch=self.in_ch)
             self.decoder = (
                 EdgeJSCCViTDecoder(latent_ch, downsample_factor, embed_dim, depth,
-                                   heads, mlp_ratio, snr_cond)
+                                   heads, mlp_ratio, snr_cond, out_ch=self.in_ch)
                 if with_decoder else None)
         elif self.arch == "conv":
-            self.encoder = EdgeJSCCEncoder(latent_ch, base_ch, downsample_factor, norm)
+            self.encoder = EdgeJSCCEncoder(latent_ch, base_ch, downsample_factor,
+                                           norm, in_ch=self.in_ch)
             # The decoder head is only needed to TRAIN the codec (stage edge_codec).
             # Stage-3 inference uses ``encode`` (the condition latent ``c``) only, so
             # the transport builder can omit it to save weights/memory.
             self.decoder = (
-                EdgeJSCCDecoder(latent_ch, base_ch, downsample_factor, norm)
+                EdgeJSCCDecoder(latent_ch, base_ch, downsample_factor, norm,
+                                out_ch=self.in_ch)
                 if with_decoder else None)
+        elif self.arch == "paper":
+            # GUARDRAIL (item [4]): exact reuse of the original SGDJSCC edge JSCC
+            # structure (revised_witt WITT_Encoder/WITT_Decoder + QAM, used by
+            # SGDJSCC/models/model_canny.py) is UNSUPPORTED here: (a) the public
+            # HF release ships NO edge-codec weights (only JSCC/diffusion/
+            # controlnet/muge), and (b) the WITT Swin interface (img_size/
+            # embed_dims/C/window) does not match this codec's edge-latent
+            # geometry without a non-public edge checkpoint to align to. Fail
+            # explicitly rather than silently substitute a paper-like stand-in.
+            raise NotImplementedError(
+                "EdgeJSCC arch='paper' (exact original WITT edge-JSCC reuse) is "
+                "UNSUPPORTED: the public SGDJSCC release provides no edge-codec "
+                "weights and the revised_witt Swin interface does not match this "
+                "edge-latent geometry. Use arch='vit' (adaLN SNR-conditioned "
+                "transformer — WITT-location-faithful, the closest reproducible "
+                "structure) or arch='conv'. See docs/paper_gap_closure.md [4]."
+            )
         else:
-            raise ValueError(f"EdgeJSCC arch must be 'conv' or 'vit', got {arch!r}.")
+            raise ValueError(
+                f"EdgeJSCC arch must be 'conv' | 'vit' | 'paper', got {arch!r}.")
         self.projector = EdgeLatentProjector(latent_ch, latent_ch)
         self.channel = channel
         self.snr_db = float(snr_db)
         if not hasattr(self, "_snr_cond"):
             self._snr_cond = False
 
-    def _snr_tensor(self, x: torch.Tensor) -> Optional[torch.Tensor]:
+    def _snr_tensor(self, x: torch.Tensor,
+                    snr_db: Optional[float] = None) -> Optional[torch.Tensor]:
         """Per-sample SNR conditioning value for adaLN, or None when off.
 
         Matches the public WITT edge codec convention: the network is conditioned
         on the **linear** SNR scale ``10**(snr_db/10)``, NOT the dB value
         (``SGDJSCC/models/model_canny.py`` computes ``snr_scale = 10**(snr/10)``
-        and passes it to the WITT encoder/decoder). Uses the codec's fixed
-        ``snr_db`` — so at fixed-SNR training the conditioning is a CONSTANT (the
-        codec learns a fixed modulation). To make it SNR-adaptive, train across
-        SNRs and feed the per-forward SNR here.
+        and passes it to the WITT encoder/decoder). When *snr_db* is None the
+        codec's fixed ``self.snr_db`` is used (fixed-SNR → CONSTANT conditioning);
+        pass a per-forward *snr_db* (multi-SNR training) to make it SNR-adaptive.
         """
         if not getattr(self, "_snr_cond", False):
             return None
-        snr_scale = 10.0 ** (float(self.snr_db) / 10.0)   # linear SNR (WITT convention)
+        snr_val = float(self.snr_db if snr_db is None else snr_db)
+        snr_scale = 10.0 ** (snr_val / 10.0)              # linear SNR (WITT convention)
         return torch.full((x.shape[0],), snr_scale, device=x.device, dtype=x.dtype)
 
     @staticmethod
@@ -410,44 +446,51 @@ class EdgeJSCC(nn.Module):
         flat = F.normalize(flat, p=2, dim=1) * math.sqrt(flat.shape[1])
         return flat.reshape_as(x)
 
-    def encode_latent(self, edge: torch.Tensor) -> torch.Tensor:
+    def encode_latent(self, edge: torch.Tensor,
+                      snr_db: Optional[float] = None) -> torch.Tensor:
         """Encoder → L2-normalise → (channel) → projector, at the encoder grid.
 
         Shared by both heads: this is the exact latent the ControlNet sees as
         ``c`` (before any resize) *and* the latent the decoder reconstructs from,
         so training the decoder shapes the Stage-3 condition latent directly.
+        ``snr_db`` (optional) overrides the edge-link SNR for this forward.
         """
-        snr = self._snr_tensor(edge)
+        snr = self._snr_tensor(edge, snr_db)
         z = self.encoder(edge, snr) if snr is not None else self.encoder(edge)
         z = self._normalize(z)
         if self.channel is not None:
-            z = self._normalize(self.channel.transmit(z, self.snr_db))
+            ch_snr = float(self.snr_db if snr_db is None else snr_db)
+            z = self._normalize(self.channel.transmit(z, ch_snr))
         return self.projector(z)
 
-    def encode(self, edge: torch.Tensor, target_hw: Optional[tuple] = None) -> torch.Tensor:
+    def encode(self, edge: torch.Tensor, target_hw: Optional[tuple] = None,
+               snr_db: Optional[float] = None) -> torch.Tensor:
         """Return the condition latent ``c`` for an edge map batch.
 
         ``target_hw`` (optional) resizes ``c`` to the diffusion latent grid when
-        the encoder's downsampling does not exactly match.
+        the encoder's downsampling does not exactly match. ``snr_db`` (optional)
+        overrides the edge-link SNR for this forward (multi-SNR training/eval).
         """
-        c = self.encode_latent(edge)
+        c = self.encode_latent(edge, snr_db)
         if target_hw is not None and c.shape[-2:] != tuple(target_hw):
             c = F.interpolate(c, size=tuple(target_hw), mode="bilinear", align_corners=False)
         return c
 
-    def reconstruct(self, edge: torch.Tensor) -> torch.Tensor:
+    def reconstruct(self, edge: torch.Tensor,
+                    snr_db: Optional[float] = None) -> torch.Tensor:
         """Codec-training path: edge map → received edge **logits** at input res.
 
         Requires the decoder head (``with_decoder=True``).  Returns logits (no
-        sigmoid) shaped like the input edge map ``[B, 1, H, W]``.
+        sigmoid) shaped like the input edge map ``[B, 1, H, W]``. ``snr_db``
+        (optional) overrides the edge-link SNR for this forward (multi-SNR).
         """
         if self.decoder is None:
             raise RuntimeError(
                 "EdgeJSCC.reconstruct requires the decoder head; build the codec "
                 "with with_decoder=True (stage 'edge_codec' does this)."
             )
-        c = self.encode_latent(edge)
-        snr = self._snr_tensor(edge)
+        c = self.encode_latent(edge, snr_db)
+        snr = self._snr_tensor(edge, snr_db)
         logits = self.decoder(c, snr) if snr is not None else self.decoder(c)
         if logits.shape[-2:] != edge.shape[-2:]:
             logits = F.interpolate(logits, size=edge.shape[-2:],

@@ -175,11 +175,17 @@ def main() -> None:
     from sgdjscc_lab.training.stages import (
         resolve_stage, validate_stage_config, StageConfigError,
     )
+    from sgdjscc_lab import paper_mode as _paper_mode
     try:
         stage = resolve_stage(cfg)
         validate_stage_config(cfg, stage)
-    except StageConfigError as exc:
+        # paper_mode (default off): enforce paper-faithful guardrails — blocks
+        # auto-captions, Canny edges, shared_vae transport, zero CFG null, etc.
+        _paper_mode.enforce(cfg, stage)
+    except StageConfigError as exc:   # PaperModeError subclasses StageConfigError
         sys.exit(f"Error: invalid training config for stage.\n  {exc}")
+    if _paper_mode.is_enabled(cfg):
+        logger.info("paper_mode: ON — %s", _paper_mode.summary())
 
     # ── Log key settings ──────────────────────────────────────────────────────
     logger.info("Config:           %s", args.config)

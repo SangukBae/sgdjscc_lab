@@ -439,9 +439,10 @@ class EdgeCodecLoss(nn.Module):
 
         loss = bce_weight · BCE(logits, edge)  +  dice_weight · (1 − Dice(σ(logits), edge))
 
-    ``forward(logits, target)`` takes raw logits ``[B, 1, H, W]`` and a target
-    edge map in ``[0, 1]`` and returns a dict with ``loss_bce``, ``loss_dice``
-    and the combined ``loss``.
+    ``forward(logits, target)`` takes raw logits ``[B, C, H, W]`` and a target
+    edge tensor in ``[0, 1]`` and returns a dict with ``loss_bce``,
+    ``loss_dice`` and the combined ``loss``. ``C`` is usually 1, but the MuGE
+    edge-alignment path may use 2 channels (edge + uncertainty) or 11 channels.
     """
 
     def __init__(self, bce_weight: float = 1.0, dice_weight: float = 1.0,

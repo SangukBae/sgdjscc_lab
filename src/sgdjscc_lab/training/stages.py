@@ -71,8 +71,15 @@ STAGE_DATASET_TYPE = {
 #                    {filename: [captions]}); one caption is picked per access via
 #                    train.dataset.caption_select (first | longest | random).
 VALID_CAPTION_SOURCES = ("sidecar", "manifest", "filename", "coco_json", "multi_manifest")
-# Edge sources understood by TextImageEdge dataset.
-VALID_EDGE_SOURCES = ("sidecar", "canny")
+# Edge sources understood by TextImageEdge / EdgeOnly datasets.
+#   canny        : on-the-fly Canny (paper-like / ablation).
+#   sidecar      : a generic precomputed edge "<stem>_edge.png".
+#   muge_sidecar : a precomputed MuGE soft edge "<stem>_muge.png" (paper-faithful
+#                  structure; produce with scripts/prepare_muge_edges.py).
+#   muge_runtime : run the MuGE extractor at train time (reuses
+#                  guidance/edge_extractor; needs the MuGE checkpoint + model_root;
+#                  recommend num_workers=0 — see data/datasets.py).
+VALID_EDGE_SOURCES = ("sidecar", "canny", "muge_sidecar", "muge_runtime")
 
 
 class StageConfigError(ValueError):
@@ -164,6 +171,12 @@ def _validate_caption_source(cfg: DictConfig, stage: str) -> None:
         )
 
 
+def _validate_muge_repr(cfg: DictConfig) -> None:
+    """Validate ``train.dataset.muge_repr`` when a MuGE edge source is used."""
+    from sgdjscc_lab.data.datasets import muge_repr_channels
+    muge_repr_channels(OmegaConf.select(cfg, "train.dataset.muge_repr", default="reduced"))
+
+
 def validate_stage_config(cfg: DictConfig, stage: Optional[str] = None) -> str:
     """Validate that *cfg* supplies the inputs required by *stage*.
 
@@ -219,6 +232,8 @@ def validate_stage_config(cfg: DictConfig, stage: Optional[str] = None) -> str:
                 "edge_source='sidecar' requires train.dataset.edge_dir "
                 "(a directory of edge maps matching the image filenames)."
             )
+        if str(edge_src).lower() in ("muge_sidecar", "muge_runtime"):
+            _validate_muge_repr(cfg)
         return stage
 
     if stage == STAGE_CSI_ESTIMATION:
@@ -254,6 +269,8 @@ def validate_stage_config(cfg: DictConfig, stage: Optional[str] = None) -> str:
                 "edge_source='sidecar' requires train.dataset.edge_dir "
                 "(a directory of edge maps matching the image filenames)."
             )
+        if str(edge_src).lower() in ("muge_sidecar", "muge_runtime"):
+            _validate_muge_repr(cfg)
         # Validate the edge transport mode early (shared_vae | edge_jscc).
         from sgdjscc_lab.training.edge_transport import resolve_edge_transport
         resolve_edge_transport(cfg)

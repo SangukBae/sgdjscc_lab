@@ -1,0 +1,57 @@
+# configs/paper_train_edge_codec.yaml – PAPER reproduction: edge codec (supporting)
+#
+# Supporting step for the Stage-3 baseline: trains the dedicated edge-JSCC codec
+# (BCE+Dice) whose checkpoint paper_train_controlnet.yaml loads as the edge
+# transport. paper_mode requires MuGE soft edges + SNR-conditioned, MULTI-SNR
+# training (so the SNR conditioning is actually exercised, WITT-style).
+#
+# NOTE: arch='vit' is the closest reproducible structure (adaLN SNR-conditioned
+# transformer, WITT-location-faithful). Exact original WITT reuse (arch='paper')
+# is UNSUPPORTED — see docs/paper_gap_closure.md [4].
+#
+# Precompute MuGE edges first (edge + uncertainty, the closest train-side
+# representation to what inference carries into canny_transmission_net):
+#   python scripts/prepare_muge_edges.py --input data/coco/train2017 \
+#       --model-root ../checkpoints --repr edge_uncertainty
+# Then:
+#   python scripts/train.py --config configs/paper_train_edge_codec.yaml \
+#       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+paper_mode: true
+
+use_semantic:   false
+use_text:       false
+use_controlnet: false
+
+train:
+  stage: edge_codec
+  batch_size: 64
+  dataset:
+    type: edge
+    edge_source: muge_sidecar     # PAPER: MuGE soft edges (precomputed)
+    edge_dir: null                # <stem>_muge.(png|npy) next to the image, or set a dir
+    muge_repr: edge_uncertainty   # CLOSEST to inference: mean-edge + uncertainty (2ch)
+  edge_codec:
+    arch: vit                     # WITT-location-faithful adaLN transformer
+    snr_db: 10.0
+    use_channel: true
+    multi_snr:                    # PAPER: train across SNRs (conditioning exercised)
+      enabled: true
+      min_db: 0.0
+      max_db: 20.0
+    vit:
+      embed_dim: 128
+      depth: 4
+      num_heads: 4
+      mlp_ratio: 2.0
+      snr_cond: true              # PAPER: SNR → adaLN conditioning ON
+
+checkpoint_dir:  "../outputs/checkpoints/paper_edge_codec"
+train_log_path:  "../outputs/paper_edge_codec_train_log.jsonl"
