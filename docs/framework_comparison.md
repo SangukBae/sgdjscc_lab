@@ -154,11 +154,11 @@ Phase 2는 다음과 같이 이해해야 한다:
 | 1 | 추론 forward-pass 전반 | 원본 repo 재사용 | **paper-faithful** | `_SCALING_FACTOR=15.45`, step matching, canny 재전송, blind SNR |
 | 2 | 연속 timestep DiT, sigmoid schedule(e3,τ0.7), f0 예측, 결정적 역과정 | `SigmoidNoiseScheduler` + 추론 | **paper-faithful(구조)** | — |
 | 3 | MDTv2 masked+unmasked DM 손실 | `TextDMStageRunner` | **paper-like** | 구조 일치 |
-| 4 | CFG 학습(null-conditioning) | `apply_cfg_label_dropout` (`train.dm.cfg_dropout_prob=0.1`) | **paper-like** | null=zeros(학습형 null token 아님), 텍스트 label만 dropout |
+| 4 | CFG 학습(null-conditioning) | `apply_cfg_label_dropout` + `LearnedNullToken` | **paper-like → closer** | `cfg_null_mode=learned` 지원, `paper_mode`는 learned null token 강제. dropout 확률 자체는 여전히 논문 미공개 |
 | 5 | Step matching `m=S⁻¹(σ²/(σ²+\|h\|²))` | 추론 경로 + `inverse_beta_bar` | **paper-faithful** | — |
 | 6 | Text guidance(BLIP2, 완벽전송 가정) | `guidance/text_extractor` | **paper-faithful** | — |
-| 7 | Edge codec: 출력=foreground 확률, BCE+Dice | `EdgeJSCC` `arch=conv`(기본)\|**`vit`**(`EdgeJSCCViT`) + `edge_codec` stage | **paper-like** | ⚠️ ViT 구조 선택 가능(patch-embed+transformer)이나 WITT-exact 아님·미학습; SNR-adaln 투영은 **보류**(고정 SNR codec); 추론 ViT canny와 별개 |
-| 8 | ControlNet(첫 N블록 control, base DM frozen) | freeze 정책/구조 일치 | **paper-like** | 학습 Stage3는 edge **latent c** 직결(추론은 수신 edge map→VAE, 논문 근접) |
+| 7 | Edge codec: 출력=foreground 확률, BCE+Dice | `EdgeJSCC` `arch=conv`(기본)\|**`vit`**(`EdgeJSCCViT`) + `edge_codec` stage | **paper-like** | ⚠️ ViT 구조 선택 가능(patch-embed+transformer)이나 WITT-exact 아님. Multi-SNR + SNR-adaLN은 연결됨. MuGE repr은 `reduced`(1ch) / `edge_uncertainty`(2ch, 추론에 가장 근접) / `multi`(11ch opt-in) 지원 |
+| 8 | ControlNet(첫 N블록 control, base DM frozen) | freeze 정책/구조 일치 | **paper-like** | 학습 Stage3는 `edge_transport=edge_jscc`를 통해 MuGE repr(기본 `edge_uncertainty`)를 latent `c`로 조건화. 다만 원본 추론의 `canny_transmission_net` + image-VAE 경로를 그대로 재사용하진 않음 |
 | 9 | JSCC enc/dec MSE+λGAN(+LPIPS) | `JSCCStageLoss`(MSE+patch-GAN+**LPIPS**) | **scaffold→구조정렬** | LPIPS 결합 추가(공개 `MSE_LPIPS`와 정렬), 기본 off; patch-GAN 수치 미보장 |
 | 10 | Blind SNR 추정망 | 원본 `Prediction_Model` | **paper-faithful** | — |
 | 11 | MMSE 등화 `y/√(g²+σ²)` | `channels/measurement.py::mmse_equalize` | **paper-faithful(실수 gain)** | ⚠️ 복소 위상 `e^{-jφ}` 미재현(실수 gain 모델) |
@@ -192,8 +192,20 @@ evidence·CSI 정책·ViT codec·FID fail-fast·LPIPS 결합 포함). 단, **rea
 smoke / 실제 DM water-filling 수치 / Inception-FID 수치**는 체크포인트·GPU·네트워크
 의존이라 코드 경로·테스트 내용 기준으로만 검증됨(수치 재현은 별도).
 
+### paper_mode — 논문 재현 경로 분리 (신규)
+
+확장 기능과 논문-충실 경로를 섞지 않도록 **`paper_mode`** guardrail을 도입했다
+(`src/sgdjscc_lab/paper_mode.py`, top-level config `paper_mode: true`, 기본 false).
+켜면 비충실 stand-in을 **명시적으로 차단**한다: auto-caption(`generate_captions.py`
+sidecar)·Canny edge·`shared_vae` transport·zero-vector CFG null·단일 고정 SNR edge
+codec → `PaperModeError`로 체크포인트 로딩 전에 실패. 논문 경로는
+`configs/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml` +
+`configs/paper_eval_awgn.yaml`로 묶었다. 항목별 **paper-faithful / paper-like /
+unsupported 구분**은 [paper_gap_closure.md](./paper_gap_closure.md) 참조.
+
 ### 관련 문서
 
+- [paper_gap_closure.md](./paper_gap_closure.md) — **논문 정합/갭 + paper_mode guardrail (신규)**
 - [training_scaffold.md](./training_scaffold.md) — 학습 stage·edge codec·CFG·baseline/ablation
 - [phase5.md](./phase5.md) — 채널 조건화·MMSE 등화·water-filling(Alg.4)
 - [smoke_training.md](./smoke_training.md) — real-model smoke 검증 절차
