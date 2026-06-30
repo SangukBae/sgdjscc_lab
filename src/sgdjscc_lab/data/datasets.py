@@ -709,17 +709,38 @@ def build_dataloader_for_stage(
     training: bool = True,
     stage: Optional[str] = None,
 ) -> DataLoader:
-    """Build a stage-appropriate dataset + DataLoader from a training config."""
+    """Build a stage-appropriate dataset + DataLoader from a training config.
+
+    DDP-aware: under ``torchrun`` (distributed) the loader uses a
+    :class:`~torch.utils.data.distributed.DistributedSampler` so each rank sees a
+    disjoint shard (the sampler owns shuffling; ``set_epoch`` is driven by the
+    train pipeline). Single-process runs keep the original ``shuffle=`` path
+    (byte-for-byte unchanged). ``batch_size`` is PER-RANK (see docs).
+    """
+    from sgdjscc_lab import distributed as ddp
+
     ds = build_dataset_for_stage(input_path, cfg, training=training, stage=stage)
     batch_size = int(OmegaConf.select(cfg, "train.batch_size", default=4))
     num_workers = int(OmegaConf.select(cfg, "train.num_workers", default=2))
     drop_last = shuffle and len(ds) >= batch_size
+
+    sampler = None
+    if ddp.is_distributed():
+        from torch.utils.data import DistributedSampler
+        # train: drop_last so every rank gets equal-size batches; val: keep all
+        # samples (a small padding duplication is corrected by the sum+count
+        # all-reduce of the metric — see distributed.reduce_metric_sums).
+        sampler = DistributedSampler(
+            ds, shuffle=shuffle, drop_last=(drop_last if training else False))
+
     return DataLoader(
         ds,
         batch_size=batch_size,
-        shuffle=shuffle,
+        # With a sampler, DataLoader requires shuffle=False (sampler shuffles).
+        shuffle=(shuffle if sampler is None else False),
+        sampler=sampler,
         num_workers=num_workers,
         pin_memory=torch.cuda.is_available(),
-        drop_last=drop_last,
+        drop_last=(drop_last if sampler is None else False),
         collate_fn=collate_stage_batch,
     )

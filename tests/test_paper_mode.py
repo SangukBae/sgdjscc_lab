@@ -317,17 +317,25 @@ def test_learned_null_token_save_resume():
     assert dst.token is not None and torch.allclose(dst.token, src.token)
 
 
-def test_cfg_null_token_registers_resumed_token_once():
-    """A resumed (pre-existing) null token is added to the optimizer exactly once."""
-    from sgdjscc_lab.training.stage_runners import StageRunner, LearnedNullToken
+def test_cfg_null_token_eager_setup_registers_with_optimizer():
+    """DDP-safe eager null token: created + registered with the optimizer at setup
+    (no rank-local lazy parameter), and returned via the module forward."""
+    from sgdjscc_lab.training.stage_runners import StageRunner
     r = StageRunner.__new__(StageRunner)    # bypass heavy __init__
+    r.cfg = OmegaConf.create({"train": {"dm": {"cfg_null_mode": "learned"}}})
+    r.device = torch.device("cpu")
+    r._ddp_modules = []
     base = torch.nn.Parameter(torch.zeros(3))
     r.optimizer = torch.optim.AdamW([base], lr=1e-3)
-    r.null_token = LearnedNullToken()
-    r.null_token.materialize(torch.randn(2, 8))   # simulate resume: token exists
-    assert r.null_token._opt_registered is False
     n0 = len(r.optimizer.param_groups)
-    r._cfg_null_token(torch.randn(2, 8))
-    assert len(r.optimizer.param_groups) == n0 + 1   # registered
-    r._cfg_null_token(torch.randn(2, 8))
-    assert len(r.optimizer.param_groups) == n0 + 1   # not double-registered
+    r._setup_cfg_null(torch.randn(2, 8))             # eager: token created + registered
+    assert r._null_core.token is not None and tuple(r._null_core.token.shape) == (1, 8)
+    assert len(r.optimizer.param_groups) == n0 + 1   # registered exactly once at setup
+    tok = r._cfg_null_token(torch.randn(2, 8))       # returned via module forward
+    assert tuple(tok.shape) == (1, 8)
+    # zero mode → no token, no extra param group.
+    r2 = StageRunner.__new__(StageRunner)
+    r2.cfg = OmegaConf.create({"train": {"dm": {"cfg_null_mode": "zero"}}})
+    r2.device = torch.device("cpu"); r2._ddp_modules = []; r2.optimizer = None
+    r2._setup_cfg_null(torch.randn(2, 8))
+    assert r2._null_core is None and r2._cfg_null_token(torch.randn(2, 8)) is None

@@ -203,9 +203,16 @@ def main() -> None:
     set_global_seed(seed)
     logger.info("Seed: %d", seed)
 
-    # ── Device ────────────────────────────────────────────────────────────────
+    # ── Device (DDP-aware) ─────────────────────────────────────────────────────
+    # Under `torchrun --nproc_per_node=N` setup_distributed() inits the process
+    # group and returns cuda:{LOCAL_RANK}; single-process runs fall back to the
+    # configured device (identical to before).
+    from sgdjscc_lab import distributed as ddp
     from sgdjscc_lab.runtime import resolve_device
-    device = resolve_device(str(cfg.get("device", "cpu")))
+    rank, world_size, local_rank, ddp_device = ddp.setup_distributed()
+    device = ddp_device if ddp_device is not None else resolve_device(str(cfg.get("device", "cpu")))
+    if world_size > 1:
+        logger.info("DDP: rank=%d/%d local_rank=%d device=%s", rank, world_size, local_rank, device)
     logger.info("Resolved device: %s", device)
 
     # ── Models ────────────────────────────────────────────────────────────────
@@ -225,7 +232,12 @@ def main() -> None:
 
     # ── Run training ──────────────────────────────────────────────────────────
     from sgdjscc_lab.pipelines.train_pipeline import run_training
-    run_training(cfg, models, device)
+    try:
+        run_training(cfg, models, device)
+    finally:
+        # Always tear down the process group (barrier + destroy) so torchrun
+        # exits cleanly; no-op for single-process runs.
+        ddp.cleanup_distributed()
 
     logger.info("train.py complete.")
 

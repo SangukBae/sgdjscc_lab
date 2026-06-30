@@ -27,6 +27,10 @@ train:
 
   # ── Shared loop hyperparameters (epoch-based) ──────────────────────────────
   epochs:       10
+  # batch_size is PER-RANK (per GPU). Under DDP (torchrun --nproc_per_node=N) the
+  # effective global batch is:  global_batch = batch_size * world_size * grad_accum_steps.
+  # To keep a paper-like global batch (e.g. 64) on 3 GPUs, set batch_size≈21–22
+  # (×3≈64), or raise grad_accum_steps. Single-process: global_batch = batch_size.
   batch_size:   4
   num_workers:  2
   lr:           1.0e-4

@@ -104,6 +104,20 @@ class StageRunner:
         self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
         self._accum = 0
         self.last_step_did_update = False
+        # DDP-wrapped modules trained by this runner (empty for single-process).
+        # Used for grad-accum no_sync and the epoch-boundary grad sync.
+        self._ddp_modules: List = []
+
+    def register_ddp_modules(self, modules: List) -> None:
+        """Record the DDP-wrapped trainable modules (for no_sync / flush sync)."""
+        from sgdjscc_lab import distributed as _ddp
+        self._ddp_modules = [m for m in modules
+                             if m is not None and _ddp.is_distributed()
+                             and hasattr(m, "no_sync")]
+
+    def _ddp_find_unused(self) -> bool:
+        """Whether the stage needs DDP find_unused_parameters (override per stage)."""
+        return False
 
     def _autocast(self):
         return torch.cuda.amp.autocast(enabled=self.use_amp)
@@ -135,9 +149,19 @@ class StageRunner:
                 "unfrozen (freeze policy) and that real models are loaded "
                 "(not --no-models)."
             )
-        self.scaler.scale(loss / self.grad_accum).backward()
+        # DDP grad-accumulation: skip the gradient all-reduce on the NON-boundary
+        # micro-steps (no_sync) so it only fires on the step that actually updates.
+        will_step = (self._accum + 1) % self.grad_accum == 0
+        if self._ddp_modules and not will_step:
+            import contextlib
+            with contextlib.ExitStack() as stack:
+                for m in self._ddp_modules:
+                    stack.enter_context(m.no_sync())
+                self.scaler.scale(loss / self.grad_accum).backward()
+        else:
+            self.scaler.scale(loss / self.grad_accum).backward()
         self._accum += 1
-        if self._accum % self.grad_accum == 0:
+        if will_step:
             self.scaler.step(self.optimizer)
             self.scaler.update()
             self.optimizer.zero_grad()
@@ -158,38 +182,60 @@ class StageRunner:
         return _to_floats(out)
 
     # ── CFG null-token helpers (text-guided DM runners opt in) ───────────────
-    def _setup_cfg_null(self) -> None:
-        """Init the CFG null mode. ``learned`` creates a trainable null token."""
+    def _setup_cfg_null(self, sample_labels: Optional[torch.Tensor] = None) -> None:
+        """Init the CFG null mode. ``learned`` creates a trainable null token.
+
+        DDP-safe design: when *sample_labels* is given (the DM runners pass a probe
+        from ``encode_text_fn``) the token is created **eagerly** with the right
+        shape, DDP-wrapped, registered in the optimizer, and recorded as a DDP
+        module — so every rank has an identical, gradient-synced token (no rank-
+        local lazy parameter). Without a probe it falls back to the lazy path
+        (single-process only; the param is created on first use).
+        """
+        from sgdjscc_lab import distributed as _ddp
         self.cfg_null_mode = str(OmegaConf.select(
             self.cfg, "train.dm.cfg_null_mode", default="zero")).lower()
-        self.null_token = (LearnedNullToken().to(self.device)
-                           if self.cfg_null_mode == "learned" else None)
+        self._null_core = None       # the unwrapped LearnedNullToken (for state_dict)
+        self.null_module = None      # the (possibly DDP-wrapped) callable module
+        if self.cfg_null_mode != "learned":
+            return
+        if sample_labels is None:
+            # lazy fallback — NOT DDP-safe (single-process only).
+            self._null_core = LearnedNullToken().to(self.device)
+            self.null_module = self._null_core
+            return
+        core = LearnedNullToken(shape=(1, *tuple(sample_labels.shape[1:]))).to(self.device)
+        self._null_core = core
+        self.null_module = _ddp.maybe_wrap_ddp(core, find_unused_parameters=False)
+        if self.optimizer is not None:
+            self.optimizer.add_param_group(
+                {"params": list(core.parameters()), "name": "cfg_null_token"})
+        if _ddp.is_distributed() and hasattr(self.null_module, "no_sync"):
+            self._ddp_modules.append(self.null_module)
 
     def _cfg_null_token(self, labels: torch.Tensor):
         """Null embedding tensor for CFG dropout (None → zero-vector path).
 
-        Materialises the learned token to the label shape if it does not exist
-        yet (fresh run), then registers it with the optimizer **exactly once** —
-        whether the token was just created OR restored from a checkpoint by
-        :meth:`LearnedNullToken._load_from_state_dict` (resume). The registration
-        flag (not ``materialize``'s return) drives this so a resumed token is also
-        added to the optimizer.
+        Eager path: returns the token THROUGH the module's ``forward`` so a DDP
+        wrapper's gradient-sync hook fires. Lazy fallback (single-process): create
+        + register the token on first use.
         """
-        nt = getattr(self, "null_token", None)
-        if nt is None:
+        core = getattr(self, "_null_core", None)
+        if core is None:
             return None
-        if nt.token is None:
-            nt.materialize(labels)
-        if not nt._opt_registered and self.optimizer is not None:
-            self.optimizer.add_param_group(
-                {"params": [nt.token], "name": "cfg_null_token"})
-            nt._opt_registered = True
-        return nt.token
+        if core.token is None:                          # lazy fallback path
+            core.materialize(labels)
+            if self.optimizer is not None and not core._opt_registered:
+                self.optimizer.add_param_group(
+                    {"params": [core.token], "name": "cfg_null_token"})
+                core._opt_registered = True
+            return core.token
+        return self.null_module()                       # eager (DDP hook fires)
 
     def _cfg_null_state(self) -> Dict[str, nn.Module]:
-        """Checkpoint the learned null token (empty for the zero-vector path)."""
-        tok = getattr(self, "null_token", None)
-        return {"cfg_null_token": tok} if tok is not None else {}
+        """Checkpoint the learned null token (UNWRAPPED; empty for zero mode)."""
+        core = getattr(self, "_null_core", None)
+        return {"cfg_null_token": core} if core is not None else {}
 
     # ── optimizers / scalers (subclasses override to add e.g. the GAN pair) ───
     def optimizers(self) -> Dict[str, object]:
@@ -211,6 +257,11 @@ class StageRunner:
         """
         if self._accum % self.grad_accum == 0:
             return False  # window already flushed / nothing pending
+        # The trailing micro-steps were accumulated under no_sync (rank-local), so
+        # sync the grads across ranks BEFORE this forced step to keep ranks identical.
+        if self._ddp_modules:
+            from sgdjscc_lab import distributed as _ddp
+            _ddp.all_reduce_grads(self._ddp_modules)
         stepped = False
         for opt, sc in self._optimizer_scaler_pairs():
             if opt is not None:
@@ -288,19 +339,27 @@ def _to_floats(out: Dict) -> Dict[str, float]:
 
 
 class LearnedNullToken(nn.Module):
-    """Trainable CFG null token, lazily sized to the label-embedding shape.
+    """Trainable CFG null token used by ``cfg_null_mode='learned'``.
 
-    The ``learned`` ``cfg_null_mode`` replaces the dropped text condition with
-    this *trainable* unconditional token (closer to the conditional/unconditional
-    branch the paper relies on for CFG scale 4.5) instead of the zero vector. The
-    parameter is created on first use (``materialize``) to match the label
-    embedding shape, and the owning runner adds it to its optimizer then.
+    Replaces the dropped text condition with a *trainable* unconditional token
+    (closer to the conditional/unconditional branch the paper relies on for CFG
+    scale 4.5) instead of the zero vector. ``forward()`` returns the token so it
+    can be called THROUGH a DDP wrapper (the gradient-sync hook fires).
+
+    Construction
+    ------------
+    * ``LearnedNullToken(shape=(1, D))`` — **eager** (DDP-safe): the parameter
+      exists at construction, so the module can be DDP-wrapped and added to the
+      optimizer deterministically across ranks. Used by the DM runners.
+    * ``LearnedNullToken()`` — **lazy** (single-process fallback): created on the
+      first ``materialize`` call. Kept for backward compatibility / non-DDP use.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, shape=None) -> None:
         super().__init__()
-        self.token: Optional[nn.Parameter] = None
-        # Whether the token has been added to the runner's optimizer yet.
+        self.token: Optional[nn.Parameter] = (
+            nn.Parameter(torch.zeros(tuple(shape))) if shape is not None else None)
+        # Whether the token has been added to the runner's optimizer yet (lazy path).
         self._opt_registered: bool = False
 
     def materialize(self, like: torch.Tensor) -> bool:
@@ -516,17 +575,30 @@ class TextDMStageRunner(StageRunner):
         loss: Optional[DiffusionF0Loss] = None,
     ) -> None:
         super().__init__(cfg, device, param_groups)
-        self.denoiser = denoiser
+        # DDP: wrap the trainable denoiser; the runner calls the WRAPPED module so
+        # the gradient-sync hooks fire, and keeps the unwrapped core for clean
+        # state_dict keys (checkpoints stay compatible with single-process runs).
+        from sgdjscc_lab import distributed as _ddp
+        self._denoiser_core = denoiser
+        self.denoiser = _ddp.maybe_wrap_ddp(
+            denoiser, find_unused_parameters=self._ddp_find_unused())
         self.encode_latent_fn = encode_latent_fn
         self.encode_text_fn = encode_text_fn
         self.scheduler = scheduler if scheduler is not None else _build_scheduler(cfg)
         self.loss = loss if loss is not None else build_stage_loss(cfg, self.stage)
         self.use_masked = bool(OmegaConf.select(cfg, "train.dm.use_masked_branch", default=True))
         self.cfg_dropout_prob = float(OmegaConf.select(cfg, "train.dm.cfg_dropout_prob", default=0.0))
-        self._setup_cfg_null()
+        # Probe the label-embedding shape so the learned CFG null token can be
+        # created EAGERLY (DDP-safe) instead of lazily on first forward.
+        probe = None
+        if str(OmegaConf.select(cfg, "train.dm.cfg_null_mode", default="zero")).lower() == "learned":
+            with torch.no_grad():
+                probe = self.encode_text_fn([""]).to(self.device)
+        self._setup_cfg_null(probe)
+        self.register_ddp_modules([self.denoiser, self.null_module])
 
     def state_modules(self) -> Dict[str, nn.Module]:
-        return {"diffusion": self.denoiser, **self._cfg_null_state()}
+        return {"diffusion": self._denoiser_core, **self._cfg_null_state()}
 
     def _denoise(self, ft, noise_level, labels, *, enable_mask: bool) -> torch.Tensor:
         return self.denoiser(ft, noise_level, labels, enable_mask=enable_mask)
@@ -589,7 +661,13 @@ class ControlNetStageRunner(StageRunner):
         loss: Optional[DiffusionF0Loss] = None,
     ) -> None:
         super().__init__(cfg, device, param_groups)
-        self.denoiser = denoiser
+        # DDP: wrap the denoiser (only the ControlNet branches train; see
+        # _ddp_find_unused). edge_transport stays UNWRAPPED — it is fixed side
+        # info computed under no_grad, so it needs no gradient sync.
+        from sgdjscc_lab import distributed as _ddp
+        self._denoiser_core = denoiser
+        self.denoiser = _ddp.maybe_wrap_ddp(
+            denoiser, find_unused_parameters=self._ddp_find_unused())
         self.encode_latent_fn = encode_latent_fn
         self.encode_text_fn = encode_text_fn
         self.encode_edge_fn = encode_edge_fn
@@ -600,10 +678,25 @@ class ControlNetStageRunner(StageRunner):
         self.loss = loss if loss is not None else build_stage_loss(cfg, self.stage)
         self.use_masked = bool(OmegaConf.select(cfg, "train.dm.use_masked_branch", default=True))
         self.cfg_dropout_prob = float(OmegaConf.select(cfg, "train.dm.cfg_dropout_prob", default=0.0))
-        self._setup_cfg_null()
+        probe = None
+        if str(OmegaConf.select(cfg, "train.dm.cfg_null_mode", default="zero")).lower() == "learned":
+            with torch.no_grad():
+                probe = self.encode_text_fn([""]).to(self.device)
+        self._setup_cfg_null(probe)
+        self.register_ddp_modules([self.denoiser, self.null_module])
+
+    def _ddp_find_unused(self) -> bool:
+        # Stage 3 freezes the base DM and trains only the ControlNet branches, so
+        # some WRAPPED-module parameters may not receive a gradient on a given
+        # step (only the structural branches do). DDP needs find_unused_parameters
+        # to handle that without hanging. Enabled CONSERVATIVELY (correctness >
+        # the small overhead); see docs/paper_gap_closure.md "DDP" for the honest
+        # rationale — it can be set False if profiling shows all trainable params
+        # always receive grad.
+        return True
 
     def state_modules(self) -> Dict[str, nn.Module]:
-        mods = {"diffusion": self.denoiser, **self._cfg_null_state()}
+        mods = {"diffusion": self._denoiser_core, **self._cfg_null_state()}
         if self.edge_module is not None:
             mods["edge_jscc"] = self.edge_module
         return mods

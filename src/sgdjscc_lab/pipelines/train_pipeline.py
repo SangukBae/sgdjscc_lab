@@ -42,6 +42,8 @@ import torch
 import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
 
+from sgdjscc_lab import distributed as ddp
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -187,7 +189,14 @@ def run_epoch(runner, loader, epoch: int, log_every: int = 10, training: bool = 
             logger.info("  [epoch %d | %d/%d]  loss=%.6f",
                         epoch, batch_idx + 1, len(loader), float(metrics.get("loss", 0.0)))
 
-    out = _mean_metrics(accum, n_batches)
+    # Validation under DDP: average via all-reduce of metric SUMS + total count
+    # (a mean-of-means is wrong when ranks see different sample counts). Training
+    # epoch means stay local (informational). Non-distributed → local mean.
+    if not training and ddp.is_distributed():
+        out = ddp.reduce_metric_sums(accum, n_batches)
+        n_batches = int(round(n_batches * ddp.get_world_size()))  # global count (approx)
+    else:
+        out = _mean_metrics(accum, n_batches)
     out["n_batches"] = n_batches
     out["epoch_s"] = time.time() - t0
     tag = "Epoch" if training else "Validation"
@@ -218,6 +227,11 @@ def save_checkpoint(
     State dict keys: ``epoch``, ``model_state`` (dict), ``optimizer_state``,
     ``best_metric``, ``cfg`` (serialised).
     """
+    # DDP: only rank 0 writes checkpoints (every rank holds identical weights;
+    # the saved module state is the UNWRAPPED module — see _collect_runner_state /
+    # runner.get_train_state, which use state_modules() returning unwrapped modules).
+    if not ddp.is_rank0():
+        return
     ckpt_dir = Path(checkpoint_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -342,6 +356,9 @@ class TrainingLogger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def log(self, record: Dict) -> None:
+        # DDP: only rank 0 writes the JSONL train log (avoid N interleaved writers).
+        if not ddp.is_rank0():
+            return
         with open(self.path, "a", encoding="utf-8") as fh:
             fh.write(json.dumps(record, default=str) + "\n")
 
@@ -541,6 +558,8 @@ def run_training(
 
     while not done:
         runner.set_mode(True)
+        # DDP: reshuffle each rank's shard deterministically per epoch.
+        ddp.maybe_set_epoch(train_loader, epoch)
         logger.info("─── Epoch %d%s  (stage=%s) ───",
                     epoch, "" if step_mode else f" / {epochs}", stage)
         ep_acc: Dict[str, float] = {}
