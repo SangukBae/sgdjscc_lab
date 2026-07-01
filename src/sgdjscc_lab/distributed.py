@@ -62,6 +62,21 @@ def is_rank0() -> bool:
     return get_rank() == 0
 
 
+def configure_worker_logging(non_root_level: int = logging.ERROR) -> None:
+    """Suppress duplicate console logs on non-zero ranks.
+
+    ``torchrun`` launches one Python process per rank. Without a filter, every
+    informational / warning log line is emitted N times before and after DDP
+    initialisation. The training UI already routes user-facing progress to rank
+    0, so worker ranks keep only ``ERROR``+ console output here.
+    """
+    if is_rank0():
+        return
+    root = logging.getLogger()
+    for handler in root.handlers:
+        handler.setLevel(non_root_level)
+
+
 def setup_distributed():
     """Initialise the process group when launched under torchrun (WORLD_SIZE>1).
 

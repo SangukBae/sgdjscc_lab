@@ -30,10 +30,11 @@ numpy==1.23.2
 scikit-image
 Pillow
 
-# Training console UX: rank-0 tqdm progress bar; pynvml for live GPU util/mem.
-# Both degrade gracefully when absent (tqdm -> plain logs, pynvml -> util "na").
+# Training console UX: rank-0 tqdm progress bar; NVML Python bindings for live
+# GPU util/mem. Both degrade gracefully when absent (tqdm -> plain logs,
+# NVML bindings -> util "na").
 tqdm
-pynvml
+nvidia-ml-py
 
 # CLIP (OpenAI)
 openai-clip

@@ -132,6 +132,7 @@ def main() -> None:
     # times. Gate them to rank 0 (RANK is set by torchrun before the process
     # group is initialised, so is_rank0() is already correct here).
     from sgdjscc_lab import distributed as ddp
+    ddp.configure_worker_logging()
     def _log0(msg, *a):
         if ddp.is_rank0():
             logger.info(msg, *a)
