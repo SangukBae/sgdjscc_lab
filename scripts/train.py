@@ -57,6 +57,8 @@ import logging
 import sys
 from pathlib import Path
 
+import torch
+
 # ── Make src/ importable without editable install ────────────────────────────
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
@@ -101,6 +103,8 @@ def _parse_args() -> argparse.Namespace:
                         "per-step loss — useful for smoke runs)")
     p.add_argument("--save-every-steps", type=int, default=None,
                    help="Override train.save_every_steps (step mode checkpoint cadence)")
+    p.add_argument("--detect-anomaly", action="store_true",
+                   help="Enable torch autograd anomaly detection for debugging")
     p.add_argument("--train-list", default=None,
                    help="Override config.train_input_path — folder of training images")
     p.add_argument("--val-list", default=None,
@@ -168,6 +172,8 @@ def main() -> None:
         train_overrides["log_every_steps"] = args.log_every_steps
     if args.save_every_steps is not None:
         train_overrides["save_every_steps"] = args.save_every_steps
+    if args.detect_anomaly:
+        train_overrides["detect_anomaly"] = True
     if train_overrides:
         overrides["train"] = train_overrides
 
@@ -224,6 +230,11 @@ def main() -> None:
         # rank-0-only summary (previously printed once per rank).
         _log0("DDP: world_size=%d  (rank0 local_rank=%d device=%s)", world_size, local_rank, device)
     _log0("Resolved device: %s", device)
+
+    detect_anomaly = bool(OmegaConf.select(cfg, "train.detect_anomaly", default=False))
+    if detect_anomaly:
+        torch.autograd.set_detect_anomaly(True)
+        _log0("Autograd anomaly detection: ON")
 
     # ── Models ────────────────────────────────────────────────────────────────
     # The edge_codec stage is self-contained (it builds its own trainable edge

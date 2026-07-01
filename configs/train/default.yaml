@@ -59,6 +59,7 @@ train:
   log_every_steps:  0
   grad_accum_steps: 1           # accumulate N micro-batches per optimizer step
   mixed_precision:  false       # torch.cuda.amp; auto-disabled off-CUDA
+  detect_anomaly:   false       # enable autograd anomaly detection for debugging
 
   # ── Dataset selection (stage-aware) ────────────────────────────────────────
   dataset:
