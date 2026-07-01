@@ -43,6 +43,7 @@ import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
 
 from sgdjscc_lab import distributed as ddp
+from sgdjscc_lab.utils.progress import TrainProgress
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,8 @@ def _batch_size(batch) -> int:
     return 1
 
 
-def run_epoch(runner, loader, epoch: int, log_every: int = 10, training: bool = True) -> Dict:
+def run_epoch(runner, loader, epoch: int, log_every: int = 10, training: bool = True,
+              progress=None) -> Dict:
     """Iterate one epoch over *loader*, driving *runner* per batch.
 
     Returns SAMPLE-WEIGHTED mean metrics plus ``n_batches`` / ``n_samples`` /
@@ -189,12 +191,26 @@ def run_epoch(runner, loader, epoch: int, log_every: int = 10, training: bool = 
     still PADS the dataset with a few duplicate samples to make it divisible by
     world_size, so a tiny residual bias from those duplicates remains (to remove
     it entirely needs drop-last / de-duplication) — see docs/paper_gap_closure.md.
+
+    *progress* (a ``TrainProgress``): when given and *training* is False, a
+    transient rank-0 tqdm bar shows validation progress; the per-epoch console
+    log lines are routed through it (progress-safe). JSONL logging is unaffected.
     """
     t0 = time.time()
     accum: Dict[str, float] = {}        # SUM over samples (metric × batch_size)
     n_batches = 0
     n_samples = 0
     step_fn = runner.training_step if training else runner.validation_step
+
+    # Validation gets a transient bar (rank 0 only); training uses the main bar
+    # driven by the run_training loop, so no per-batch bar is opened here.
+    val_bar = None
+    try:
+        val_len = len(loader)
+    except TypeError:
+        val_len = 0
+    if progress is not None and not training:
+        val_bar = progress.open_val_bar(val_len, epoch)
 
     for batch_idx, batch in enumerate(loader):
         metrics = step_fn(batch)
@@ -204,9 +220,15 @@ def run_epoch(runner, loader, epoch: int, log_every: int = 10, training: bool = 
         n_batches += 1
         n_samples += bs
 
-        if training and (batch_idx + 1) % log_every == 0:
+        if val_bar is not None:
+            val_bar.update(1)
+            val_bar.set_postfix_str(f"val_loss={float(metrics.get('loss', 0.0)):.4f}")
+        elif training and progress is None and (batch_idx + 1) % log_every == 0:
             logger.info("  [epoch %d | %d/%d]  loss=%.6f",
                         epoch, batch_idx + 1, len(loader), float(metrics.get("loss", 0.0)))
+
+    if val_bar is not None:
+        val_bar.close()
 
     # Validation under DDP: global mean = all-reduce of the sample-weighted SUMS
     # + the total sample count (exact under uneven batch sizes; a tiny residual
@@ -221,8 +243,12 @@ def run_epoch(runner, loader, epoch: int, log_every: int = 10, training: bool = 
     out["n_samples"] = n_samples
     out["epoch_s"] = time.time() - t0
     tag = "Epoch" if training else "Validation"
-    logger.info("%s %d done — loss=%.6f  batches=%d  samples=%d  time=%.1fs",
-                tag, epoch, out.get("loss", 0.0), n_batches, n_samples, out["epoch_s"])
+    msg = ("%s %d done - loss=%.6f  batches=%d  samples=%d  time=%.1fs" %
+           (tag, epoch, out.get("loss", 0.0), n_batches, n_samples, out["epoch_s"]))
+    if progress is not None:
+        progress.write(msg)        # progress-safe, rank-0 only
+    else:
+        logger.info(msg)
     return out
 
 
@@ -237,6 +263,7 @@ def save_checkpoint(
     is_best: bool = False,
     is_latest: bool = True,
     save_every: int = 0,
+    notify=None,
 ) -> None:
     """Save training state to *checkpoint_dir*.
 
@@ -256,10 +283,14 @@ def save_checkpoint(
     ckpt_dir = Path(checkpoint_dir)
     ckpt_dir.mkdir(parents=True, exist_ok=True)
 
+    # Progress-safe emitter: route through the bar's writer when supplied
+    # (keeps the tqdm line from being corrupted), else fall back to the logger.
+    _emit = notify if notify is not None else (lambda m: logger.info(m))
+
     def _save(name: str) -> None:
         path = ckpt_dir / name
         torch.save(state, path)
-        logger.info("Checkpoint → %s", path)
+        _emit(f"Checkpoint saved: {path}")
 
     if is_latest:
         _save("latest.pth")
@@ -426,7 +457,8 @@ def run_training(
 
     # ── Resolve + validate stage (fails early on bad config) ──────────────────
     stage = validate_stage_config(cfg)
-    logger.info("Training stage: %s", stage)
+    if ddp.is_rank0():   # rank-0-only startup line (avoids N-duplicated output)
+        logger.info("Training stage: %s", stage)
 
     # ── Config (epoch- and step-based) ────────────────────────────────────────
     epochs      = int(OmegaConf.select(cfg, "train.epochs",     default=10))
@@ -528,20 +560,35 @@ def run_training(
             **_runner_save_state(runner),   # all modules/optimizers/scalers/accum
         }
         save_checkpoint(ckpt_state, ckpt_dir, epoch=epoch,
-                        is_best=is_best, is_latest=True, save_every=save_every)
+                        is_best=is_best, is_latest=True, save_every=save_every,
+                        notify=prog.write)
 
     def _validate(epoch: int) -> Dict:
         if val_loader is None:
             return {}
-        vm = run_epoch(runner, val_loader, epoch, log_every, training=False)
+        prog.write("Validation start (epoch %d, global_step %d)..." % (epoch, global_step))
+        vm = run_epoch(runner, val_loader, epoch, log_every, training=False, progress=prog)
         return vm
 
-    logger.info(
-        "Starting training [stage=%s]: %s  lr=%.2e  grad_accum=%d  amp=%s  device=%s",
-        stage,
-        (f"max_steps={max_steps} (step mode)" if step_mode else f"epochs {start_epoch}→{epochs}"),
-        lr, getattr(runner, "grad_accum", 1), getattr(runner, "use_amp", False), device,
+    # ── Console progress (rank-0 tqdm; no-op off rank 0 / without tqdm) ────────
+    # JSONL TrainingLogger + checkpoint policy are unchanged; this only improves
+    # the human-facing console. Step mode → one bar over max_steps; epoch mode →
+    # a fresh bar per epoch. GPU util/mem via pynvml (graceful fallback).
+    world_size = ddp.get_world_size()
+    prog = TrainProgress(
+        stage=stage, step_mode=step_mode, max_steps=max_steps, epochs=epochs,
+        grad_accum=int(getattr(runner, "grad_accum", 1)), world_size=world_size,
+        device=device,
     )
+    prog.write(
+        "Starting training [stage=%s]: %s  lr=%.2e  grad_accum=%d  amp=%s  device=%s" % (
+            stage,
+            (f"max_steps={max_steps} (step mode)" if step_mode
+             else f"epochs {start_epoch}->{epochs}"),
+            lr, getattr(runner, "grad_accum", 1), getattr(runner, "use_amp", False), device,
+        )
+    )
+    prog.begin_run()
 
     # ── Unified loop: epoch-paced, but counting GLOBAL OPTIMIZER STEPS ─────────
     # Step-based events (log/val/save_every_steps, max_steps termination) fire on
@@ -568,7 +615,7 @@ def run_training(
             avg = (ddp.reduce_metric_sums({k: run_acc[k] for k in run_acc}, run_n)
                    if ddp.is_distributed() else
                    {k: run_acc[k] / max(run_n, 1) for k in run_acc})
-            logger.info("  [step %d] loss=%.6f", global_step, avg.get("loss", 0.0))
+            prog.write("[step %d] loss=%.6f" % (global_step, avg.get("loss", 0.0)))
             train_log.log({"global_step": global_step, "epoch": epoch, "stage": stage,
                            "lr": _lr_now(), **avg})
             run_acc, run_n = {}, 0
@@ -591,17 +638,26 @@ def run_training(
             _save(epoch, monitor)
         return bool(step_mode and global_step >= max_steps)
 
+    def _steps_left(period: int):
+        # Steps until the next step-based event fires (step mode only).
+        return (period - (global_step % period)) if (step_mode and period) else None
+
     while not done:
         runner.set_mode(True)
         # DDP: reshuffle each rank's shard deterministically per epoch.
         ddp.maybe_set_epoch(train_loader, epoch)
-        logger.info("─── Epoch %d%s  (stage=%s) ───",
-                    epoch, "" if step_mode else f" / {epochs}", stage)
+        try:
+            n_batches = len(train_loader)
+        except TypeError:
+            n_batches = 0
+        prog.begin_epoch(epoch, n_batches)
+        prog.write("=== Epoch %d%s  (stage=%s) ===" % (
+            epoch, "" if step_mode else f" / {epochs}", stage))
         ep_acc: Dict[str, float] = {}    # SAMPLE-WEIGHTED sums (metric × batch_size)
         ep_n = 0
         ep_samples = 0
 
-        for batch in train_loader:
+        for batch_idx, batch in enumerate(train_loader):
             metrics = runner.training_step(batch)
             bs = _batch_size(batch)
             for k, v in metrics.items():
@@ -612,11 +668,24 @@ def run_training(
             run_n += 1
             last_metrics = metrics
 
-            if not getattr(runner, "last_step_did_update", True):
-                continue  # mid-accumulation micro-step: no global step yet
-            global_step += 1
-            if _on_global_step(metrics.get("loss", float("inf"))):
-                logger.info("Reached max_steps=%d — stopping.", max_steps)
+            did_update = bool(getattr(runner, "last_step_did_update", True))
+            reached_max = False
+            if did_update:
+                # mid-accumulation micro-steps don't advance the global step.
+                global_step += 1
+                reached_max = _on_global_step(metrics.get("loss", float("inf")))
+
+            # Advance the console bar: per global step (step mode) or per batch
+            # (epoch mode). val_in/save_in are step-mode countdowns.
+            prog.after_batch(
+                batch_idx=batch_idx, n_batches=n_batches, global_step=global_step,
+                did_update=did_update, metrics=metrics, lr=_lr_now(),
+                val_in=_steps_left(val_every_steps), save_in=_steps_left(save_every_steps),
+                batch_samples=bs * world_size,
+            )
+
+            if reached_max:
+                prog.write("Reached max_steps=%d - stopping." % max_steps)
                 done = True
                 break
 
@@ -626,9 +695,15 @@ def run_training(
         # can itself reach max_steps).
         if not done and hasattr(runner, "flush_pending") and runner.flush_pending():
             global_step += 1
-            if _on_global_step(last_metrics.get("loss", float("inf"))):
-                logger.info("Reached max_steps=%d (epoch-boundary flush) — stopping.",
-                            max_steps)
+            reached_max = _on_global_step(last_metrics.get("loss", float("inf")))
+            prog.after_batch(
+                batch_idx=n_batches, n_batches=n_batches, global_step=global_step,
+                did_update=True, metrics=last_metrics, lr=_lr_now(),
+                val_in=_steps_left(val_every_steps), save_in=_steps_left(save_every_steps),
+                batch_samples=world_size,
+            )
+            if reached_max:
+                prog.write("Reached max_steps=%d (epoch-boundary flush) - stopping." % max_steps)
                 done = True
 
         # ── Epoch-boundary events (epoch mode) ────────────────────────────────
@@ -656,13 +731,15 @@ def run_training(
             if epoch >= epochs:
                 done = True
 
+        prog.end_epoch()
         epoch += 1
 
     # Always persist a final checkpoint in step mode.
     if step_mode:
         _save(epoch - 1, best_metric if best_metric != float("inf") else 0.0)
 
-    logger.info("Training complete [stage=%s]. global_step=%d  best_metric=%.6f",
-                stage, global_step, best_metric)
-    logger.info("Checkpoints → %s", ckpt_dir)
-    logger.info("Training log → %s", log_path)
+    prog.write("Training complete [stage=%s]. global_step=%d  best_metric=%.6f" % (
+        stage, global_step, best_metric))
+    prog.write("Checkpoints -> %s" % ckpt_dir)
+    prog.write("Training log -> %s" % log_path)
+    prog.close()
