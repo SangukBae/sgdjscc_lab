@@ -127,6 +127,15 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
 
+    # Rank-0-only logging helper: under `torchrun --nproc_per_node=N` every rank
+    # runs this script, so informational startup lines would otherwise print N
+    # times. Gate them to rank 0 (RANK is set by torchrun before the process
+    # group is initialised, so is_rank0() is already correct here).
+    from sgdjscc_lab import distributed as ddp
+    def _log0(msg, *a):
+        if ddp.is_rank0():
+            logger.info(msg, *a)
+
     # ── Load config ──────────────────────────────────────────────────────────
     cfg = load_config(args.config)
     cfg = merge_cli_overrides(cfg, device=args.device)
@@ -185,50 +194,50 @@ def main() -> None:
     except StageConfigError as exc:   # PaperModeError subclasses StageConfigError
         sys.exit(f"Error: invalid training config for stage.\n  {exc}")
     if _paper_mode.is_enabled(cfg):
-        logger.info("paper_mode: ON — %s", _paper_mode.summary())
+        _log0("paper_mode: ON — %s", _paper_mode.summary())
 
-    # ── Log key settings ──────────────────────────────────────────────────────
-    logger.info("Config:           %s", args.config)
-    logger.info("stage:            %s", stage)
-    logger.info("train_input_path: %s", OmegaConf.select(cfg, "train_input_path", default=None))
-    logger.info("val_input_path:   %s", OmegaConf.select(cfg, "val_input_path",   default=None))
-    logger.info("checkpoint_dir:   %s", OmegaConf.select(cfg, "checkpoint_dir",   default="outputs/checkpoints"))
-    logger.info("device:           %s", cfg.get("device", "cpu"))
-    logger.info("epochs:           %d", OmegaConf.select(cfg, "train.epochs", default=10))
-    logger.info("no_models:        %s", args.no_models)
+    # ── Log key settings (rank 0 only) ─────────────────────────────────────────
+    _log0("Config:           %s", args.config)
+    _log0("stage:            %s", stage)
+    _log0("train_input_path: %s", OmegaConf.select(cfg, "train_input_path", default=None))
+    _log0("val_input_path:   %s", OmegaConf.select(cfg, "val_input_path",   default=None))
+    _log0("checkpoint_dir:   %s", OmegaConf.select(cfg, "checkpoint_dir",   default="outputs/checkpoints"))
+    _log0("device:           %s", cfg.get("device", "cpu"))
+    _log0("epochs:           %d", OmegaConf.select(cfg, "train.epochs", default=10))
+    _log0("no_models:        %s", args.no_models)
 
     # ── Seed ──────────────────────────────────────────────────────────────────
     from sgdjscc_lab.utils.seed import set_global_seed
     seed = int(OmegaConf.select(cfg, "train.seed", default=2025))
     set_global_seed(seed)
-    logger.info("Seed: %d", seed)
+    _log0("Seed: %d", seed)
 
     # ── Device (DDP-aware) ─────────────────────────────────────────────────────
     # Under `torchrun --nproc_per_node=N` setup_distributed() inits the process
     # group and returns cuda:{LOCAL_RANK}; single-process runs fall back to the
     # configured device (identical to before).
-    from sgdjscc_lab import distributed as ddp
     from sgdjscc_lab.runtime import resolve_device
     rank, world_size, local_rank, ddp_device = ddp.setup_distributed()
     device = ddp_device if ddp_device is not None else resolve_device(str(cfg.get("device", "cpu")))
     if world_size > 1:
-        logger.info("DDP: rank=%d/%d local_rank=%d device=%s", rank, world_size, local_rank, device)
-    logger.info("Resolved device: %s", device)
+        # rank-0-only summary (previously printed once per rank).
+        _log0("DDP: world_size=%d  (rank0 local_rank=%d device=%s)", world_size, local_rank, device)
+    _log0("Resolved device: %s", device)
 
     # ── Models ────────────────────────────────────────────────────────────────
     # The edge_codec stage is self-contained (it builds its own trainable edge
     # codec + AWGN channel), so it needs NO pretrained JSCC/diffusion bundle.
     models = None
     if stage == "edge_codec" and not args.no_models:
-        logger.info("stage='edge_codec' is self-contained — skipping the "
-                    "JSCC/diffusion model bundle (no checkpoints needed).")
+        _log0("stage='edge_codec' is self-contained — skipping the "
+              "JSCC/diffusion model bundle (no checkpoints needed).")
     elif not args.no_models:
         from sgdjscc_lab.runtime import build_models
-        logger.info("Building models…")
+        _log0("Building models…")
         models = build_models(cfg, device)
-        logger.info("Models loaded.")
+        _log0("Models loaded.")
     else:
-        logger.info("--no-models: skipping model loading (dry-run mode).")
+        _log0("--no-models: skipping model loading (dry-run mode).")
 
     # ── Run training ──────────────────────────────────────────────────────────
     from sgdjscc_lab.pipelines.train_pipeline import run_training
@@ -239,7 +248,7 @@ def main() -> None:
         # exits cleanly; no-op for single-process runs.
         ddp.cleanup_distributed()
 
-    logger.info("train.py complete.")
+    _log0("train.py complete.")
 
 
 if __name__ == "__main__":

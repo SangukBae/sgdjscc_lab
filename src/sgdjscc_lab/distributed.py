@@ -79,8 +79,10 @@ def setup_distributed():
         dist.init_process_group(backend=backend, init_method="env://")
         if torch.cuda.is_available():
             torch.cuda.set_device(local)
-        logger.info("DDP init: backend=%s rank=%d/%d local_rank=%d",
-                    backend, rank, world, local)
+        # rank-0-only: every rank inits, but one summary line is enough on the
+        # console (each rank's device is deterministic from its local_rank).
+        if rank == 0:
+            logger.info("DDP init: backend=%s world_size=%d", backend, world)
     device = None
     if world > 1 and torch.cuda.is_available():
         device = torch.device(f"cuda:{local}")
