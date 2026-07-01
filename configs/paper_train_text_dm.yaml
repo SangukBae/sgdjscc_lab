@@ -9,6 +9,13 @@
 # and the 'filename' source → use DATASET-PROVIDED captions. COCO ships captions:
 #   caption_source: coco_json  + caption_path: captions_train2017.json
 #
+# SCOPE (honest): this config is STRUCTURALLY paper-oriented but uses a COCO-only
+# caption source. The paper's Stage-2 DM is trained on a much larger (~14M-image)
+# multi-dataset corpus; COCO-only here is a practical, smaller reproduction — NOT
+# the paper's exact data setup. batch_size:64 and the step counts below are
+# paper-table-SCALE targets (not public-code-confirmed). See
+# docs/paper_training_alignment.md.
+#
 # Usage:
 #   python scripts/train.py --config configs/paper_train_text_dm.yaml \
 #       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0
@@ -46,8 +53,10 @@ train:
   dm:
     use_masked_branch: true
     mask_weight: 1.0
-    cfg_dropout_prob: 0.1
-    cfg_null_mode: learned     # PAPER: trainable null token (not the zero vector)
+    cfg_dropout_prob: 0.1      # assumed default (unpublished in the paper)
+    cfg_null_mode: learned     # paper-LIKE: trainable null token (the paper does
+                               # not publish its null token; learned is the closest
+                               # intent, vs the zero-vector stand-in)
 
 checkpoint_dir:  "../outputs/checkpoints/paper_text_dm"
 train_log_path:  "../outputs/paper_text_dm_train_log.jsonl"

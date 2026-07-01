@@ -55,6 +55,13 @@ def build_diffusion_pipeline(cfg, device: torch.device, jscc_model):
     model_root = Path(cfg.model_root)
 
     # ── Base diffusion backbone ───────────────────────────────────────────────
+    # hidden_size=512 is CONFIRMED from the public SGDJSCC code
+    # (SGDJSCC/inference_config.py: MDTv2(depth=12, hidden_size=512, patch_size=1,
+    # num_heads=8)). Kept fixed for checkpoint compatibility — DO NOT change.
+    # NOTE: the paper table's "embedding size = 256" is NOT evidence for a 256-d
+    # backbone. The public code uses frequency_embedding_size=256 for the
+    # timestep/noise embedder (mask_diffusion.py: TimestepEmbedder), a SEPARATE
+    # quantity from the transformer hidden_size. See docs/paper_training_alignment.md.
     denoiser = MDTv2(depth=12, hidden_size=512, patch_size=1, num_heads=8)
     backbone_ckpt = torch.load(model_root / "diffusion_backbone.pth", map_location=device)
     denoiser.load_state_dict(backbone_ckpt["model_ema"])

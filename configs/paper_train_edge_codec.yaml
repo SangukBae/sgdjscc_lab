@@ -42,16 +42,21 @@ train:
     arch: vit                     # WITT-location-faithful adaLN transformer
     snr_db: 10.0
     use_channel: true
-    multi_snr:                    # PAPER: train across SNRs (conditioning exercised)
+    # multi_snr / snr_cond below are paper-LIKE structural intent (WITT-style
+    # codecs train across SNRs so the conditioning is exercised) — this is the
+    # closest reproducible structure, not exact WITT reuse.
+    multi_snr:                    # train across SNRs (conditioning exercised)
       enabled: true
-      min_db: 0.0
-      max_db: 20.0
+      min_db: 0.0                 # assumed range (unpublished in the paper)
+      max_db: 20.0                # assumed range (unpublished in the paper)
+    # vit dims below (embed_dim/depth/num_heads/mlp_ratio) are ASSUMED reasonable
+    # defaults, NOT paper-published; they define the closest-reproducible codec.
     vit:
       embed_dim: 128
       depth: 4
       num_heads: 4
       mlp_ratio: 2.0
-      snr_cond: true              # PAPER: SNR → adaLN conditioning ON
+      snr_cond: true              # paper-LIKE: SNR -> adaLN conditioning ON
 
 checkpoint_dir:  "../outputs/checkpoints/paper_edge_codec"
 train_log_path:  "../outputs/paper_edge_codec_train_log.jsonl"

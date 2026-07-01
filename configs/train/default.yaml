@@ -32,9 +32,18 @@ train:
   # To keep a paper-like global batch (e.g. 64) on 3 GPUs, set batch_size≈21–22
   # (×3≈64), or raise grad_accum_steps. Single-process: global_batch = batch_size.
   batch_size:   4
+  # DDP concrete example: to approximate the paper-scale global batch of 64 on
+  # 3 GPUs, use per-rank --batch-size 21 (21 * 3 = 63 ~= 64):
+  #   torchrun --standalone --nproc_per_node=3 scripts/train.py \
+  #     --config configs/paper_train_text_dm.yaml \
+  #     --train-list data/coco/train2017 --val-list data/coco/val2017 \
+  #     --batch-size 21
   num_workers:  2
-  lr:           1.0e-4
-  weight_decay: 1.0e-5
+  # lr / weight_decay: the paper does NOT publish these exact values. 1e-4 / 1e-5
+  # are reasonable defaults (typical AdamW latent-DM/DiT training), NOT paper-
+  # confirmed. See docs/paper_training_alignment.md.
+  lr:           1.0e-4          # assumed default (unpublished in the paper)
+  weight_decay: 1.0e-5          # assumed default (unpublished in the paper)
   save_every:   5               # save epoch_{N}.pth every N epochs (0 = off)
   val_every:    1               # run validation every N epochs
   log_every:    10              # print batch-level loss every N batches
@@ -117,10 +126,13 @@ train:
     use_masked_branch: true     # compute the masked-latent loss term as well
     mask_weight:       1.0      # weight on ||f0 - eps(f_hat_t)||²
     # Classifier-free guidance (CFG) training: probability of replacing the text
-    # label with the NULL (zero) embedding per sample, so the DM learns the
-    # unconditional branch needed for CFG at inference (paper uses CFG scale 4.5).
-    # 0.1 follows the PixArt convention; the paper does not state the exact value.
-    cfg_dropout_prob:  0.1
+    # label with the NULL embedding per sample, so the DM learns the
+    # unconditional branch needed for CFG at inference. The paper does NOT publish
+    # cfg_dropout_prob; 0.1 is a reasonable default (PixArt convention), NOT
+    # paper-confirmed. (Aside: the paper TABLE lists a CFG scalar of 4.5, but the
+    # public SGDJSCC inference code uses guidance_scale=4.0 — the repo follows the
+    # public code; see docs/paper_training_alignment.md.)
+    cfg_dropout_prob:  0.1        # assumed default (unpublished in the paper)
     # CFG null embedding mode:
     #   zero    : the dropped text condition becomes the ZERO vector (simple,
     #             paper-LIKE; the paper does not publish its null token).

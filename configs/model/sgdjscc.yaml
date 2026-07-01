@@ -13,6 +13,16 @@ use_gt_csi: false
 
 canny_cr: "0.2"
 
+# Diffusion inference defaults — CONFIRMED from the public SGDJSCC code
+# (SGDJSCC/configs/inference.yaml + inference_config.py). Repo policy: prefer the
+# PUBLIC-CODE values for reproducibility, even where the paper table differs.
+#   diffusion_step   = 50       (public code)
+#   guidance_scale   = 4.0      (public code)  <-- CONFLICT: the paper TABLE
+#                               reports a CFG scalar of 4.5. We keep 4.0 (public
+#                               code) for reproducibility.
+#   controlnet_scale = 0.3      (public code)
+#   cfg_method       = pcs_1.0  (public code)
+# See docs/paper_training_alignment.md for the full confirmed/assumed breakdown.
 diffusion_step: 50
 step_style: "continuous"
 guidance_scale: 4.0

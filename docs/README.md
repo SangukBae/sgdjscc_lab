@@ -21,6 +21,7 @@
 | [phase5.md](./phase5.md) | Phase 5 계획 + 구현 현황: 5-A 채널 조건화, 5-B 저지연/consistency, 5-C 검증기/search; 모듈별 `구현됨 / 연결됨 / 근사됨 / fallback / 미구현` 태그, 통합 현황, 해결된 한계 + 남은 한계 |
 | [training_scaffold.md](./training_scaffold.md) | 학습 CLI 설계: core baseline 3-stage(`jscc`/`text_dm`/`controlnet`), supporting `edge_codec`(BCE+Dice edge codec), extension `end_to_end_ft`; stage↔코드 매핑, edge transport(baseline `edge_jscc` vs ablation `shared_vae`), 체크포인트 전략 |
 | [smoke_training.md](./smoke_training.md) | real-model smoke 학습(최소 검증): stage별 체크포인트/데이터 준비, `--max-steps` 명령, 저장·resume 검증, 통과 기준, full training 전 남길 로그 |
+| [paper_training_alignment.md](./paper_training_alignment.md) | 논문/공개코드 하이퍼파라미터 정합성: 공개코드 확정값 vs 논문표값 vs 미공개 가정값, 충돌 항목(guidance 4.0 vs 4.5, hidden 512 vs embedding 256), COCO-only vs ~14M multi-dataset, 3GPU 최종 학습 명령 세트 |
 | [framework_comparison.md](./framework_comparison.md) | 원본 `SGDJSCC/` vs `sgdjscc_lab/` 구조 비교 |
 | [framework_file_roles.md](./framework_file_roles.md) | 실행 순서에 따른 파일별 프레임워크 역할 지도 |
 
