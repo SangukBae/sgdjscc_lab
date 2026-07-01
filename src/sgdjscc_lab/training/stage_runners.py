@@ -584,10 +584,17 @@ class TextDMStageRunner(StageRunner):
         # DDP: wrap the trainable denoiser; the runner calls the WRAPPED module so
         # the gradient-sync hooks fire, and keeps the unwrapped core for clean
         # state_dict keys (checkpoints stay compatible with single-process runs).
+        # Disable DDP buffer broadcasts here: Stage-2 does two forwards through
+        # the same denoiser per step (unmasked + masked), and rebroadcasting the
+        # denoiser's fixed relative-position buffers between those forwards trips
+        # autograd's version counter on backward.
         from sgdjscc_lab import distributed as _ddp
         self._denoiser_core = denoiser
         self.denoiser = _ddp.maybe_wrap_ddp(
-            denoiser, find_unused_parameters=self._ddp_find_unused())
+            denoiser,
+            find_unused_parameters=self._ddp_find_unused(),
+            broadcast_buffers=False,
+        )
         self.encode_latent_fn = encode_latent_fn
         self.encode_text_fn = encode_text_fn
         self.scheduler = scheduler if scheduler is not None else _build_scheduler(cfg)
@@ -669,11 +676,17 @@ class ControlNetStageRunner(StageRunner):
         super().__init__(cfg, device, param_groups)
         # DDP: wrap the denoiser (only the ControlNet branches train; see
         # _ddp_find_unused). edge_transport stays UNWRAPPED — it is fixed side
-        # info computed under no_grad, so it needs no gradient sync.
+        # info computed under no_grad, so it needs no gradient sync. Disable DDP
+        # buffer broadcasts here for the same reason as Stage-2: the denoiser can
+        # be called multiple times per step, and its registered fixed buffers do
+        # not need per-forward rebroadcasts.
         from sgdjscc_lab import distributed as _ddp
         self._denoiser_core = denoiser
         self.denoiser = _ddp.maybe_wrap_ddp(
-            denoiser, find_unused_parameters=self._ddp_find_unused())
+            denoiser,
+            find_unused_parameters=self._ddp_find_unused(),
+            broadcast_buffers=False,
+        )
         self.encode_latent_fn = encode_latent_fn
         self.encode_text_fn = encode_text_fn
         self.encode_edge_fn = encode_edge_fn

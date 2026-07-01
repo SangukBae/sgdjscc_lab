@@ -126,7 +126,11 @@ def unwrap_module(m):
     return m.module if isinstance(m, DDP) else m
 
 
-def maybe_wrap_ddp(module, find_unused_parameters: bool = False):
+def maybe_wrap_ddp(
+    module,
+    find_unused_parameters: bool = False,
+    broadcast_buffers: bool = True,
+):
     """Wrap *module* in DDP when distributed; return it unchanged otherwise.
 
     Backward compatible: in single-process / CPU runs this is a pure pass-through,
@@ -142,8 +146,10 @@ def maybe_wrap_ddp(module, find_unused_parameters: bool = False):
     if on_cuda:
         lr = get_local_rank()
         return DDP(module, device_ids=[lr], output_device=lr,
-                   find_unused_parameters=find_unused_parameters)
-    return DDP(module, find_unused_parameters=find_unused_parameters)  # CPU module
+                   find_unused_parameters=find_unused_parameters,
+                   broadcast_buffers=broadcast_buffers)
+    return DDP(module, find_unused_parameters=find_unused_parameters,
+               broadcast_buffers=broadcast_buffers)  # CPU module
 
 
 def reduce_metric_sums(sums: Dict[str, float], count: int,
