@@ -1,0 +1,55 @@
+# configs/paper_train_jscc_gan.yaml – Stage 1 (JSCC), closer-to-paper MSE+GAN variant
+#
+# The paper describes the JSCC autoencoder trained with a perceptual objective of
+# the form  L = MSE + λ · L_GAN  (Sec. VI). The EXACT λ (and the exact
+# discriminator architecture) are NOT published. This variant enables the
+# patch-GAN term with an ASSUMED weight so the training objective is structurally
+# closer to the paper than the MSE-only default — but the specific numbers are
+# reasonable defaults, NOT paper-confirmed.
+#
+# Honest labelling:
+#   - MSE + λ·GAN structure      -> paper-LIKE (matches the described objective)
+#   - gan.weight (λ = 0.5)       -> ASSUMED / unpublished in the paper
+#   - gan.* discriminator dims   -> ASSUMED reasonable defaults (config-driven)
+# Use configs/paper_train_jscc.yaml for the conservative MSE-only reproduction.
+# See docs/paper_training_alignment.md for the confirmed/assumed breakdown.
+#
+# Usage:
+#   python scripts/train.py --config configs/paper_train_jscc_gan.yaml \
+#       --train-list data/imagenet/train --val-list data/imagenet/val --device cuda:0
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - train/default
+
+# paper_mode is inert for the image-only jscc stage (its guardrails cover
+# captions / edges / CFG null / edge codec, none of which apply here), so it does
+# not "bless" the assumed GAN weight as faithful. Kept true for consistency with
+# paper_train_jscc.yaml; the honesty is carried by the comments above.
+paper_mode: true
+
+use_semantic:   false       # Stage 1 is image-only JSCC (no DM/guidance yet)
+use_text:       false
+use_controlnet: false
+
+train:
+  stage: jscc
+  batch_size: 64            # paper-table-SCALE target (not public-code-confirmed)
+  jscc:
+    snr_db: 10.0            # FIXED AWGN SNR for JSCC training (paper: 10 dB)
+    gan:
+      enabled: true         # MSE + λ·GAN (paper-LIKE objective)
+      weight:  0.5          # λ — ASSUMED / unpublished in the paper
+      mode:    hinge        # discriminator loss flavour (assumed default)
+      lr:      1.0e-4       # discriminator lr (assumed default; unpublished)
+      # PatchGAN (NLayerDiscriminator) dims — assumed reasonable defaults:
+      in_channels: 3
+      ndf:         64
+      n_layers:    3
+      norm:        batch
+
+checkpoint_dir:  "../outputs/checkpoints/paper_jscc_gan"
+train_log_path:  "../outputs/paper_jscc_gan_train_log.jsonl"

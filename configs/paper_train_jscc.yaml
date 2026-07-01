@@ -9,6 +9,9 @@
 #       --train-list data/imagenet/train --val-list data/imagenet/val --device cuda:0
 #
 # See docs/paper_gap_closure.md for what paper_mode enforces and the remaining gaps.
+# This base config stays MSE-only (the conservative, reproducible default). For a
+# closer-to-paper MSE+GAN variant — with an ASSUMED, unpublished GAN weight — use
+# configs/paper_train_jscc_gan.yaml (a variant, NOT paper-confirmed).
 
 _defaults_:
   - channel/awgn
