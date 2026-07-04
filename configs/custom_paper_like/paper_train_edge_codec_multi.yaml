@@ -1,0 +1,43 @@
+_defaults_:
+  - ../channel/awgn
+  - ../model/sgdjscc
+  - ../infer/awgn
+  - ../eval/default
+  - ../train/default
+
+# Closest paper-like path with the remote datasets. MuGE sidecars keep the
+# structural guidance path aligned with the paper even though SA-1B captions are
+# auto-generated upstream.
+paper_mode: false
+
+use_semantic: false
+use_text: false
+use_controlnet: false
+
+train:
+  stage: edge_codec
+  batch_size: 64
+  dataset:
+    type: edge
+    input_mode: file_list
+    file_list_path: ../../data/_lists/paper_like_multi/stage23_train.list
+    val_file_list_path: ../../data/_lists/paper_like_multi/stage23_val.list
+    edge_source: muge_sidecar
+    muge_repr: edge_uncertainty
+  edge_codec:
+    arch: vit
+    snr_db: 10.0
+    use_channel: true
+    multi_snr:
+      enabled: true
+      min_db: 0.0
+      max_db: 20.0
+    vit:
+      embed_dim: 128
+      depth: 4
+      num_heads: 4
+      mlp_ratio: 2.0
+      snr_cond: true
+
+checkpoint_dir: ../../outputs/checkpoints/paper_edge_codec_multi
+train_log_path: ../../outputs/paper_edge_codec_multi_train_log.jsonl
