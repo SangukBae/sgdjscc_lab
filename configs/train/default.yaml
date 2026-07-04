@@ -70,9 +70,11 @@ train:
   #                          (MDTv2 / MDTv2_ControlNet / AutoencoderKL, from the
   #                          read-only SGDJSCC/) expose NO gradient-checkpointing
   #                          hook and use no torch.utils.checkpoint, so enabling
-  #                          this applies nothing (it is logged as NOT applied).
-  #                          Kept wired for forward-compat only. For DM-stage memory
-  #                          use grad_accum_steps / a smaller per-rank batch.
+  #                          this applies nothing. It is logged honestly: DM-core
+  #                          modules → "NO-OP, nothing applied"; any other module →
+  #                          "NOT applied". Kept wired for forward-compat only. For
+  #                          DM-stage memory use grad_accum_steps / a smaller
+  #                          per-rank batch.
   #   use_xformers           NOT an incremental optimization here. MDTv2 /
   #                          MDTv2_ControlNet attention ALREADY calls
   #                          xformers.ops.memory_efficient_attention natively, so
