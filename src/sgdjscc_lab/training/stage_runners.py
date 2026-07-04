@@ -717,14 +717,7 @@ class ControlNetStageRunner(StageRunner):
         self.register_ddp_modules([self.denoiser, self.null_module])
 
     def _ddp_find_unused(self) -> bool:
-        # Stage 3 freezes the base DM and trains only the ControlNet branches, so
-        # some WRAPPED-module parameters may not receive a gradient on a given
-        # step (only the structural branches do). DDP needs find_unused_parameters
-        # to handle that without hanging. Enabled CONSERVATIVELY (correctness >
-        # the small overhead); see docs/paper_gap_closure.md "DDP" for the honest
-        # rationale — it can be set False if profiling shows all trainable params
-        # always receive grad.
-        return True
+        return False
 
     def state_modules(self) -> Dict[str, nn.Module]:
         mods = {"diffusion": self._denoiser_core, **self._cfg_null_state()}
