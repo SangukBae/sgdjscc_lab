@@ -981,16 +981,26 @@ scalar val loss 외에 **실제 생성 샘플**을 주기적으로 저장(rank 0
 - `enabled: false`가 기본. `every_steps>0`(step 모드) 또는 `every_epochs>0`(epoch 모드)로
   켜며 `num_samples`로 패널당 샘플 수를 조절한다.
 
-### 4. Optional 메모리/성능 토글 (`training/perf.py`)
+### 4. Optional 메모리 토글 (`training/perf.py`) — 실제 효과 기준 정직 표기
 
 기존 mixed precision/grad accumulation과 충돌 없이 동작하며 dependency가 없으면 graceful
-fallback + 명확한 로그를 남긴다(조용히 무시하지 않음). 기본 전부 off.
+fallback + 명확한 로그를 남긴다(조용히 무시하지 않음). **기본 전부 off.** 중요한 점은
+이 저장소에서 **실제로 메모리를 아끼는 토글은 `use_8bit_adam` 하나**라는 것이다. 나머지
+둘은 배선돼 있지만 현재 core 모델 구조상 실효가 없다(아래 표의 "실제 효과" 열 참조).
 
-| config | 동작 | fallback |
-|--------|------|----------|
-| `train.use_8bit_adam` | bitsandbytes `AdamW8bit`로 optimizer state VRAM 절감 | 패키지 없으면 경고 후 `torch.optim.AdamW` |
-| `train.gradient_checkpointing` | 학습 대상 모듈에 `gradient_checkpointing_enable()`/flag 적용 | hook 없는 모듈은 “NOT applied” 경고 |
-| `train.use_xformers` | memory-efficient attention 활성/검증 | xformers import 불가 시 경고. **MDTv2 backbone은 이미** `xformers.ops.memory_efficient_attention`을 기본 사용하므로 이 토글은 주로 importability 검증/보고용 |
+| config | 이 저장소에서의 실제 효과 | 로그 동작 |
+|--------|--------------------------|-----------|
+| `train.use_8bit_adam` | **유효** — bitsandbytes 설치 시 `AdamW8bit`로 optimizer state VRAM 절감 | 패키지 없으면 경고 후 `torch.optim.AdamW`로 fallback |
+| `train.gradient_checkpointing` | **현재 no-op** — trainable core 모듈(`MDTv2`/`MDTv2_ControlNet`/`AutoencoderKL`)에 gradient-checkpointing hook도 `torch.utils.checkpoint`도 없어 적용될 대상이 없음. forward-compat용으로 배선만 유지 | DM core 모듈이면 "NO-OP, nothing applied"로 명시(대안: `grad_accum_steps`↑/per-rank batch↓), 그 외 모듈은 "NOT applied" 경고 |
+| `train.use_xformers` | **추가 최적화 아님** — `MDTv2`/`MDTv2_ControlNet` attention forward가 이미 `xformers.ops.memory_efficient_attention`을 무조건 호출(native). 이 토글은 importability 검증/상태 보고 성격 | MDTv2 계열이면 "already native — NO incremental optimization"으로 보고, 비-DM 모듈(`jscc`/`edge_jscc`)은 "NOT applied" 경고, xformers import 불가 시 경고 |
+
+> **지금 바로 권장하는 운영 옵션**은 `train.mixed_precision: true`(AMP)와 `train.num_workers`
+> 상향이다. 메모리가 정말 빠듯하면 `use_8bit_adam`(+bitsandbytes)이 실효 수단이고,
+> `gradient_checkpointing`/`use_xformers`는 "메모리가 되니까 켜는" 옵션이 아니다.
+
+> 설계 선택(Selection A): `gradient_checkpointing`은 실효 구현(MDTv2에 checkpoint 삽입)
+> 대신 **현재 unsupported/no-op 상태를 문서·로그·주석으로 명확히 하는 정리**만 수행했다.
+> backbone/ControlNet 구조를 건드리지 않아 checkpoint 호환성과 재현 경로를 보존하기 위함.
 
 > 핵심 파일: `training/interrupt.py`, `training/perf.py`, `training/val_images.py`,
 > 그리고 이들을 wiring하는 `pipelines/train_pipeline.py`(resume 해석·인터럽트 저장·val

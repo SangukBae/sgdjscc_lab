@@ -100,7 +100,8 @@ def test_build_optimizer_empty_groups_is_none():
 
 # ── memory toggles never crash / never silently ignore ───────────────────────
 
-def test_apply_memory_optimizations_unsupported_module_logs():
+def _capture_perf_logs(fn):
+    """Run *fn* and return the concatenated log messages emitted by perf.logger."""
     import logging
     from sgdjscc_lab.training import perf
     records = []
@@ -110,15 +111,51 @@ def test_apply_memory_optimizations_unsupported_module_logs():
     old_level = perf.logger.level
     perf.logger.setLevel(logging.INFO)
     try:
-        m = nn.Sequential(nn.Linear(4, 4))
-        cfg = OmegaConf.create({"train": {"gradient_checkpointing": True, "use_xformers": True}})
-        apply_memory_optimizations({"diffusion": m}, cfg, stage="text_dm")
+        fn()
     finally:
         perf.logger.removeHandler(handler)
         perf.logger.setLevel(old_level)
-    text = " ".join(records)
-    assert "NOT applied" in text          # grad-ckpt unsupported → logged, not silent
+    return " ".join(records)
+
+
+class MDTv2(nn.Module):          # class-name prefix marks it as the DM core
+    def __init__(self):
+        super().__init__(); self.lin = nn.Linear(4, 4)
+    def forward(self, x): return self.lin(x)
+
+
+def test_apply_memory_optimizations_unsupported_module_logs():
+    m = nn.Sequential(nn.Linear(4, 4))
+    cfg = OmegaConf.create({"train": {"gradient_checkpointing": True, "use_xformers": True}})
+    text = _capture_perf_logs(
+        lambda: apply_memory_optimizations({"jscc_model": m}, cfg, stage="jscc"))
+    # Non-DM, no-hook module: BOTH toggles must log a clear "NOT applied".
+    assert "NOT applied" in text
     assert "xformers" in text
+
+
+def test_gradient_checkpointing_noop_message_for_dm_core():
+    """DM core (MDTv2 family) with no hook → explicit NO-OP message, returns False."""
+    from sgdjscc_lab.training.perf import _enable_gradient_checkpointing
+    out = {}
+    text = _capture_perf_logs(
+        lambda: out.__setitem__("ok", _enable_gradient_checkpointing(
+            MDTv2(), "diffusion", "controlnet")))
+    assert out["ok"] is False
+    assert "NO-OP" in text                    # unambiguous: nothing applied
+    assert "gradient-checkpointing hook" in text
+
+
+def test_xformers_dm_core_reports_no_incremental_optimization():
+    """MDTv2 family → 'already native / NO incremental optimization', returns True."""
+    from sgdjscc_lab.training.perf import _enable_xformers
+    pytest.importorskip("xformers")
+    out = {}
+    text = _capture_perf_logs(
+        lambda: out.__setitem__("ok", _enable_xformers(MDTv2(), "diffusion", "text_dm")))
+    assert out["ok"] is True
+    assert "NO incremental optimization" in text
+    assert "already uses xformers" in text.lower()
 
 
 def test_apply_memory_optimizations_noop_when_all_off():
@@ -230,13 +267,10 @@ def test_enable_xformers_not_claimed_on_non_diffusion_module():
     """xformers must NOT be reported active for arbitrary trainable modules."""
     from sgdjscc_lab.training.perf import _enable_xformers
     pytest.importorskip("xformers")
-    assert _enable_xformers(nn.Linear(4, 4), "jscc_model") is False
+    assert _enable_xformers(nn.Linear(4, 4), "jscc_model", "jscc") is False
 
 
 def test_enable_xformers_claimed_for_mdtv2_like():
     from sgdjscc_lab.training.perf import _enable_xformers
     pytest.importorskip("xformers")
-
-    class MDTv2(nn.Module):    # class name prefix marks it xformers-native
-        def forward(self, x): return x
-    assert _enable_xformers(MDTv2(), "diffusion") is True
+    assert _enable_xformers(MDTv2(), "diffusion", "controlnet") is True

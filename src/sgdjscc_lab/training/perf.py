@@ -6,31 +6,34 @@ untouched here).  Each toggle degrades gracefully: when a dependency is missing
 or a module does not support the feature we log a clear, single line rather than
 silently ignoring the request or crashing.
 
-Toggles (all under ``train.*``)
--------------------------------
-``use_8bit_adam``          Build the optimizer with bitsandbytes' 8-bit AdamW
-                           (large VRAM saving on the optimizer state). Falls back
-                           to ``torch.optim.AdamW`` with a warning if bitsandbytes
-                           is unavailable.
-``gradient_checkpointing`` Trade compute for activation memory on the trainable
-                           module(s). Applied via the module's own
-                           ``gradient_checkpointing_enable()`` /
-                           ``enable_gradient_checkpointing()`` /
-                           ``gradient_checkpointing`` flag when present.
-``use_xformers``           Memory-efficient attention. NOTE: the SGD-JSCC MDTv2
-                           backbone already calls
-                           ``xformers.ops.memory_efficient_attention`` in its
-                           attention forward, so for that model this toggle only
-                           *verifies* xformers is importable (and calls a
-                           diffusers-style enable hook if the module exposes one).
+Which toggles actually do something in THIS repo
+-------------------------------------------------
+* ``use_8bit_adam`` — **effective** when bitsandbytes is installed: swaps
+  ``torch.optim.AdamW`` for ``bitsandbytes.optim.AdamW8bit`` (large optimizer-
+  state VRAM saving). Falls back to fp32 AdamW with a warning otherwise.
+* ``gradient_checkpointing`` — **effectively a NO-OP today.** The trainable core
+  modules here (``MDTv2`` / ``MDTv2_ControlNet`` / ``AutoencoderKL``, all from
+  read-only ``SGDJSCC/``) expose NO ``gradient_checkpointing_enable`` /
+  ``enable_gradient_checkpointing`` / ``gradient_checkpointing`` hook and use no
+  ``torch.utils.checkpoint``. Enabling this toggle therefore applies nothing and
+  only logs that it was not applied. It is kept wired for forward-compatibility
+  (Selection A in docs/training_scaffold.md); for DM-stage memory pressure use
+  ``grad_accum_steps`` / a smaller per-rank batch instead.
+* ``use_xformers`` — **NOT an incremental optimization here.** The ``MDTv2`` /
+  ``MDTv2_ControlNet`` attention forward already calls
+  ``xformers.ops.memory_efficient_attention`` unconditionally, so this toggle
+  merely VERIFIES xformers is importable and REPORTS status (plus calls a
+  diffusers-style enable hook if some module exposes one). For non-DM modules
+  (``jscc_model`` / ``edge_jscc``) there is no xformers path → logged NOT applied.
+
+The genuinely useful operational knobs live elsewhere and are honest about it:
+``train.mixed_precision`` (AMP) and ``train.num_workers`` (input pipeline).
 
 Compatibility
 -------------
 * 8-bit AdamW composes with ``torch.cuda.amp`` (GradScaler) exactly like the
   fp32 AdamW it replaces — the scaler unscales the fp32 master grads before the
   optimizer's 8-bit state update.
-* Gradient checkpointing composes with AMP and grad accumulation; it only affects
-  how activations are stored for the backward pass.
 """
 
 from __future__ import annotations
@@ -87,8 +90,26 @@ def build_optimizer(
 # Model-level memory toggles (gradient checkpointing, xformers)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _enable_gradient_checkpointing(module: nn.Module, tag: str) -> bool:
-    """Try to turn on gradient checkpointing for *module*. Returns True on success."""
+# Class-name prefixes of the SGD-JSCC diffusion core modules (read-only SGDJSCC/).
+# Their attention already routes through xformers.ops.memory_efficient_attention
+# natively, and they expose NO gradient-checkpointing hook — used by both helpers
+# below to emit a precise, honest message for the DM stages (text_dm / controlnet).
+_DM_CORE_PREFIXES = ("MDTv2",)      # matches MDTv2 and MDTv2_ControlNet
+_NATIVE_XFORMERS_PREFIXES = _DM_CORE_PREFIXES
+
+
+def _is_dm_core(module: nn.Module) -> bool:
+    return type(module).__name__.startswith(_DM_CORE_PREFIXES)
+
+
+def _enable_gradient_checkpointing(module: nn.Module, tag: str, stage: str) -> bool:
+    """Try to turn on gradient checkpointing for *module*. Returns True on success.
+
+    In THIS repo no trainable core module (MDTv2 / MDTv2_ControlNet /
+    AutoencoderKL) exposes a hook, so this returns False and logs that nothing was
+    applied — the DM-core case gets a more direct message so the no-op is obvious.
+    """
+    cls_name = type(module).__name__
     # 1) HF/diffusers convention.
     for meth in ("gradient_checkpointing_enable", "enable_gradient_checkpointing"):
         fn = getattr(module, meth, None)
@@ -108,28 +129,32 @@ def _enable_gradient_checkpointing(module: nn.Module, tag: str) -> bool:
             return True
         except Exception as exc:  # pragma: no cover
             logger.warning("[perf] could not set gradient_checkpointing on '%s': %s", tag, exc)
-    logger.warning(
-        "[perf] train.gradient_checkpointing=true but module '%s' (%s) exposes no "
-        "gradient-checkpointing hook — NOT applied for this module.",
-        tag, type(module).__name__)
+    # 3) No hook. Be explicit that this is a NO-OP — extra-direct for the DM core.
+    if _is_dm_core(module):
+        logger.warning(
+            "[perf] train.gradient_checkpointing=true but the core DM module '%s' "
+            "(%s, stage=%s) has NO gradient-checkpointing hook in this repo "
+            "(SGDJSCC MDTv2 uses no torch.utils.checkpoint) — this toggle is a "
+            "NO-OP, nothing applied. For DM-stage memory use grad_accum_steps / a "
+            "smaller per-rank batch instead.", tag, cls_name, stage)
+    else:
+        logger.warning(
+            "[perf] train.gradient_checkpointing=true but module '%s' (%s) exposes "
+            "no gradient-checkpointing hook — NOT applied for this module.",
+            tag, cls_name)
     return False
 
 
-# Module class-name prefixes whose attention already routes through
-# xformers.ops.memory_efficient_attention natively (SGD-JSCC diffusion backbones).
-# For anything else we must NOT claim the optimization was applied.
-_NATIVE_XFORMERS_PREFIXES = ("MDTv2",)
+def _enable_xformers(module: nn.Module, tag: str, stage: str) -> bool:
+    """Report/verify memory-efficient attention status for *module*.
 
-
-def _enable_xformers(module: nn.Module, tag: str) -> bool:
-    """Best-effort enable of memory-efficient attention for *module*.
-
-    Returns True only when the feature is genuinely active for *module*: either a
-    diffusers-style ``enable_xformers_memory_efficient_attention()`` hook was
-    called, or *module* is a known SGD-JSCC diffusion backbone (MDTv2 /
-    MDTv2_ControlNet) whose attention already uses xformers natively. For any
-    other module (e.g. ``jscc_model`` / ``edge_jscc``) there is no xformers path,
-    so we log that it was NOT applied rather than over-reporting success.
+    This is NOT an incremental optimization in this repo: the MDTv2 /
+    MDTv2_ControlNet attention forward already calls
+    ``xformers.ops.memory_efficient_attention`` unconditionally. Returns True only
+    when the feature is genuinely active (a diffusers-style hook fired, OR *module*
+    is an MDTv2-family backbone that is already xformers-native). For any other
+    module (``jscc_model`` / ``edge_jscc``) there is no xformers path, so we log
+    NOT applied rather than over-reporting success.
     """
     try:
         import xformers  # noqa: F401  (verify importability)
@@ -138,6 +163,7 @@ def _enable_xformers(module: nn.Module, tag: str) -> bool:
             "[perf] train.use_xformers=true but xformers is not importable (%s) — "
             "NOT applied for '%s'.", exc, tag)
         return False
+    cls_name = type(module).__name__
     # 1) diffusers-style hook, if the module exposes one.
     fn = getattr(module, "enable_xformers_memory_efficient_attention", None)
     if callable(fn):
@@ -149,13 +175,13 @@ def _enable_xformers(module: nn.Module, tag: str) -> bool:
         except Exception as exc:  # pragma: no cover
             logger.warning("[perf] enabling xformers on '%s' failed: %s", tag, exc)
             return False
-    # 2) Known SGD-JSCC diffusion backbone: attention is already xformers-native.
-    cls_name = type(module).__name__
-    if any(cls_name.startswith(p) for p in _NATIVE_XFORMERS_PREFIXES):
+    # 2) MDTv2-family DM core: already xformers-native — no incremental optimization.
+    if _is_dm_core(module):
         logger.info(
-            "[perf] '%s' (%s) attention already uses xformers.ops."
-            "memory_efficient_attention natively (verified importable) — active.",
-            tag, cls_name)
+            "[perf] train.use_xformers=true: core DM module '%s' (%s, stage=%s) "
+            "attention ALREADY uses xformers.ops.memory_efficient_attention "
+            "natively — this toggle adds NO incremental optimization "
+            "(xformers importability verified).", tag, cls_name, stage)
         return True
     # 3) Anything else: no xformers path — do not over-report.
     logger.warning(
@@ -187,6 +213,6 @@ def apply_memory_optimizations(modules: Dict[str, nn.Module], cfg: DictConfig, *
 
     for name, module in real.items():
         if grad_ckpt:
-            _enable_gradient_checkpointing(module, name)
+            _enable_gradient_checkpointing(module, name, stage)
         if use_xformers:
-            _enable_xformers(module, name)
+            _enable_xformers(module, name, stage)

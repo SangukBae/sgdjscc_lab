@@ -56,21 +56,32 @@ train:
   resume:       null
   seed:         2025
 
-  # ── Operational stability / memory toggles (all opt-in, default OFF) ─────────
-  # These never change the reproducible baseline unless explicitly enabled. They
-  # compose with mixed_precision + grad_accum_steps above.
-  #   use_8bit_adam          bitsandbytes 8-bit AdamW (saves optimizer-state VRAM);
-  #                          falls back to torch.optim.AdamW with a warning if the
-  #                          bitsandbytes package is missing.
-  #   gradient_checkpointing trade compute for activation memory on the trainable
-  #                          module(s); logged as unsupported if a module has no hook.
-  #   use_xformers           memory-efficient attention. NOTE: the MDTv2 backbone
-  #                          already uses xformers.ops.memory_efficient_attention
-  #                          natively — this only verifies importability / calls a
-  #                          diffusers-style enable hook when present.
+  # ── Optional memory toggles (all opt-in, default OFF) ────────────────────────
+  # These never change the reproducible baseline unless explicitly enabled. Read
+  # the honest per-toggle status below — only use_8bit_adam actually saves memory
+  # in THIS repo. The genuinely useful operational knobs are mixed_precision (AMP,
+  # above) and num_workers (input pipeline); prefer those first.
+  #
+  #   use_8bit_adam          EFFECTIVE (with bitsandbytes): swaps AdamW for
+  #                          bitsandbytes AdamW8bit → large optimizer-state VRAM
+  #                          saving. Falls back to torch.optim.AdamW with a warning
+  #                          if bitsandbytes is missing.
+  #   gradient_checkpointing NO-OP in this repo today. The trainable core modules
+  #                          (MDTv2 / MDTv2_ControlNet / AutoencoderKL, from the
+  #                          read-only SGDJSCC/) expose NO gradient-checkpointing
+  #                          hook and use no torch.utils.checkpoint, so enabling
+  #                          this applies nothing (it is logged as NOT applied).
+  #                          Kept wired for forward-compat only. For DM-stage memory
+  #                          use grad_accum_steps / a smaller per-rank batch.
+  #   use_xformers           NOT an incremental optimization here. MDTv2 /
+  #                          MDTv2_ControlNet attention ALREADY calls
+  #                          xformers.ops.memory_efficient_attention natively, so
+  #                          this toggle only verifies xformers is importable and
+  #                          reports status (and calls a diffusers-style enable hook
+  #                          if a module exposes one). Non-DM modules → NOT applied.
   use_8bit_adam:          false
-  gradient_checkpointing: false
-  use_xformers:           false
+  gradient_checkpointing: false   # currently a no-op (no hook on core modules)
+  use_xformers:           false   # MDTv2 already xformers-native; verify/report only
 
   # ── Validation-sample image logging (rank-0 only; default OFF) ───────────────
   # Periodically writes an input|edge|recon panel so you can eyeball generation
