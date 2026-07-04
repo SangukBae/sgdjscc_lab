@@ -44,7 +44,8 @@ Options
 --val-list      Override config.val_input_path
 --output-dir    Override config.checkpoint_dir
 --epochs        Override train.epochs
---resume        Override train.resume (checkpoint path)
+--resume        Override train.resume (checkpoint path, or 'latest'/'auto' to
+                auto-discover latest.pth under checkpoint_dir)
 --device        Override config.device
 --no-models     Skip model loading (dry-run: no trainable params, no weight updates)
 --seed          Override train.seed
@@ -114,7 +115,10 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--epochs", type=int, default=None,
                    help="Override train.epochs")
     p.add_argument("--resume", default=None,
-                   help="Path to checkpoint to resume from")
+                   help="Checkpoint to resume from: an explicit path, or 'latest' "
+                        "(a.k.a. 'auto') to auto-discover latest.pth (then the "
+                        "interrupt checkpoint) under checkpoint_dir. 'latest' with "
+                        "nothing found starts a fresh run.")
     p.add_argument("--device", default=None,
                    help="Compute device, e.g. 'cuda:0' or 'cpu'")
     p.add_argument("--no-models", action="store_true",

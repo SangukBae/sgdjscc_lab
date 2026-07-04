@@ -47,8 +47,47 @@ train:
   save_every:   5               # save epoch_{N}.pth every N epochs (0 = off)
   val_every:    1               # run validation every N epochs
   log_every:    10              # print batch-level loss every N batches
-  resume:       null            # checkpoint to resume from (null = fresh run)
+  # resume:
+  #   null / "null"          → fresh run
+  #   "<path>"               → resume that exact checkpoint (legacy behaviour)
+  #   "latest" (or "auto")   → auto-discover latest.pth (then interrupt_latest.pth)
+  #                            under checkpoint_dir; nothing found → fresh run (safe).
+  # Also settable on the CLI:  --resume latest   /   --resume /path/to/ckpt.pth
+  resume:       null
   seed:         2025
+
+  # ── Operational stability / memory toggles (all opt-in, default OFF) ─────────
+  # These never change the reproducible baseline unless explicitly enabled. They
+  # compose with mixed_precision + grad_accum_steps above.
+  #   use_8bit_adam          bitsandbytes 8-bit AdamW (saves optimizer-state VRAM);
+  #                          falls back to torch.optim.AdamW with a warning if the
+  #                          bitsandbytes package is missing.
+  #   gradient_checkpointing trade compute for activation memory on the trainable
+  #                          module(s); logged as unsupported if a module has no hook.
+  #   use_xformers           memory-efficient attention. NOTE: the MDTv2 backbone
+  #                          already uses xformers.ops.memory_efficient_attention
+  #                          natively — this only verifies importability / calls a
+  #                          diffusers-style enable hook when present.
+  use_8bit_adam:          false
+  gradient_checkpointing: false
+  use_xformers:           false
+
+  # ── Validation-sample image logging (rank-0 only; default OFF) ───────────────
+  # Periodically writes an input|edge|recon panel so you can eyeball generation
+  # quality, not just the scalar val loss. Most useful for Stage 3 (controlnet)
+  # then Stage 2 (text_dm). Rendered from a FIXED validation batch (first of
+  # val_loader — same samples tracked over time) in EVAL mode; the panel is the
+  # runner's one-step f0 prediction decoded through the shared VAE (reuses the
+  # training path — no new sampler). If no val_loader exists it falls back to the
+  # current training batch. Files land in
+  # <checkpoint_dir>/<output_subdir>/{step_XXXXXXX|epoch_XXXX}.png.
+  # Set every_steps (step mode) OR every_epochs (epoch mode) > 0 to activate.
+  val_images:
+    enabled:       false
+    every_steps:   0            # write every N global steps (step-mode cadence)
+    every_epochs:  0            # write every N epochs (epoch-mode cadence)
+    num_samples:   2            # samples per panel (first N of the batch)
+    output_subdir: val_images   # under checkpoint_dir
 
   # ── Step-based training (for large-scale runs; 0 = disabled) ───────────────
   # When max_steps > 0 the run is driven by GLOBAL OPTIMIZER STEPS, and the

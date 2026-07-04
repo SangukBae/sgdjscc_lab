@@ -932,3 +932,66 @@ coco_json first/longest/random, file_list(절대/상대), caption 생성, contro
 - [phase5.md](./phase5.md) — Phase 5 (채널 조건화 + 저지연 + SRS-v2)
 - [dataset_status.md](./dataset_status.md) — git 추적되는 데이터셋 역할/매핑 기준 문서
 - `python scripts/report_datasets.py` — 현재 머신의 실제 데이터 보유 상태를 `data/_reports/dataset_status.md`로 생성
+
+## 운영 안정성 & 메모리 최적화 기능 (operational stability)
+
+기존 학습 인프라(step-based checkpointing, `latest.pth`, mixed precision, grad
+accumulation, exact resume)는 그대로 두고, 장시간 학습의 **운영 안정성**과 **메모리
+절약**을 위해 추가된 기능들. 모든 신규 토글의 기본값은 보수적으로 **off**라 기존
+재현성에 영향을 주지 않는다.
+
+### 1. SIGINT/SIGTERM 안전 저장 (`training/interrupt.py`)
+
+학습 루프가 `InterruptHandler`로 SIGINT(Ctrl-C)/SIGTERM(스케줄러·docker stop)을
+가로챈다. 시그널을 받으면 핸들러는 **플래그만 설정**(async-signal-safe)하고, 루프는
+batch/step 경계의 안전한 지점에서 이를 폴링해 `interrupt_latest.pth`를 저장한 뒤 정상
+종료한다. 두 번째 시그널이 오면 이전 핸들러를 복구하고 재발생시켜 강제 종료를 허용한다.
+
+- **저장 포맷**은 기존 `latest/best/epoch` 저장과 동일(`restore_runner_state`로 그대로
+  resume 가능). `interrupt_latest.pth`(명시적 기록) + `latest.pth`(갱신)를 함께 쓰므로
+  이후 `--resume latest`가 자연스럽게 이어받는다.
+- **DDP**: 모든 rank가 핸들러를 설치(torchrun이 그룹 전체에 시그널 전달)하되, 파일은
+  **rank 0만** 기록한다.
+- epoch 모드에서 epoch 중간 인터럽트는 현재 epoch을 저장 → resume 시 다음 epoch부터
+  이어감(일반 end-of-epoch `latest.pth`와 동일 semantics). step 모드는 `global_step`이
+  정확해 exact resume.
+
+### 2. Auto-resume (`train.resume: latest`)
+
+`train.resume`에 **명시 경로**를 주면 기존과 동일하게 그 체크포인트를 이어받는다. 추가로
+`"latest"`(또는 `"auto"`)를 주면 `checkpoint_dir` 아래 `latest.pth`(없으면
+`interrupt_latest.pth`)를 자동 탐색해 resume한다. **아무것도 없으면 명확한 로그와 함께
+fresh run으로 시작**(안전한 기본값 — 첫 실행이 “이어받을 게 없다”는 이유로 죽지 않게).
+CLI: `--resume latest` / `--resume /abs/path.pth` 모두 지원.
+
+### 3. Validation image logging (`train.val_images.*`, `training/val_images.py`)
+
+scalar val loss 외에 **실제 생성 샘플**을 주기적으로 저장(rank 0 전용). 우선순위는
+`controlnet` → `text_dm`(+ 보너스로 `jscc`). 패널은 `input | edge(있으면) | recon`
+한 줄/샘플 구성으로 `<checkpoint_dir>/<output_subdir>/{step_XXXXXXX|epoch_XXXX}.png`에
+저장된다(중첩 깊이와 무관하게 명확하도록 base를 `checkpoint_dir`로 둠).
+
+- **검증 데이터 + eval 모드**: `val_loader`의 **첫 배치를 고정**해 매 로깅 시점 동일 샘플을
+  추적하며, `runner.set_mode(False)` + `torch.no_grad`로 렌더한다(dropout/CFG label-dropout
+  등 train/eval 민감 동작을 끔). `val_loader`가 없으면 현재 training 배치로 **degraded
+  fallback**하되 여전히 eval 모드로 렌더한다.
+- 재구성 결과는 runner가 이미 wiring한 콜러블(`encode_latent_fn`/`encode_text_fn`/
+  `encode_edge_fn`/`scheduler`/학습 대상 denoiser) + **공유 VAE decode**를 재사용한
+  **1-step f0 예측**이다(새 추론 프레임워크를 만들지 않음; 학습 objective와 정확히 일치).
+- `enabled: false`가 기본. `every_steps>0`(step 모드) 또는 `every_epochs>0`(epoch 모드)로
+  켜며 `num_samples`로 패널당 샘플 수를 조절한다.
+
+### 4. Optional 메모리/성능 토글 (`training/perf.py`)
+
+기존 mixed precision/grad accumulation과 충돌 없이 동작하며 dependency가 없으면 graceful
+fallback + 명확한 로그를 남긴다(조용히 무시하지 않음). 기본 전부 off.
+
+| config | 동작 | fallback |
+|--------|------|----------|
+| `train.use_8bit_adam` | bitsandbytes `AdamW8bit`로 optimizer state VRAM 절감 | 패키지 없으면 경고 후 `torch.optim.AdamW` |
+| `train.gradient_checkpointing` | 학습 대상 모듈에 `gradient_checkpointing_enable()`/flag 적용 | hook 없는 모듈은 “NOT applied” 경고 |
+| `train.use_xformers` | memory-efficient attention 활성/검증 | xformers import 불가 시 경고. **MDTv2 backbone은 이미** `xformers.ops.memory_efficient_attention`을 기본 사용하므로 이 토글은 주로 importability 검증/보고용 |
+
+> 핵심 파일: `training/interrupt.py`, `training/perf.py`, `training/val_images.py`,
+> 그리고 이들을 wiring하는 `pipelines/train_pipeline.py`(resume 해석·인터럽트 저장·val
+> 로깅) + `training/stage_runners.py`(optimizer 빌드·perf 토글 적용).

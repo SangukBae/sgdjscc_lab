@@ -300,6 +300,74 @@ def save_checkpoint(
         _save(f"epoch_{epoch:04d}.pth")
 
 
+# Sentinel values for train.resume that request auto-discovery of latest.pth.
+_AUTO_RESUME_TOKENS = {"latest", "auto", "last", "resume"}
+# Filename written on a signal (SIGINT/SIGTERM) interrupt.
+INTERRUPT_CKPT_NAME = "interrupt_latest.pth"
+
+
+def resolve_resume_path(resume, checkpoint_dir: str | Path):
+    """Resolve ``train.resume`` to a concrete checkpoint path (or None).
+
+    Modes
+    -----
+    * ``None`` / empty            → fresh run (returns ``(None, False)``).
+    * ``"latest"`` / ``"auto"``   → auto mode: look for ``latest.pth`` (then the
+      interrupt checkpoint) under *checkpoint_dir*. Returns the found path, or
+      ``None`` when none exists (the caller then starts fresh — the SAFE default:
+      an auto-resume request must never abort a first run just because there is
+      nothing to resume yet).
+    * an explicit path            → returned as-is (unchanged legacy behaviour);
+      a non-existent explicit path is a hard error downstream, as before.
+
+    Returns ``(path_or_None, is_auto)``.
+    """
+    if resume is None:
+        return None, False
+    token = str(resume).strip()
+    if token == "" or token.lower() in {"null", "none"}:
+        return None, False
+    if token.lower() in _AUTO_RESUME_TOKENS:
+        ckpt_dir = Path(checkpoint_dir)
+        for name in ("latest.pth", INTERRUPT_CKPT_NAME):
+            cand = ckpt_dir / name
+            if cand.exists():
+                logger.info("Auto-resume: found %s → resuming.", cand)
+                return cand, True
+        logger.info("Auto-resume requested (train.resume=%s) but no %s under %s — "
+                    "starting a FRESH run.", token, "latest.pth", ckpt_dir)
+        return None, True
+    # Explicit path (legacy behaviour preserved).
+    return Path(token), False
+
+
+def save_interrupt_checkpoint(state: Dict, checkpoint_dir: str | Path, notify=None) -> None:
+    """Write an interrupt checkpoint on SIGINT/SIGTERM (rank 0 only).
+
+    Uses the SAME state layout as :func:`save_checkpoint` (so it is fully
+    resume-compatible via ``restore_runner_state``). Writes two files:
+
+    * ``interrupt_latest.pth`` — an explicit, un-clobbered record of the stop
+      point (a periodic ``latest.pth`` will not overwrite it), and
+    * ``latest.pth``           — refreshed too, so a subsequent ``--resume latest``
+      transparently picks up the interrupted run without naming the interrupt file.
+
+    An interrupt mid-epoch stores the CURRENT (not-yet-incremented) epoch, so an
+    epoch-mode resume continues from the next epoch — identical semantics to the
+    normal end-of-epoch ``latest.pth``. In step mode ``global_step`` is exact, so
+    the resume is exact.
+    """
+    if not ddp.is_rank0():
+        return
+    ckpt_dir = Path(checkpoint_dir)
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    _emit = notify if notify is not None else (lambda m: logger.info(m))
+    for name in (INTERRUPT_CKPT_NAME, "latest.pth"):
+        path = ckpt_dir / name
+        torch.save(state, path)
+        _emit(f"Interrupt checkpoint saved: {path}")
+
+
 def load_checkpoint(
     path: str | Path,
     models=None,
@@ -528,11 +596,15 @@ def run_training(
         runner = build_stage_runner(stage, models, cfg, device)
 
     # ── Resume (epoch AND global step) ─────────────────────────────────────────
+    # resume_path may be an explicit checkpoint path (legacy) OR the auto token
+    # "latest"/"auto" → discover latest.pth (or the interrupt checkpoint) under
+    # checkpoint_dir. Auto with nothing found = fresh run (safe default).
     start_epoch = 1
     best_metric = float("inf")
     global_step = 0
-    if resume_path:
-        state = restore_runner_state(resume_path, runner)
+    resolved_resume, _is_auto = resolve_resume_path(resume_path, ckpt_dir)
+    if resolved_resume is not None:
+        state = restore_runner_state(resolved_resume, runner)
         start_epoch = int(state.get("epoch", 0)) + 1
         best_metric = float(state.get("best_metric", float("inf")))
         global_step = int(state.get("global_step", 0))
@@ -594,11 +666,29 @@ def run_training(
     # Step-based events (log/val/save_every_steps, max_steps termination) fire on
     # completed optimizer updates; epoch-based events fire at epoch boundaries
     # when not in step mode.
+    # ── Validation-sample image logging (rank-0 only; off unless configured) ──
+    # Reuses the runner's wired callables + the shared VAE decode to write a small
+    # input|edge|recon panel periodically, from a FIXED VALIDATION batch and in
+    # eval mode. Priority: controlnet > text_dm. Output lands under checkpoint_dir
+    # (unambiguous regardless of how deeply checkpoint_dir is nested).
+    _vae = None
+    if models is not None:
+        _jm = getattr(models, "jscc_model", None)
+        _vae = getattr(_jm, "vae", None) if _jm is not None else None
+        if _vae is None:
+            _sem = getattr(models, "sem_pipeline", None)
+            _vae = getattr(_sem, "vae", None) if _sem is not None else None
+    from sgdjscc_lab.training.val_images import ValImageLogger
+    val_logger = ValImageLogger(cfg, stage, device, _vae, ckpt_dir,
+                                val_loader=val_loader)
+
     epoch = start_epoch
     done = False
+    interrupted = False
     run_acc: Dict[str, float] = {}     # running metric sums since last step-log
     run_n = 0
     last_metrics: Dict[str, float] = {}
+    last_batch = None
 
     def _on_global_step(monitor_loss: float) -> bool:
         """Run log/val/save events for the just-completed global step.
@@ -642,104 +732,157 @@ def run_training(
         # Steps until the next step-based event fires (step mode only).
         return (period - (global_step % period)) if (step_mode and period) else None
 
-    while not done:
-        runner.set_mode(True)
-        # DDP: reshuffle each rank's shard deterministically per epoch.
-        ddp.maybe_set_epoch(train_loader, epoch)
-        try:
-            n_batches = len(train_loader)
-        except TypeError:
-            n_batches = 0
-        prog.begin_epoch(epoch, n_batches)
-        prog.write("=== Epoch %d%s  (stage=%s) ===" % (
-            epoch, "" if step_mode else f" / {epochs}", stage))
-        ep_acc: Dict[str, float] = {}    # SAMPLE-WEIGHTED sums (metric × batch_size)
-        ep_n = 0
-        ep_samples = 0
+    def _save_interrupt(cur_epoch: int) -> None:
+        """Persist the current train state on a stop signal (same format as _save)."""
+        ckpt_state = {
+            "epoch":       cur_epoch,
+            "global_step": global_step,
+            "stage":       stage,
+            "best_metric": best_metric,
+            **_runner_save_state(runner),
+        }
+        save_interrupt_checkpoint(ckpt_state, ckpt_dir, notify=prog.write)
 
-        for batch_idx, batch in enumerate(train_loader):
-            metrics = runner.training_step(batch)
-            bs = _batch_size(batch)
-            for k, v in metrics.items():
-                ep_acc[k] = ep_acc.get(k, 0.0) + float(v) * bs
-                run_acc[k] = run_acc.get(k, 0.0) + float(v)
-            ep_n += 1
-            ep_samples += bs
-            run_n += 1
-            last_metrics = metrics
+    # SIGINT/SIGTERM → set a flag we poll at batch/step boundaries, then save an
+    # interrupt checkpoint and stop cleanly. All ranks install (torchrun forwards
+    # the signal to the group so they break together); only rank 0 writes the file.
+    from sgdjscc_lab.training.interrupt import InterruptHandler
+    stop = InterruptHandler().install()
 
-            did_update = bool(getattr(runner, "last_step_did_update", True))
-            reached_max = False
-            if did_update:
-                # mid-accumulation micro-steps don't advance the global step.
-                global_step += 1
-                reached_max = _on_global_step(metrics.get("loss", float("inf")))
+    # try/finally so the custom SIGINT/SIGTERM handlers are ALWAYS restored — even
+    # if a training_step / validation / checkpoint save / image log raises.
+    try:
+        while not done:
+            if stop.requested:
+                prog.write("Interrupt (%s) before epoch %d — saving and stopping." %
+                           (stop.signal_name, epoch))
+                _save_interrupt(epoch)
+                interrupted = True
+                break
+            runner.set_mode(True)
+            # DDP: reshuffle each rank's shard deterministically per epoch.
+            ddp.maybe_set_epoch(train_loader, epoch)
+            try:
+                n_batches = len(train_loader)
+            except TypeError:
+                n_batches = 0
+            prog.begin_epoch(epoch, n_batches)
+            prog.write("=== Epoch %d%s  (stage=%s) ===" % (
+                epoch, "" if step_mode else f" / {epochs}", stage))
+            ep_acc: Dict[str, float] = {}    # SAMPLE-WEIGHTED sums (metric × batch_size)
+            ep_n = 0
+            ep_samples = 0
 
-            # Advance the console bar: per global step (step mode) or per batch
-            # (epoch mode). val_in/save_in are step-mode countdowns.
-            prog.after_batch(
-                batch_idx=batch_idx, n_batches=n_batches, global_step=global_step,
-                did_update=did_update, metrics=metrics, lr=_lr_now(),
-                val_in=_steps_left(val_every_steps), save_in=_steps_left(save_every_steps),
-                batch_samples=bs * world_size,
-            )
+            for batch_idx, batch in enumerate(train_loader):
+                metrics = runner.training_step(batch)
+                bs = _batch_size(batch)
+                for k, v in metrics.items():
+                    ep_acc[k] = ep_acc.get(k, 0.0) + float(v) * bs
+                    run_acc[k] = run_acc.get(k, 0.0) + float(v)
+                ep_n += 1
+                ep_samples += bs
+                run_n += 1
+                last_metrics = metrics
+                last_batch = batch
 
-            if reached_max:
-                prog.write("Reached max_steps=%d - stopping." % max_steps)
-                done = True
+                did_update = bool(getattr(runner, "last_step_did_update", True))
+                reached_max = False
+                if did_update:
+                    # mid-accumulation micro-steps don't advance the global step.
+                    global_step += 1
+                    reached_max = _on_global_step(metrics.get("loss", float("inf")))
+                    # Periodic validation-sample panel (step cadence; rank-0 / no-op
+                    # off). The logger pulls its own fixed VALIDATION batch + eval mode.
+                    val_logger.maybe_log_step(runner, batch, global_step, epoch)
+
+                # Advance the console bar: per global step (step mode) or per batch
+                # (epoch mode). val_in/save_in are step-mode countdowns.
+                prog.after_batch(
+                    batch_idx=batch_idx, n_batches=n_batches, global_step=global_step,
+                    did_update=did_update, metrics=metrics, lr=_lr_now(),
+                    val_in=_steps_left(val_every_steps), save_in=_steps_left(save_every_steps),
+                    batch_samples=bs * world_size,
+                )
+
+                if reached_max:
+                    prog.write("Reached max_steps=%d - stopping." % max_steps)
+                    done = True
+                    break
+
+                # ── Graceful stop on SIGINT/SIGTERM (checked at batch boundary) ──
+                if stop.requested:
+                    prog.write("Interrupt (%s) at epoch %d, global_step %d — saving "
+                               "and stopping." % (stop.signal_name, epoch, global_step))
+                    _save_interrupt(epoch)
+                    interrupted = True
+                    done = True
+                    break
+
+            # Interrupt mid-epoch: state already saved above — leave the loop without
+            # running the normal flush / epoch-boundary save.
+            if interrupted:
                 break
 
-        # ── Flush a partial grad-accumulation window at the epoch boundary ────
-        # so the epoch's last micro-batches are not dropped. The flush produces a
-        # real optimizer step, so it goes through the SAME step-event path (and
-        # can itself reach max_steps).
-        if not done and hasattr(runner, "flush_pending") and runner.flush_pending():
-            global_step += 1
-            reached_max = _on_global_step(last_metrics.get("loss", float("inf")))
-            prog.after_batch(
-                batch_idx=n_batches, n_batches=n_batches, global_step=global_step,
-                did_update=True, metrics=last_metrics, lr=_lr_now(),
-                val_in=_steps_left(val_every_steps), save_in=_steps_left(save_every_steps),
-                batch_samples=world_size,
-            )
-            if reached_max:
-                prog.write("Reached max_steps=%d (epoch-boundary flush) - stopping." % max_steps)
-                done = True
+            # ── Flush a partial grad-accumulation window at the epoch boundary ──
+            # so the epoch's last micro-batches are not dropped. The flush produces a
+            # real optimizer step, so it goes through the SAME step-event path (and
+            # can itself reach max_steps).
+            if not done and hasattr(runner, "flush_pending") and runner.flush_pending():
+                global_step += 1
+                reached_max = _on_global_step(last_metrics.get("loss", float("inf")))
+                prog.after_batch(
+                    batch_idx=n_batches, n_batches=n_batches, global_step=global_step,
+                    did_update=True, metrics=last_metrics, lr=_lr_now(),
+                    val_in=_steps_left(val_every_steps), save_in=_steps_left(save_every_steps),
+                    batch_samples=world_size,
+                )
+                if reached_max:
+                    prog.write("Reached max_steps=%d (epoch-boundary flush) - stopping." % max_steps)
+                    done = True
 
-        # ── Epoch-boundary events (epoch mode) ────────────────────────────────
-        ep_mean = {k: ep_acc[k] / max(ep_samples, 1) for k in ep_acc}  # sample-weighted (local)
-        if not step_mode:
-            record: Dict = {"epoch": epoch, "global_step": global_step,
-                            "stage": stage, **ep_mean}
-            val_metrics = _validate(epoch) if (epoch % val_every == 0) else {}
-            if val_metrics:
-                record.update({f"val_{k}": v for k, v in val_metrics.items()})
-                runner.set_mode(True)
-            record["lr"] = _lr_now()
-            train_log.log(record)
-            # best.pth monitor must be a GLOBAL metric (not a rank-local shard):
-            # prefer the reduced validation loss; else the across-rank sample-
-            # weighted training loss (all-reduce of the weighted SUMS + samples).
-            if "loss" in val_metrics:
-                monitor = float(val_metrics["loss"])
-            elif ddp.is_distributed():
-                monitor = ddp.reduce_metric_sums(
-                    {"loss": ep_acc.get("loss", float("inf"))}, ep_samples)["loss"]
-            else:
-                monitor = float(ep_mean.get("loss", float("inf")))
-            _save(epoch, monitor)
-            if epoch >= epochs:
-                done = True
+            # ── Epoch-boundary events (epoch mode) ──────────────────────────────
+            ep_mean = {k: ep_acc[k] / max(ep_samples, 1) for k in ep_acc}  # sample-weighted (local)
+            if not step_mode:
+                record: Dict = {"epoch": epoch, "global_step": global_step,
+                                "stage": stage, **ep_mean}
+                val_metrics = _validate(epoch) if (epoch % val_every == 0) else {}
+                if val_metrics:
+                    record.update({f"val_{k}": v for k, v in val_metrics.items()})
+                    runner.set_mode(True)
+                record["lr"] = _lr_now()
+                train_log.log(record)
+                # best.pth monitor must be a GLOBAL metric (not a rank-local shard):
+                # prefer the reduced validation loss; else the across-rank sample-
+                # weighted training loss (all-reduce of the weighted SUMS + samples).
+                if "loss" in val_metrics:
+                    monitor = float(val_metrics["loss"])
+                elif ddp.is_distributed():
+                    monitor = ddp.reduce_metric_sums(
+                        {"loss": ep_acc.get("loss", float("inf"))}, ep_samples)["loss"]
+                else:
+                    monitor = float(ep_mean.get("loss", float("inf")))
+                _save(epoch, monitor)
+                # Periodic validation-sample panel (epoch cadence; rank-0 / no-op off).
+                val_logger.maybe_log_epoch(runner, last_batch, epoch)
+                if epoch >= epochs:
+                    done = True
 
-        prog.end_epoch()
-        epoch += 1
+            prog.end_epoch()
+            epoch += 1
+    finally:
+        # Restore the original signal handlers on ANY exit (normal or exception).
+        stop.uninstall()
 
-    # Always persist a final checkpoint in step mode.
-    if step_mode:
+    # Persist a final checkpoint in step mode — unless we already saved on interrupt.
+    if step_mode and not interrupted:
         _save(epoch - 1, best_metric if best_metric != float("inf") else 0.0)
 
-    prog.write("Training complete [stage=%s]. global_step=%d  best_metric=%.6f" % (
-        stage, global_step, best_metric))
+    if interrupted:
+        prog.write("Training interrupted [stage=%s]. Saved interrupt checkpoint at "
+                   "global_step=%d → resume with --resume latest." % (stage, global_step))
+    else:
+        prog.write("Training complete [stage=%s]. global_step=%d  best_metric=%.6f" % (
+            stage, global_step, best_metric))
     prog.write("Checkpoints -> %s" % ckpt_dir)
     prog.write("Training log -> %s" % log_path)
     prog.close()

@@ -84,10 +84,11 @@ class StageRunner:
         self.device = device
         lr = float(OmegaConf.select(cfg, "train.lr", default=1e-4))
         wd = float(OmegaConf.select(cfg, "train.weight_decay", default=1e-5))
-        self.optimizer = (
-            torch.optim.AdamW(param_groups, lr=lr, weight_decay=wd)
-            if param_groups else None
-        )
+        # Optional 8-bit AdamW (train.use_8bit_adam) with graceful fallback; the
+        # default is a plain torch.optim.AdamW (unchanged behaviour).
+        from sgdjscc_lab.training.perf import build_optimizer
+        self.optimizer = build_optimizer(
+            param_groups, cfg, lr=lr, weight_decay=wd, name="optimizer")
         self._init_step_controls()
 
     # Whether the runner is in a training step (set by set_mode). Gates effects
@@ -107,6 +108,17 @@ class StageRunner:
         # DDP-wrapped modules trained by this runner (empty for single-process).
         # Used for grad-accum no_sync and the epoch-boundary grad sync.
         self._ddp_modules: List = []
+
+    def apply_perf_toggles(self) -> None:
+        """Apply opt-in memory toggles (gradient checkpointing / xformers).
+
+        Operates on this runner's trainable modules (``state_modules()``). Off by
+        default; a requested-but-inapplicable toggle is logged, never silently
+        dropped. Called once by :func:`build_stage_runner` after construction so
+        both CLI and programmatic runs get the same behaviour.
+        """
+        from sgdjscc_lab.training.perf import apply_memory_optimizations
+        apply_memory_optimizations(self.state_modules(), self.cfg, stage=self.stage)
 
     def register_ddp_modules(self, modules: List) -> None:
         """Record the DDP-wrapped trainable modules (for no_sync / flush sync)."""
@@ -1020,8 +1032,16 @@ def build_stage_runner(stage: str, models, cfg: DictConfig, device) -> StageRunn
     """Build the runner for *stage*, applying the freeze policy and wiring models.
 
     Raises a clear error if a module required by the stage is missing from the
-    bundle (e.g. ControlNet stage without a loaded diffusion pipeline).
+    bundle (e.g. ControlNet stage without a loaded diffusion pipeline). After
+    construction the opt-in memory toggles (gradient checkpointing / xformers)
+    are applied to the runner's trainable modules (no-op unless enabled in cfg).
     """
+    runner = _build_stage_runner_impl(stage, models, cfg, device)
+    runner.apply_perf_toggles()
+    return runner
+
+
+def _build_stage_runner_impl(stage: str, models, cfg: DictConfig, device) -> StageRunner:
     param_groups, report = apply_stage_freeze_policy(models, cfg, stage)
 
     jscc = getattr(models, "jscc_model", None) if models is not None else None
