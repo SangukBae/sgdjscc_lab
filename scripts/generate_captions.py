@@ -62,7 +62,7 @@ DEFAULT_FIXED = "a portrait photo of a person"
 # torch. ``None`` prompt → the module default prompt.
 QWEN_MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"
 DEFAULT_MODEL_MAX_NEW_TOKENS = 64
-DEFAULT_MODEL_BATCH_SIZE = 8
+DEFAULT_MODEL_BATCH_SIZE = 1
 DEFAULT_MODEL_MAX_PIXELS = 512 * 512
 
 
