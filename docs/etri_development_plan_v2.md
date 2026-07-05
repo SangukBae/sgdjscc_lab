@@ -95,6 +95,70 @@ seg 강조) 대비 semantic-guided denoising 구조가 "의미 왜곡 억제"에
 **알고리즘 보존 불변식**: 추론 순전파 수치(VAE 스케일링, AWGN 공식, blind SNR, step
 matching, canny 재전송, 최종 decode)는 변경하지 않고, 모든 신규 기능은 opt-in 확장으로 얹는다.
 
+### 2.1 모델 구조 (블록다이어그램)
+
+`src/sgdjscc_lab/`의 실제 모듈 흐름. **실선 = 논문 정합 core 경로(paper-faithful)**,
+**점선 = Phase 4/5 확장 레이어(기본 off)**. 채널로 보내는 것은 이미지 latent `f` +
+의미 신호 `o`(엣지·텍스트)이며, 수신단 확산 모델이 잡음을 벗겨내며 의미를 복원한다.
+
+```mermaid
+flowchart LR
+  IN([원본 이미지 · 키프레임]):::io
+
+  subgraph TX["② 송신단 Tx"]
+    direction TB
+    JENC["JSCCModel<br/>VAE enc + L2-norm<br/>models/jscc_model.py"]:::core
+    TXT["TextExtractor · BLIP2<br/>guidance/text_extractor.py"]:::core
+    EDG["EdgeExtractor · MuGE<br/>guidance/edge_extractor.py"]:::core
+  end
+
+  AWGN["③ 무선 채널<br/>AWGNChannel.transmit<br/>channels/awgn.py"]:::core
+
+  subgraph RX["④ 수신단 Rx · DiffusionGenerator"]
+    direction TB
+    EST["blind SNR 추정 → step matching<br/>models/csi_estimation.py"]:::core
+    DEN["MDTv2 denoiser + ControlNet + CLIP<br/>models/diffusion_wrapper.py"]:::core
+    VDEC["shared VAE decode"]:::core
+    EST --> DEN --> VDEC
+  end
+
+  OUT([⑤ 복원 이미지]):::io
+  EVAL["⑥ 시맨틱 신뢰성 평가<br/>evaluators/ quality·clip_score·semantic_reliability(SRS)"]:::core
+
+  IN --> JENC & TXT & EDG
+  JENC -->|이미지 latent f| AWGN
+  EDG -->|의미 신호 o| AWGN
+  TXT -->|텍스트 o| AWGN
+  AWGN -->|잡음 이미지| EST
+  AWGN -.->|의미 조건| DEN
+  VDEC --> OUT --> EVAL
+  IN -.->|원본과 비교| EVAL
+
+  subgraph EXT["확장 레이어 · Phase 4/5 (기본 off)"]
+    direction TB
+    ETX["Tx+: EdgeJSCC codec (edge_jscc.py)<br/>semantic/object/relation packet (guidance/)"]:::ext
+    EXCH["채널+: rayleigh · fast_fading · packet_drop · measurement (channels/)"]:::ext
+    ERX["Rx+: channel_condition_encoder · diffusion_wrapper_channel<br/>acceleration/ (DDIM step-budget · early-exit)"]:::ext
+    ECTL["제어: adaptive_guidance · regeneration · search (controllers/)"]:::ext
+    EEV["평가+: semantic_packet_matcher · semantic_reliability_v2<br/>hallucination_vqa · temporal_consistency (evaluators/)"]:::ext
+  end
+
+  ETX -.-> TX
+  EXCH -.-> AWGN
+  ERX -.-> RX
+  ECTL -.-> DEN
+  EEV -.-> EVAL
+
+  classDef core fill:#D5E8D4,stroke:#82B366,color:#111;
+  classDef ext fill:#DAE8FC,stroke:#6C8EBF,color:#111,stroke-dasharray:5 3;
+  classDef io fill:#F5F5F5,stroke:#666,color:#111;
+```
+
+`runtime.build_models()`가 위 core 구성요소를 `ModelBundle`(jscc_model · sem_pipeline ·
+text_extractor · edge_extractor)로 묶고, `pipelines/infer_pipeline.py`가 128×128 패치
+단위로 forward를 조율한다. 파일별 실행 흐름 상세는
+[framework_file_roles.md](./framework_file_roles.md) 참조.
+
 ---
 
 ## 3. 논문 한계점 ↔ 해결 모듈 매핑
