@@ -50,6 +50,7 @@ def prepare_muge_edges(
     repr_name: str = "reduced",
     overwrite: bool = False,
     limit: Optional[int] = None,
+    progress_every: int = 500,
 ) -> dict:
     """Write MuGE soft-edge sidecars for every image under *input_dir*.
 
@@ -75,6 +76,7 @@ def prepare_muge_edges(
     files = _list_images(input_dir)
     if limit is not None:
         files = files[: int(limit)]
+    progress_every = max(1, int(progress_every))
     out_base = Path(out_dir) if out_dir else None
     if out_base is not None:
         out_base.mkdir(parents=True, exist_ok=True)
@@ -85,18 +87,19 @@ def prepare_muge_edges(
             else fpath.with_name(f"{fpath.stem}_muge{ext}")
         if dst.exists() and not overwrite:
             skipped += 1
-            continue
-        img = load_image_as_tensor(fpath)               # [1,3,H,W] in [0,1]
-        img = F.interpolate(img, size=(size, size), mode="bilinear", align_corners=False)
-        data, unc = extractor.extract(img.to(dev), dev)
-        edge = muge_channels(data, unc, repr_name)       # [C,H,W] in [0,1]
-        if as_png:
-            save_tensor_as_image(edge.repeat(3, 1, 1).cpu(), dst)  # 1ch → 3ch png
         else:
-            np.save(dst, edge.cpu().numpy().astype(np.float16))    # [C,H,W]
-        written += 1
-        if (i + 1) % 2000 == 0:
-            logger.info("  %d/%d (%d written)", i + 1, len(files), written)
+            img = load_image_as_tensor(fpath)               # [1,3,H,W] in [0,1]
+            img = F.interpolate(img, size=(size, size), mode="bilinear", align_corners=False)
+            data, unc = extractor.extract(img.to(dev), dev)
+            edge = muge_channels(data, unc, repr_name)       # [C,H,W] in [0,1]
+            if as_png:
+                save_tensor_as_image(edge.repeat(3, 1, 1).cpu(), dst)  # 1ch → 3ch png
+            else:
+                np.save(dst, edge.cpu().numpy().astype(np.float16))    # [C,H,W]
+            written += 1
+        processed = i + 1
+        if processed % progress_every == 0 or processed == len(files):
+            logger.info("  %.1f%% (%d/%d)", 100.0 * processed / len(files), processed, len(files))
     logger.info("Done: %d written, %d skipped, %d total (repr=%s, %s)",
                 written, skipped, len(files), repr_name, ext)
     return {"written": written, "skipped": skipped, "total": len(files)}
@@ -118,6 +121,8 @@ def _parse_args(argv=None):
                         "edge_uncertainty=2ch npy (closest to inference) | multi=11ch npy.")
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--limit", type=int, default=None)
+    p.add_argument("--progress-every", type=int, default=500,
+                   help="Log progress every N images (default: 500).")
     return p.parse_args(argv)
 
 
@@ -126,7 +131,8 @@ def main(argv=None) -> int:
     a = _parse_args(argv)
     s = prepare_muge_edges(a.input, model_root=a.model_root, out_dir=a.out_dir,
                            device=a.device, size=a.size, repr_name=a.repr_name,
-                           overwrite=a.overwrite, limit=a.limit)
+                           overwrite=a.overwrite, limit=a.limit,
+                           progress_every=a.progress_every)
     print(f"muge edges: written={s['written']} skipped={s['skipped']} total={s['total']}")
     return 0
 
