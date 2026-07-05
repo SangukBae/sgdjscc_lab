@@ -98,13 +98,7 @@ python -m pytest tests/ -v
 - [docs/framework_comparison.md](./docs/framework_comparison.md) — 원본 vs lab 구조 + 논문 충실도
 - [docs/paper_gap_closure.md](./docs/paper_gap_closure.md) — `paper_mode` guardrail & DDP
 
-## TODO List
-- [x] Phase 1: AWGN 단일 이미지 / 폴더 inference.
-- [x] Phase 2: 모듈형 패키지 구조와 config composition.
-- [x] Phase 3: 평가 프레임워크와 연구 지표.
-- [x] Phase 4: packet-aware verifier + adaptive guidance (4-A), keyframe / temporal pipeline (4-B).
-- [x] Phase 5 (scaffold): channel-conditioned diffusion (Rayleigh/fast-fading/packet-drop, 5-A), low-latency sampling/consistency/early-exit (5-B), SRS-v2 + regeneration search (5-C).
-- [x] Stage-aware training CLI: `scripts/train.py`, 논문 3개 core stage(`jscc`/`text_dm`/`controlnet`), 보조 `edge_codec` stage(BCE+Dice edge codec → Stage-3 `edge_jscc` baseline transport), 선택적 `end_to_end_ft` 확장; step/epoch 모드, grad-accum, AMP, resume, JSONL 로깅; 실제 모델 smoke 경로(`docs/smoke_training.md`).
+Phase 1~4 완료, Phase 5 스캐폴드. 상세 현황은 [docs/README.md](./docs/README.md#phase-현황) 참조.
 
 ## Acknowledgements
 `sgdjscc_lab`의 개발은 원본 `SGDJSCC` 프로젝트와 그 상위 의존성에 기반한다:
