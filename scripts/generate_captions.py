@@ -11,14 +11,17 @@ Caption modes (``--mode``)
   ``fixed``     a single fixed template for every image (default; CPU-only).
                 e.g. "a portrait photo of a person".
   ``filename``  derive a pseudo-caption from the filename stem (cheap; smoke).
-  ``model``     run the repo's BLIP-2 caption extractor (guidance/text_extractor).
-                Heavy: needs transformers + weights + ideally a GPU.
+  ``model``     run the Qwen2.5-VL-3B-Instruct caption extractor
+                (guidance/qwen_caption).  Heavy: needs a recent transformers
+                (>=4.49) + weights + ideally a GPU.  This is SEPARATE from the
+                BLIP-2 model used inside the inference/eval pipelines, so it does
+                not affect the paper-faithful forward pass.
 
 Fidelity note
 -------------
 Auto-generated captions are **paper-like, NOT paper-faithful**.  The paper's
 CelebA-HQ captions are its own; ``fixed``/``filename`` are placeholders and
-``model`` (BLIP-2) approximates captioning but is not the paper's exact text.
+``model`` (Qwen2.5-VL) approximates captioning but is not the paper's exact text.
 Use this to *enable* text-stage training on caption-less data, not to claim
 paper-exact reproduction.
 
@@ -31,7 +34,7 @@ Usage
     # all CelebA splits at once (the scan is ALWAYS recursive)
     python scripts/generate_captions.py --input data/celeba --mode fixed
 
-    # BLIP-2 model captions (GPU recommended)
+    # Qwen2.5-VL model captions (GPU recommended; needs transformers>=4.49)
     python scripts/generate_captions.py --input data/celeba_hq/train \
         --mode model --device cuda:0
 """
@@ -54,6 +57,14 @@ logger = logging.getLogger("generate_captions")
 
 DEFAULT_FIXED = "a portrait photo of a person"
 
+# Qwen2.5-VL knobs for --mode model. Kept as plain literals here (not imported
+# from guidance.qwen_caption) so --help / fixed / filename modes never import
+# torch. ``None`` prompt → the module default prompt.
+QWEN_MODEL_ID = "Qwen/Qwen2.5-VL-3B-Instruct"
+DEFAULT_MODEL_MAX_NEW_TOKENS = 64
+DEFAULT_MODEL_BATCH_SIZE = 8
+DEFAULT_MODEL_MAX_PIXELS = 512 * 512
+
 
 def _filename_caption(stem: str) -> str:
     """Pseudo-caption from a filename stem (``_``/``-`` → spaces)."""
@@ -69,6 +80,13 @@ def generate_captions(
     overwrite: bool = False,
     device: str = "cpu",
     limit: Optional[int] = None,
+    progress_every: int = 500,
+    model_id: str = QWEN_MODEL_ID,
+    prompt: Optional[str] = None,
+    max_new_tokens: int = DEFAULT_MODEL_MAX_NEW_TOKENS,
+    batch_size: int = DEFAULT_MODEL_BATCH_SIZE,
+    max_pixels: Optional[int] = DEFAULT_MODEL_MAX_PIXELS,
+    min_pixels: Optional[int] = None,
 ) -> dict:
     """Write ``<stem>.txt`` next to every image under *input_dir*.
 
@@ -88,50 +106,83 @@ def generate_captions(
     logger.info("Found %d images under %s (mode=%s)", total, input_dir, mode)
 
     extractor = None
-    dev = None
     if mode == "model":
         import torch
-        from sgdjscc_lab.guidance.text_extractor import build_text_extractor
-        from sgdjscc_lab.io import load_image_as_tensor
+        from sgdjscc_lab.guidance.qwen_caption import build_qwen_caption_extractor
         dev = torch.device(device)
-        extractor = build_text_extractor(dev)
+        extractor = build_qwen_caption_extractor(
+            dev, model_id=model_id, prompt=prompt, max_new_tokens=max_new_tokens,
+            max_pixels=max_pixels, min_pixels=min_pixels)
 
+    progress_every = max(1, int(progress_every))
+    batch_size = max(1, int(batch_size))
     written = skipped = 0
+    processed = 0
     caption_dirs = set()
-    for i, fpath in enumerate(files):
+
+    def _log_progress() -> None:
+        if total and (processed % progress_every == 0 or processed == total):
+            logger.info("  %.1f%% (%d/%d)", 100.0 * processed / total, processed, total)
+
+    # --mode model batches images through Qwen2.5-VL; ``_pending`` buffers the
+    # image paths awaiting a batched generate() call.
+    _pending: List[Path] = []
+
+    def _flush_model_batch() -> None:
+        nonlocal written, processed
+        if not _pending:
+            return
+        from PIL import Image
+        images = []
+        for fp in _pending:
+            with Image.open(fp) as im:
+                images.append(im.convert("RGB"))
+        captions = extractor.caption_images(images)
+        for fp, cap in zip(_pending, captions):
+            caption = cap.strip() if cap and cap.strip() else text
+            out_path = fp.with_suffix(".txt")
+            out_path.write_text(caption + "\n", encoding="utf-8")
+            caption_dirs.add(out_path.parent)
+            written += 1
+            processed += 1
+            _log_progress()
+        _pending.clear()
+
+    for fpath in files:
         txt_path = fpath.with_suffix(".txt")
         if txt_path.exists() and not overwrite:
             skipped += 1
+            processed += 1
+            _log_progress()
             continue
-        if mode == "fixed":
-            caption = text
-        elif mode == "filename":
-            caption = _filename_caption(fpath.stem)
-        else:  # model
-            import torch
-            import torch.nn.functional as F
-            img = load_image_as_tensor(fpath)            # [1,3,H,W] in [0,1]
-            img = F.interpolate(img, size=(128, 128), mode="bilinear", align_corners=False)
-            out = extractor.extract(img.to(dev), dev)    # list-of-lists
-            caption = (out[0][0] if out and out[0] else text)
+        if mode == "model":
+            _pending.append(fpath)
+            if len(_pending) >= batch_size:
+                _flush_model_batch()
+            continue
+        caption = text if mode == "fixed" else _filename_caption(fpath.stem)
         txt_path.write_text(str(caption).strip() + "\n", encoding="utf-8")
         caption_dirs.add(txt_path.parent)
         written += 1
-        if (i + 1) % 5000 == 0:
-            logger.info("  %d/%d processed (%d written)", i + 1, total, written)
+        processed += 1
+        _log_progress()
+
+    if mode == "model":
+        _flush_model_batch()
 
     # Provenance marker: drop a sentinel in every directory that received an
     # auto-caption (and the input root) so paper_mode can REFUSE to train a
     # text stage on these (auto-captions are NOT paper-faithful — see
     # sgdjscc_lab/paper_mode.py and docs/paper_gap_closure.md).
     _write_provenance(set(caption_dirs) | {Path(input_dir)}, mode=mode, text=text,
-                      written=written)
+                      written=written, model_id=(model_id if mode == "model" else None))
 
     logger.info("Done: %d written, %d skipped, %d total", written, skipped, total)
     return {"written": written, "skipped": skipped, "total": total}
 
 
-def _write_provenance(dirs, *, mode: str, text: str, written: int) -> None:
+def _write_provenance(dirs, *, mode: str, text: str, written: int,
+                      model_id: Optional[str] = None) -> None:
     """Write the auto-caption provenance sentinel into each directory."""
     import json
     import time
@@ -141,6 +192,7 @@ def _write_provenance(dirs, *, mode: str, text: str, written: int) -> None:
         "tool": "scripts/generate_captions.py",
         "mode": mode,
         "fixed_text": text if mode == "fixed" else None,
+        "model_id": model_id,
         "written": int(written),
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "fidelity": "paper-like (auto-generated; NOT paper-faithful)",
@@ -168,6 +220,21 @@ def _parse_args(argv=None):
                    help="Overwrite existing <stem>.txt sidecars (default: skip).")
     p.add_argument("--device", default="cpu", help="Device for --mode model (e.g. cuda:0).")
     p.add_argument("--limit", type=int, default=None, help="Process only the first N images (debug).")
+    p.add_argument("--progress-every", type=int, default=500,
+                   help="Log progress every N images (default: 500).")
+    # --mode model (Qwen2.5-VL) knobs. Ignored by fixed/filename modes.
+    p.add_argument("--model-id", default=QWEN_MODEL_ID,
+                   help=f"HF model id for --mode model (default: {QWEN_MODEL_ID!r}).")
+    p.add_argument("--prompt", default=None,
+                   help="Caption instruction for --mode model (default: built-in concise prompt).")
+    p.add_argument("--max-new-tokens", type=int, default=DEFAULT_MODEL_MAX_NEW_TOKENS,
+                   help=f"Max new tokens per caption (default: {DEFAULT_MODEL_MAX_NEW_TOKENS}).")
+    p.add_argument("--batch-size", type=int, default=DEFAULT_MODEL_BATCH_SIZE,
+                   help=f"Images per Qwen batch for --mode model (default: {DEFAULT_MODEL_BATCH_SIZE}).")
+    p.add_argument("--max-pixels", type=int, default=DEFAULT_MODEL_MAX_PIXELS,
+                   help=f"Max H*W per image (vision-token cap; default: {DEFAULT_MODEL_MAX_PIXELS}).")
+    p.add_argument("--min-pixels", type=int, default=None,
+                   help="Min H*W per image (default: model default).")
     return p.parse_args(argv)
 
 
@@ -176,7 +243,9 @@ def main(argv=None) -> int:
     args = _parse_args(argv)
     summary = generate_captions(
         args.input, mode=args.mode, text=args.text, overwrite=args.overwrite,
-        device=args.device, limit=args.limit,
+        device=args.device, limit=args.limit, progress_every=args.progress_every,
+        model_id=args.model_id, prompt=args.prompt, max_new_tokens=args.max_new_tokens,
+        batch_size=args.batch_size, max_pixels=args.max_pixels, min_pixels=args.min_pixels,
     )
     print(f"captions: written={summary['written']} skipped={summary['skipped']} "
           f"total={summary['total']}")

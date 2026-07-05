@@ -47,3 +47,17 @@ clean-fid
 torch-fidelity
 efficientnet_pytorch
 matplotlib
+
+# ── Optional: Qwen2.5-VL caption generation (scripts/generate_captions.py --mode model) ──
+# Bulk auto-captioning (e.g. SA-1B) uses Qwen/Qwen2.5-VL-3B-Instruct, a *native*
+# transformers architecture that requires transformers>=4.49 — NEWER than the
+# 4.44.2 pinned above for the paper-faithful BLIP-2 inference path. The two
+# transformers versions cannot coexist, so install these into a SEPARATE
+# caption-only environment (they are NOT needed for inference/eval/training):
+#
+#   pip install -U 'transformers>=4.49' accelerate qwen-vl-utils
+#
+# Only --mode model needs them; --mode fixed|filename run on the pinned env.
+# transformers>=4.49
+# accelerate
+# qwen-vl-utils   # optional helper; the script does not import it

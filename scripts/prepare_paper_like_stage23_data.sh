@@ -135,7 +135,7 @@ run_parallel_muge() {
   wait_for_pids "${pids[@]}"
 }
 
-echo "[1/3] Generating BLIP-2 captions for SA-1B in parallel..."
+echo "[1/3] Generating Qwen2.5-VL captions for SA-1B in parallel..."
 run_parallel_captions
 
 echo "[2/3] Building stage-2/3 file lists..."
