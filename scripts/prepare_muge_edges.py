@@ -37,7 +37,7 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-from sgdjscc_lab.utils.text_progress import format_unit_progress  # noqa: E402
+from sgdjscc_lab.utils.text_progress import UnitProgress  # noqa: E402
 
 logger = logging.getLogger("prepare_muge_edges")
 
@@ -88,6 +88,10 @@ def prepare_muge_edges(
         out_base.mkdir(parents=True, exist_ok=True)
     ext = ".png" if as_png else ".npy"
     written = skipped = 0
+    total = len(files)
+    # Single-line in-place progress on a TTY; line-by-line logging otherwise.
+    progress = UnitProgress(stage="muge", total=total, label=label, gpu=gpu,
+                            unit_index=unit_index, unit_total=unit_total, logger=logger)
     for i, fpath in enumerate(files):
         dst = (out_base / f"{fpath.stem}_muge{ext}") if out_base is not None \
             else fpath.with_name(f"{fpath.stem}_muge{ext}")
@@ -104,16 +108,13 @@ def prepare_muge_edges(
                 np.save(dst, edge.cpu().numpy().astype(np.float16))    # [C,H,W]
             written += 1
         processed = i + 1
-        if processed % progress_every == 0 or processed == len(files):
-            if label:
-                logger.info("%s", format_unit_progress(
-                    stage="muge", gpu=gpu, label=label, unit_index=unit_index,
-                    unit_total=unit_total, processed=processed, total=len(files)))
-            else:
-                logger.info("  %.1f%% (%d/%d)", 100.0 * processed / len(files), processed, len(files))
+        if total and (processed % progress_every == 0 or processed == total):
+            progress.update(processed)
+    if total:
+        progress.close(total)  # commit the final 100% line (TTY only)
     logger.info("Done: %d written, %d skipped, %d total (repr=%s, %s)",
-                written, skipped, len(files), repr_name, ext)
-    return {"written": written, "skipped": skipped, "total": len(files)}
+                written, skipped, total, repr_name, ext)
+    return {"written": written, "skipped": skipped, "total": total}
 
 
 def _parse_args(argv=None):

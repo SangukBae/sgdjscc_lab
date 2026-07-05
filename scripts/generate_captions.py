@@ -52,7 +52,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from sgdjscc_lab.data.image_dataset import _IMG_EXTS, _list_images  # noqa: E402
-from sgdjscc_lab.utils.text_progress import format_unit_progress  # noqa: E402
+from sgdjscc_lab.utils.text_progress import UnitProgress  # noqa: E402
 
 logger = logging.getLogger("generate_captions")
 
@@ -125,15 +125,13 @@ def generate_captions(
     processed = 0
     caption_dirs = set()
 
+    # Single-line in-place progress on a TTY; line-by-line logging otherwise.
+    progress = UnitProgress(stage="caption", total=total, label=label, gpu=gpu,
+                            unit_index=unit_index, unit_total=unit_total, logger=logger)
+
     def _log_progress() -> None:
-        if not (total and (processed % progress_every == 0 or processed == total)):
-            return
-        if label:
-            logger.info("%s", format_unit_progress(
-                stage="caption", gpu=gpu, label=label, unit_index=unit_index,
-                unit_total=unit_total, processed=processed, total=total))
-        else:
-            logger.info("  %.1f%% (%d/%d)", 100.0 * processed / total, processed, total)
+        if total and (processed % progress_every == 0 or processed == total):
+            progress.update(processed)
 
     # --mode model batches images through Qwen2.5-VL; ``_pending`` buffers the
     # image paths awaiting a batched generate() call.
@@ -180,6 +178,9 @@ def generate_captions(
 
     if mode == "model":
         _flush_model_batch()
+
+    if total:
+        progress.close(processed)  # commit the final 100% line (TTY only)
 
     # Provenance marker: drop a sentinel in every directory that received an
     # auto-caption (and the input root) so paper_mode can REFUSE to train a
