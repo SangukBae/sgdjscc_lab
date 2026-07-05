@@ -1,539 +1,143 @@
 > [← 문서 색인](./README.md)
 
-# Phase 4 — 계획 & 구현 현황
+# Phase 4 — 패킷 인식 평가 + 영상 확장
 
-- [한눈에 보기 (쉽게 이해하기)](#phase-4-tldr)
-- [마스터 스위치](#master-switch)
-- [Phase 4 계획](#phase-4-plan)
-- [Phase 4 구현 현황](#phase-4-implementation-status)
-- [논문 작성 시 활용 가이드](#phase-4-paper-guide)
-
----
-
-<a id="phase-4-tldr"></a>
-
-## 한눈에 보기 (쉽게 이해하기)
-
-> **한 문장:** "한 장의 이미지를 평가하던 도구를, *의미 단위로 따져보고(4-A) 영상
-> 프레임까지 다루는(4-B)* 시맨틱 전송 프레임워크로 키운 단계."
-
-Phase 1~3까지는 "이미지를 보내고 → 복원하고 → 점수(SRS) 매기기"였다면, Phase 4는
-그 위에 두 가지를 얹는다. (둘 다 **기본 off**, `use_phase4`로만 켜짐)
-
-### 4-A: 이미지를 "의미 단위로" 더 똑똑하게 평가/복원
-
-기존 평가는 "전체적으로 비슷한가"를 점수로 봤다. 4-A는 **무엇이 어떻게 틀렸는지**를
-따진다.
-
-- **시맨틱 패킷** — 이미지에서 객체·장면·관계·속성을 뽑아 `packet.json`으로 정리
-  (이미지의 "의미 명세서").
-- **패킷 검증기** — 원본 vs 복원의 명세서를 비교 → "강아지가 사라졌다", "없던
-  사람이 생겼다(할루시네이션)"를 **개수로** 집계.
-- **적응형 가이드** — 채널이 나쁘면(저 SNR) 가이드를 강하게 + 확산 스텝 최대,
-  좋으면 약하게 → 상황에 맞게 복원 강도 조절.
-- **똑똑한 재시도** — 실패 유형별로 다르게 재복원 (객체 누락 → 텍스트 가이드 강화 /
-  할루시네이션 → 텍스트 약화).
-
-> 한 줄: **"비슷한가?"를 넘어 "의미가 보존됐나? 뭐가 빠지고 뭐가 지어냈나?"를 측정.**
-
-### 4-B: 한 장 → 영상(프레임 묶음)으로 확장
-
-영상은 매 프레임을 통째로 보내면 낭비다 (옆 프레임끼리 거의 똑같으니까).
-
-- **키프레임만 전부 전송**, 나머지 프레임은 **바뀐 부분(시맨틱 델타)만** 전송/재사용.
-- **시간적 지표** — 프레임 간 의미가 일관되게 유지되는지, 영상 전체에서
-  할루시네이션이 얼마나 생기는지 측정.
-- **`overhead_reduction`** — "프레임마다 전부 보내는 것 대비 얼마나 아꼈나" 리포팅.
-
-> 한 줄: **이미지 1장 → 영상 키프레임 단위로, "의미만 골라 효율적으로" 전송하는 시뮬레이션.**
-
-### 정리
-
-|       | Phase 1~3        | Phase 4                               |
-|-------|------------------|---------------------------------------|
-| 대상  | 이미지 1장       | 이미지(4-A) + 영상 프레임(4-B)        |
-| 평가  | 전체 유사도 점수 | 의미 단위 오류 분석(누락/추가/관계)   |
-| 복원  | 고정             | 채널 상태별 적응 + 실패별 재시도      |
-
-**핵심:** Phase 4는 새 전송 알고리즘이 아니라, 기존 SGD-JSCC 복원 경로는 그대로
-두고 그 **위에 얹은 "더 똑똑한 평가 + 영상 확장" 레이어**다. 그래서 안 켜면 Phase
-3와 똑같이 동작한다.
-
----
-
-<a id="master-switch"></a>
+> **한 문장:** SGD-JSCC forward pass는 한 줄도 바꾸지 않고, 그 위에 *의미 단위
+> 평가·제어(4-A)* 와 *키프레임 영상 확장(4-B)* 을 얹은 레이어. 안 켜면 Phase 3와 동일.
 
 ## 마스터 스위치
 
-모든 Phase 4 기능은 **기본값 off**다. 최상위 플래그 `use_phase4` 하나로 phase
-전체를 제어한다:
+모든 Phase 4 기능은 **기본값 off**다. 상위 게이트 `use_phase4` 하나로 제어한다.
 
 ```yaml
-# configs/eval/default.yaml (또는 composed config)
-use_phase4: false   # 기본값 — 모든 Phase 4-A/B 기능 비활성화
-```
+# configs/eval/default.yaml
+use_phase4: false          # 기본 — 4-A/B 전체 비활성화
 
-**규칙**: `use_phase4: false`이면, 아래 나열된 개별 기능 플래그
-(`use_packet_eval`, `use_adaptive_guidance`, `use_packet_regeneration`)는
-config에서 명시적으로 `true`로 설정되어 있어도 런타임에 무시된다. Phase 4-B
-(`evaluate_video.py`)는 에러로 종료된다.
-
-### Phase 4만 활성화
-
-```yaml
+# Phase 4만 활성화
 use_phase4: true
-use_phase5: false   # Phase 5는 꺼둠
-
-use_packet_eval: true
-use_adaptive_guidance: true
-use_packet_regeneration: false
+use_packet_eval: true          # 패킷 빌드 + srs_base/srs_packet + 오류 카운트
+use_adaptive_guidance: true    # SNR 구간별 가이드 스케일링
+use_packet_regeneration: false # 오류 유형 인식 재시도 (use_packet_eval 필요)
 ```
 
-### Phase 4 + Phase 5 활성화
-
-```yaml
-use_phase4: true
-use_phase5: true
-```
-
-Phase 5 전용 플래그는 [phase5.md](./phase5.md)를 참조한다.
-
-### 헬퍼 함수
-
-모든 런타임 체크는 `sgdjscc_lab.phase_gates.effective_flag`를 거친다:
-
-```python
-from sgdjscc_lab.phase_gates import effective_flag, phase4_enabled
-
-# use_phase4가 false이면 raw 플래그 값과 무관하게 False를 반환한다.
-use_packet = effective_flag(cfg, "use_packet_eval", phase=4)
-```
+`use_phase4: false`이면 개별 플래그를 `true`로 둬도 무시되고, Phase 4-B
+(`evaluate_video.py`)는 에러로 종료한다. 런타임 체크는 모두
+`phase_gates.effective_flag(cfg, flag, phase=4)`를 거친다. Phase 4와 5는 독립
+스위치다(`use_phase5: true`가 4를 켜지 않음).
 
 ---
 
-<a id="phase-4-plan"></a>
+## 4-A: 신뢰도 우선 이미지 확장
 
-# Phase 4 계획
-
-Phase 4는 실제 프레임별 복원에는 현재 SGD-JSCC forward 경로를 그대로 유지하면서,
-`sgdjscc_lab`을 단일 이미지 평가에서 `키프레임 지향 시맨틱 전송 프레임워크`로 확장한다.
-
-Phase 4의 지도 원칙은 다음과 같다:
-
-`SGD-JSCC 코어를 먼저 재학습하지 않는다. 기존 이미지 경로를 중심으로 시맨틱 패킷,
-시간적 평가, 적응형 제어, 비디오 파이프라인을 구축한다.`
-
-## Phase 4 목표
-
-현재의 이미지 전용 프로토타입을 `RA-SGDJSCC-lite`로 변환한다:
-
-1. 각 프레임에 대한 시맨틱 패킷 추출 및 캐싱
-2. 키프레임 / 인터프레임 분할
-3. 시간적 시맨틱 재사용 및 델타 전송 시뮬레이션
-4. SNR 인식 적응형 가이드 제어
-5. 더 강한 검증기 및 regeneration 로직
-6. 시간적 지표 및 키프레임 레벨 리포팅
-
-## Phase 4 구현 순서
-
-### Phase 4-A: 신뢰도 우선 이미지 확장
-
-이것이 첫 번째 구현 마일스톤이며, 비디오 전용 코드를 작성하기 전에 완료해야 한다.
-
-범위:
-
-1. 현재 이미지 파이프라인 위에 적응형 가이드 컨트롤러 추가
-2. SRS를 순수 CLIP/객체 복합 지표에서 패킷 인식 검증기로 업그레이드
-3. 실제 패킷 코딩 이전에도 시맨틱 패킷을 JSON 메타데이터로 저장
-4. 탐지된 실패 양상으로 키(key)를 둔 구조화된 regeneration 정책 추가
-
-주요 참고:
-
-- `paper/FAST-GSC: Fast and Adaptive Semantic Transmission for Generative Semantic Communication/FAST_GSC.tex`
-- 현재 `sgdjscc_lab` 모듈:
-  - `src/sgdjscc_lab/evaluators/semantic_reliability.py`
-  - `src/sgdjscc_lab/pipelines/regeneration_loop.py`
-  - `src/sgdjscc_lab/pipelines/eval_pipeline.py`
-
-계획 파일:
-
-```text
-src/sgdjscc_lab/
-├── controllers/
-│   ├── adaptive_guidance_controller.py
-│   ├── snr_guidance_policy.py
-│   └── regeneration_policy.py
-├── guidance/
-│   ├── semantic_packet_extractor.py
-│   ├── object_extractor.py
-│   ├── relation_extractor.py
-│   └── importance_estimator.py
-├── evaluators/
-│   ├── semantic_packet_matcher.py
-│   ├── relation_consistency.py
-│   └── attribute_consistency.py
-└── utils/
-    └── packet_io.py
-```
-
-구현 단계:
-
-1. `semantic_packet_extractor.py`
-   - 다음으로부터 통합 시맨틱 패킷을 구성:
-     - 캡션
-     - 객체 목록
-     - 장면 라벨
-     - 관계(relation) triplet
-     - 속성(attribute)
-     - 엣지 요약
-     - 세그멘테이션 요약
-     - depth 요약
-   - Phase 4-A는 아직 이 패킷을 채널로 전송하지 않는다
-   - 분석을 위해 각 복원 이미지 옆에 `packet.json`을 직렬화한다
-2. `adaptive_guidance_controller.py`
-   - 현재 파이프라인 config/런타임 상태에서 추정 SNR을 읽음
-   - 출력:
-     - `guidance_scale`
-     - `controlnet_scale`
-     - `diffusion_step`
-     - `use_text`
-     - 선택적 `skip_diffusion`
-   - 초기 정책:
-     - `SNR <= 0 dB`: 강한 텍스트 + 엣지 가이드, 최대 확산 스텝
-     - `0 < SNR < 8 dB`: 중간 가이드, 엣지 우선 정책
-     - `SNR >= 8 dB`: 약한 가이드, 선택적 무조건(unconditional) 또는 skip 경로
-3. `semantic_packet_matcher.py`
-   - 원본 패킷 vs 복원 패킷 비교
-   - 다음을 명시적으로 카운트:
-     - 누락 객체
-     - 추가 객체
-     - 관계 오류
-     - 속성 오류
-     - 장면 불일치
-4. `regeneration_policy.py`
-   - 현재의 스칼라 재시도 정책을 오류 유형 인식 재시도로 교체
-   - 예시 정책:
-     - 객체 누락: 텍스트 가이드와 객체 우선 가이드 강화
-     - 할루시네이션: 텍스트 CFG 감소, 엣지 가이드는 더 강하게 유지
-     - 구조 왜곡: 제어 신호와 확산 스텝 증가
-5. `semantic_reliability.py` 확장
-   - 현재 SRS를 베이스라인 점수로 유지
-   - 선택적 패킷 인식 항 추가:
-     - 관계 일관성
-     - 속성 일관성
-     - 세그멘테이션 일관성
-   - 둘 다 리포트:
-     - `srs_base`
-     - `srs_packet`
-
-기대 출력:
-
-- 이미지별 `packet.json`
-- 이미지별 `error_report.json`
-- `srs_base`, `srs_packet`, 오류 카운트를 포함한 SNR sweep CSV
-- 고-SNR 열화에 대한 적응형 가이드 ablation 결과
-
-### Phase 4-B: 키프레임 및 시간적 확장
-
-이것이 실제 비디오/키프레임 마일스톤이며, Phase 4-A의 패킷 및 검증기 인프라 위에
-구축된다.
-
-주요 참고:
-
-- `paper/FAST-GSC: Fast and Adaptive Semantic Transmission for Generative Semantic Communication/FAST_GSC.tex`
-  - 시맨틱 유닛
-  - 전송 순서
-  - 시맨틱 차이 계산
-  - 순차적 조건부 디노이징
-
-계획 파일:
-
-```text
-src/sgdjscc_lab/
-├── video/
-│   ├── keyframe_extractor.py
-│   ├── scene_change_detector.py
-│   ├── semantic_delta.py
-│   ├── temporal_pipeline.py
-│   └── motion_residual.py
-└── evaluators/
-    └── temporal_consistency.py
-```
-
-구현 단계:
-
-1. `scene_change_detector.py`
-   - 실용적 휴리스틱 탐지기로 시작:
-     - CLIP 이미지-이미지 거리
-     - 연속 프레임 간 LPIPS
-     - 선택적 색상 히스토그램 델타
-   - 새 키프레임을 위한 장면 경계 표시
-2. `keyframe_extractor.py`
-   - GOP 형태의 그룹 생성
-   - 출력:
-     - 키프레임 인덱스
-     - 인터프레임 범위
-3. `semantic_delta.py`
-   - 프레임 `t`의 패킷을 이전 키프레임 또는 이전 전송 프레임의 패킷과 비교
-   - 델타 유닛 생성:
-     - 신규 객체
-     - 제거된 객체
-     - 변경된 관계
-     - 변경된 속성
-     - 변경된 장면
-4. `temporal_pipeline.py`
-   - 키프레임:
-     - 전체 이미지 파이프라인 실행
-     - 전체 시맨틱 패킷 저장
-   - 인터프레임:
-     - 최신 키프레임 패킷 재사용
-     - 시맨틱 델타만 적용
-     - 변화량에 따라 가이드를 재사용하거나 약화
-5. FAST-GSC에서 영감받은 순차 디노이징 스케줄
-   - Phase 4-B는 FAST-GSC 학습을 직접 재구현하지 않는다
-   - 대신, 디노이징 스케줄 동안 시맨틱 그룹을 단계적으로 주입해
-     `시맨틱 유닛의 시간 경과 도착`을 모사한다
-   - 실용적 첫 분할:
-     - 초기 디노이징: 장면 + 주요 객체
-     - 중간 디노이징: 관계 + 구조
-     - 후기 디노이징: 속성 + 미세 보정
-6. `temporal_consistency.py`
-   - 리포트:
-     - 시간적 SRS
-     - 객체 동일성(identity) 일관성
-     - 시간적 세그멘테이션 IoU
-     - 시간적 할루시네이션율
-
-기대 출력:
-
-- 키프레임 목록 JSON
-- 시퀀스별 시간적 지표 CSV
-- 나란히 비교 리포트:
-  - 프레임별 전체 시맨틱
-  - 키프레임 재사용
-  - 키프레임 + 시맨틱 델타 전송
-
-## Phase 4 완료 기준
-
-다음이 모두 참일 때 Phase 4를 완료로 간주한다:
-
-1. `scripts/evaluate.py`가 이미지 모드에서 패킷 인식 SRS 평가를 실행할 수 있음
-2. 새 비디오 평가 진입점이 정렬된 프레임 폴더를 처리할 수 있음
-3. 키프레임 재사용과 시맨틱 델타 로직이 구조화된 로그를 생성함
-4. 시간적 SRS와 시간적 할루시네이션 지표가 export됨
-5. 리포트가 단순 프레임별 전체 가이드 대비 시맨틱 전송 오버헤드의 구체적 감소를 보임
-
-## Phase 4 실험 설계
-
-데이터셋:
-
-- 이미지:
-  - Kodak
-  - COCO val2017
-  - ADE20K validation
-- 비디오:
-  - 가능하면 ETRI 내부 키프레임/장면 전환 데이터
-  - 없으면 정렬된 이미지 폴더로 추출한 공개 비디오 프레임
-
-채널 설정:
-
-- AWGN:
-  - `-15, -10, -5, 0, 5, 10, 15 dB`
-- 시맨틱 델타 실험용 선택적 packet-drop 시뮬레이션
-
-주요 ablation:
-
-1. 베이스라인 SGD-JSCC
-2. SGD-JSCC + 적응형 가이드
-3. SGD-JSCC + 적응형 가이드 + 패킷 인식 검증기
-4. 키프레임 전용 전체 패킷
-5. 키프레임 + 시맨틱 델타 재사용
-
----
-
-<a id="phase-4-implementation-status"></a>
-
-# Phase 4 구현 현황
-
-Phase 4는 변경되지 않은 SGD-JSCC 이미지 forward pass 위에 얹은 **config 기반,
-opt-in** 확장 세트로 구현된다. 모든 신규 기능은 기본값 *off*이므로, 명시적으로
-활성화하지 않는 한 기존 `infer_images.py` / `evaluate.py` 경로는 Phase 3와 정확히
-동일하게 동작한다.
-
-## Phase 4-A (신뢰도 우선 이미지 확장) — 제공됨
+기존 SRS(전체 유사도)를 **무엇이 어떻게 틀렸는지**로 분해한다.
 
 | 영역 | 모듈 |
 |---|---|
-| 시맨틱 패킷 | `guidance/semantic_packet_extractor.py`, `guidance/object_extractor.py`, `guidance/relation_extractor.py`, `guidance/importance_estimator.py`, `utils/packet_io.py` |
-| 적응형 가이드 | `controllers/snr_guidance_policy.py`, `controllers/adaptive_guidance_controller.py` |
-| 패킷 인식 검증기 | `evaluators/semantic_packet_matcher.py`, `evaluators/relation_consistency.py`, `evaluators/attribute_consistency.py` |
-| SRS 확장 | `evaluators/semantic_reliability.py` (`srs_base`, `srs_packet`, `score_packet`) |
-| 구조화된 regeneration | `controllers/regeneration_policy.py` (실패 양상 키 기반 재시도) |
-| 평가 통합 | `pipelines/eval_pipeline.py` (패킷 빌드/저장, 패킷 지표, CSV 컬럼) |
+| 시맨틱 패킷 | `guidance/semantic_packet_extractor.py`, `object_extractor.py`, `relation_extractor.py`, `importance_estimator.py`, `utils/packet_io.py` |
+| 적응형 가이드 | `controllers/snr_guidance_policy.py`, `adaptive_guidance_controller.py` |
+| 패킷 인식 검증기 | `evaluators/semantic_packet_matcher.py`, `relation_consistency.py`, `attribute_consistency.py` |
+| SRS 확장 | `evaluators/semantic_reliability.py` (`srs_base`, `srs_packet`) |
+| 구조화된 regeneration | `controllers/regeneration_policy.py` (실패 양상별 재시도) |
+| 평가 통합 | `pipelines/eval_pipeline.py` |
 
-config에서 활성화 (`configs/eval/default.yaml` 참조):
+- **시맨틱 패킷** — 캡션·객체·장면·관계·속성·엣지/세그/depth 요약을 하나의 "의미
+  명세서"로 구성해 이미지 옆에 `packet.json`으로 직렬화(채널 전송은 아직 안 함).
+- **패킷 검증기** — 원본 vs 복원 패킷을 비교해 누락/추가 객체, 관계·속성 오류를
+  **개수로** 집계.
+- **적응형 가이드** — 추정 SNR에 따라 가이드 강도·확산 스텝을 조절
+  (저 SNR: 강한 가이드 + 최대 스텝 / 고 SNR: 약한 가이드 또는 skip 경로).
+- **구조화된 regeneration** — 객체 누락→텍스트 가이드 강화, 할루시네이션→텍스트 약화,
+  구조 왜곡→제어 신호·스텝 증가.
 
-```yaml
-use_packet_eval: true          # 패킷 빌드, srs_base / srs_packet + 오류 카운트 출력
-use_adaptive_guidance: true    # SNR-구간 가이드 스케일링 (강/중/약)
-use_packet_regeneration: true  # 오류 유형 인식 재시도 (use_packet_eval 필요)
-```
-
-패킷 인식 이미지 평가 실행:
+**실행**
 
 ```bash
-python scripts/evaluate.py --config configs/composed.yaml --snr 0 \
-    -i ../inputs/   # 먼저 eval/default.yaml에서 use_packet_eval: true 설정
+# eval/default.yaml에서 use_phase4/use_packet_eval: true 설정 후
+python scripts/evaluate.py --config configs/composed.yaml --snr 0 -i ../inputs/
 ```
 
-이미지별 출력 (`packet_dir` 아래): `<stem>.orig_packet.json`,
-`<stem>.packet.json`, `<stem>.error_report.json`. 결과 CSV에는
-`srs_base, srs_packet, object_match_rate, relation_consistency,
+이미지별 출력: `<stem>.orig_packet.json`, `.packet.json`, `.error_report.json`.
+CSV에 `srs_base, srs_packet, object_match_rate, relation_consistency,
 attribute_consistency, segmentation_consistency, scene_match,
-missing_object_count, additional_object_count, relation_error_count,
-attribute_error_count, guidance_regime`이 추가된다.
+missing/additional_object_count, relation/attribute_error_count, guidance_regime`이
+추가된다.
 
-## Phase 4-B (키프레임 / 시간적 확장) — 제공됨
+---
+
+## 4-B: 키프레임 / 시간적 확장
+
+영상을 매 프레임 통째로 보내는 대신, **키프레임만 전부 전송**하고 나머지는 바뀐
+부분(시맨틱 델타)만 전송/재사용한다.
 
 | 영역 | 모듈 |
 |---|---|
 | 장면 전환 | `video/scene_change_detector.py` (히스토그램 + 선택적 CLIP/LPIPS) |
-| 키프레임 / GOP | `video/keyframe_extractor.py` |
+| 키프레임/GOP | `video/keyframe_extractor.py` |
 | 시맨틱 델타 | `video/semantic_delta.py` |
-| 모션 / residual | `video/motion_residual.py` |
-| 시간적 파이프라인 | `video/temporal_pipeline.py` (키프레임 full / 인터프레임 재사용 + 델타; `build_staged_schedule`의 단계적 prompt를 `cfg.prompt_override`로 복원에 연결) |
-| 시간적 지표 | `evaluators/temporal_consistency.py` (시간적 SRS, 객체 동일성 일관성, 시간적 세그멘테이션 IoU, 시간적 할루시네이션율) |
-| CLI / config | `scripts/evaluate_video.py`, `configs/video/default.yaml`, `configs/composed_video.yaml` |
+| 모션 residual | `video/motion_residual.py` |
+| 시간적 파이프라인 | `video/temporal_pipeline.py` (키프레임 full / 인터프레임 재사용+델타) |
+| 시간적 지표 | `evaluators/temporal_consistency.py` |
+| CLI/config | `scripts/evaluate_video.py`, `configs/{video/default,composed_video}.yaml` |
 
-정렬된 프레임 폴더에 대해 키프레임/시간적 평가 실행:
+**실행**
 
 ```bash
-# 전체 실행 (SGD-JSCC + CLIP/BLIP2 로드):
+# 전체 실행 (SGD-JSCC + CLIP/BLIP2)
 python scripts/evaluate_video.py --config configs/composed_video.yaml \
-    --input /path/to/ordered_frames/ --snr 5 --device cuda:0
+    --input /path/ordered_frames/ --snr 5 --device cuda:0
 
-# 키프레임/델타/시간적 로직 dry run (체크포인트 없음). 캡션이 제공되지 않으면
-# 패킷은 비어 있고, 캡션을 주면 시맨틱 델타/지표도 의미를 갖는다:
+# dry run (체크포인트 없음, 캡션 주면 델타/지표가 의미를 가짐)
 python scripts/evaluate_video.py --config configs/composed_video.yaml \
-    --input /path/to/ordered_frames/ --no-models --captions /path/captions.txt
+    --input /path/ordered_frames/ --no-models --captions /path/captions.txt
 ```
 
-출력: `keyframes.json` (GOP 구조), `temporal_frames.csv` (프레임별 로그),
-`temporal_metrics.csv` (시퀀스 지표 + `overhead_reduction`, 단순 프레임별 전체
-전송 대비 시맨틱 유닛 절감). 이미지 평가기의 패킷/오류 JSON은 SNR별로
-namespace가 부여되어(`packet_dir/snr_<snr>/…`) SNR sweep 시 서로 덮어쓰지 않는다.
-
-## 참고 매핑 (어디서 왔는가)
-
-- **FAST-GSC** → 시맨틱 유닛 패킷 설계(`semantic_packet_extractor`), 중요도 기반
-  전송 순서(`importance_estimator`), 시맨틱 차이 계산(`semantic_delta`), 단계적
-  조건부 디노이징 근사(`temporal_pipeline.build_staged_schedule`) — 단계적 prompt는
-  샘플러 스텝별 주입이 아니라 확산 텍스트 조건(`cfg.prompt_override`)으로 공급된다.
-- **SGD-JSCC** → 프레임별 복원 경로를 그대로 재사용; 키프레임은 기존 forward pass를
-  호출하고, 적응형 가이드는 그 변경되지 않은 경로가 *어떤* config로 실행될지만 선택한다.
-
-## 알려진 한계 / 다음 단계
-
-- 패킷은 메타데이터로만 직렬화된다. 실제 시맨틱 패킷 채널 코딩 / drop 시뮬레이션은
-  보류됨(Phase 5).
-- 객체/장면/관계 추출은 CLIP/캡션 휴리스틱이다(아직 scene-graph나 POPE-VQA 모델
-  없음); 관계/속성 파싱은 결정론적이지만 얕다.
-- 단계적 디노이징은 **prompt** 레벨에서 연결된다(`cfg.prompt_override`가 패킷 유래
-  단계적 prompt를 실제 복원에 공급). DPM-Solver 루프 *내부*의 진정한 스텝별 prompt
-  전환은 SGD-JSCC 샘플러 수정이 필요하므로(알고리즘 보존 불변식) **구현되지 않았다**.
-- 인터프레임 재사용은 키프레임 복원을 복사한다(GOP 키프레임이 단일한 일관 패킷+픽셀
-  참조). 진정한 델타-워프 / 모션 보상 합성은 향후 작업이다.
+출력: `keyframes.json`(GOP 구조), `temporal_frames.csv`(프레임별), `temporal_metrics.csv`
+(시퀀스 지표 + `overhead_reduction` = 프레임별 전체 전송 대비 시맨틱 유닛 절감).
+이미지 평가기의 패킷/오류 JSON은 SNR별 namespace(`packet_dir/snr_<snr>/…`)로 분리된다.
 
 ---
 
-<a id="phase-4-paper-guide"></a>
+## 참고 매핑 · 한계
 
-# 논문 작성 시 활용 가이드
+- **FAST-GSC** → 시맨틱 유닛 패킷 설계, 중요도 기반 전송 순서, 시맨틱 차이 계산,
+  단계적 조건부 디노이징 근사(`temporal_pipeline.build_staged_schedule`).
+- **SGD-JSCC** → 프레임별 복원 경로를 그대로 재사용. 적응형 가이드는 그 변경되지
+  않은 경로가 *어떤* config로 실행될지만 선택한다.
 
-Phase 4를 논문에 쓸 때 가장 중요한 것은 **무엇을 기여(contribution)로 주장하느냐의
-위치 설정**이다. 정체성을 오해하면 리뷰어에게 바로 반박당한다.
+**알려진 한계**
+- 패킷은 메타데이터일 뿐 — 실제 시맨틱 패킷 채널 코딩/drop 시뮬레이션은 Phase 5 보류.
+- 객체/관계 추출은 CLIP/캡션 휴리스틱(scene-graph·POPE-VQA 아님).
+- 단계적 디노이징은 **prompt 레벨** 연결(`cfg.prompt_override`)이다. 샘플러 루프
+  *내부*의 스텝별 prompt 전환은 SGD-JSCC 샘플러 수정이 필요해(알고리즘 보존 불변식)
+  구현하지 않았다.
+- 인터프레임 재사용은 키프레임 복원을 복사한다(진정한 델타-워프/모션 보상은 향후 작업).
 
-## 0. 대전제 — Phase 4는 "새 전송 알고리즘"이 아니다
+---
 
-Phase 4는 SGD-JSCC forward pass를 한 줄도 바꾸지 않고 그 위에 얹은 **평가·제어·영상
-레이어**다(이 문서 [Phase 4 계획](#phase-4-plan) 및 [참고 매핑](#참고-매핑-어디서-왔는가)
-참조). 따라서 논문에서의 포지션은:
+## 논문 작성 시 포지셔닝
 
-- ❌ "우리는 더 나은 JSCC 전송 기법을 제안한다" → **거짓 주장. 금지.**
-- ✅ "우리는 시맨틱 전송의 **신뢰성을 측정·제어하는 프레임워크**와 **영상 키프레임
-  확장**을 제안한다"
+Phase 4는 **새 전송 알고리즘이 아니라 신뢰성 평가·제어 프레임워크 + 영상 확장**이다.
+"더 나은 JSCC 전송 기법"으로 주장하면 안 되고, 다음 세 가지를 기여로 둔다.
 
-즉 Phase 4는 method(전송 기법) 기여가 아니라 **"평가 프레임워크 + 시스템 레이어"
-기여**다.
+1. **신뢰성 평가의 세분화 (가장 강한 기여)** — SRS를 객체 누락/추가·관계·속성 오류로
+   분해(`srs_base` vs `srs_packet`)해 '그럴듯하지만 틀린' 복원을 정량 진단. 저 SNR에서
+   SRS는 비슷한데 객체 누락/할루시네이션이 급증하는 그림이 핵심 메시지.
+2. **채널 적응 제어의 효과 (ablation)** — 고정 가이드 대비 SNR 적응 가이드 +
+   실패유형별 regeneration이 같은 채널에서 SRS 개선.
+3. **영상 시맨틱 전송 효율 (4-B)** — 키프레임 + 델타 전송이 프레임별 전송 대비
+   오버헤드를 절감하면서 시간적 SRS 유지(`overhead_reduction`).
 
-## 1. 논문에서의 배치 (어느 섹션에 쓰나)
+**Limitations에 선제 공개**: 패킷은 평가/제어 메타데이터(채널 코딩 아님), 객체/관계는
+CLIP/캡션 휴리스틱, 단계적 디노이징은 prompt 레벨, 인터프레임은 키프레임 복사.
 
-| Phase 4 요소 | 논문 섹션 | 역할 |
-|---|---|---|
-| 시맨틱 패킷 + 패킷 인식 검증기 (4-A) | Method / Evaluation Methodology | "SRS를 의미 단위로 분해" — 핵심 기여 |
-| 적응형 가이드 + 구조화된 regeneration (4-A) | Method (제안 시스템) | 채널 적응 제어 = 시스템 기여 |
-| 키프레임/델타 + 시간적 지표 (4-B) | Method (Video extension) + Experiments | 영상 확장 = 별도 기여/섹션 |
-| ablation 5종 ([Phase 4 실험 설계](#phase-4-실험-설계)) | Experiments | 각 컴포넌트의 효과 입증 |
+**실험 ablation** — ① baseline SGD-JSCC ② +적응형 가이드 ③ +패킷 검증기
+④ 키프레임 전용 full packet ⑤ 키프레임+델타 재사용.
 
-## 2. 쓸 수 있는 주장(claim) 3가지
+### 그대로 쓸 수 있는 문장
+> "Rather than proposing a new transmission scheme, we build a *reliability-oriented
+> evaluation and control layer* on top of an **unmodified** SGD-JSCC inference path,
+> and extend it to keyframe-level video semantic transmission."
 
-1. **신뢰성 평가의 세분화 (가장 강한 기여).** 기존 SRS(전체 유사도 복합 지표)를
-   객체 누락/추가·관계·속성 오류로 분해(`srs_base` vs `srs_packet`)하여, '그럴듯하지만
-   틀린' 복원(할루시네이션)을 정량 진단한다.
-   → 표: SNR별 `srs_base`, `srs_packet`, `missing/additional_object_count`,
-   `relation_error_count`. **저 SNR에서 SRS는 비슷한데 객체 누락/할루시네이션은
-   급증**하는 그림이 나오면 "픽셀 충실도로는 안 보이는 의미 붕괴를 우리 지표가
-   잡는다"는 강력한 메시지가 된다.
-2. **채널 적응 제어의 효과 (ablation).** 고정 가이드 대비 SNR-적응 가이드 +
-   실패유형별 regeneration이 같은 채널에서 SRS를 개선한다.
-   → [Phase 4 실험 설계](#phase-4-실험-설계)의 ablation 1→2→3
-   (baseline / +adaptive guidance / +packet verifier)을 표로.
-3. **영상 시맨틱 전송 효율 (4-B).** 키프레임 + 시맨틱 델타 전송이 프레임별 전송 대비
-   시맨틱 오버헤드를 절감하면서 시간적 SRS를 유지한다.
-   → `overhead_reduction` + `temporal_metrics.csv`. ablation 4→5
-   (키프레임 전용 vs 키프레임+델타).
-
-## 3. 반드시 함께 보고할 한계 (선제 공개가 신뢰를 만든다)
-
-[알려진 한계 / 다음 단계](#알려진-한계--다음-단계)를 논문 Limitations에 그대로 옮긴다.
-리뷰어가 먼저 지적하기 전에 공개하는 것이 핵심이다.
-
-- 패킷은 **메타데이터일 뿐 실제 채널 코딩/드롭이 아님** → "semantic packet *coding*"이
-  아니라 "semantic packet *as evaluation/control metadata*"로 표기.
-- 객체/관계 추출은 **CLIP/캡션 휴리스틱**(scene-graph·POPE-VQA 아님) → "we approximate
-  object/relation extraction with caption+CLIP heuristics"로 명시.
-- 단계적 디노이징은 **prompt 레벨 연결**이지 샘플러 스텝별 주입이 아님 → "staged
-  conditioning at the text-prompt level"로.
-- 인터프레임은 **키프레임 복사**(진짜 모션 보상 합성 아님).
-
-## 4. 표현 가이드 (그대로 쓸 수 있는 문장)
-
-- **기여 문장:**
-  > "Rather than proposing a new transmission scheme, we build a *reliability-oriented
-  > evaluation and control layer* on top of an **unmodified** SGD-JSCC inference path,
-  > and extend it to keyframe-level video semantic transmission."
-- **지표 문장:**
-  > "We decompose semantic reliability into packet-level terms (object preservation,
-  > missing/added objects, relation/attribute consistency), exposing hallucination
-  > failures that aggregate similarity scores (PSNR/CLIP) miss."
-- **영상 문장:**
-  > "Inspired by FAST-GSC, interframe content reuses keyframe semantics and transmits
-  > only semantic deltas; we report the resulting overhead reduction and temporal
-  > reliability."
-
-## 5. 한 장 요약
-
-| 질문 | 논문에서의 답 |
-|---|---|
-| Phase 4는 무엇인가? | 전송 알고리즘 ❌ / **신뢰성 평가·제어 프레임워크 + 영상 확장** ✅ |
-| 어디에 쓰나? | Method(평가방법론·시스템) + Experiments(ablation) + Limitations |
-| 핵심 셀링 포인트 | "유사도 지표가 못 잡는 **의미 붕괴/할루시네이션**을 분해·정량화" |
-| 절대 금지 주장 | "패킷 채널 코딩", "scene-graph 기반", "샘플러 스텝별 시맨틱 주입" |
-
-## 관련 문서
-
-- [training_scaffold.md](./training_scaffold.md) — 학습 scaffold의 "논문용 표현 제안"
-  (baseline / supporting / extension 경계, 충실도 framing)
-- [framework_comparison.md](./framework_comparison.md) — 논문 정합 비교(paper-faithful /
-  paper-like / scaffold)
-- [phase5.md](./phase5.md) — Phase 5 (채널 조건화 / 저지연 / SRS-v2)
+### 관련 문서
+- [training_scaffold.md](./training_scaffold.md) · [framework_comparison.md](./framework_comparison.md) · [phase5.md](./phase5.md)
+</content>

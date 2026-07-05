@@ -1,190 +1,124 @@
-# Paper gap closure — aligning `sgdjscc_lab` with the SGD-JSCC paper
+> [← 문서 색인](./README.md)
 
-Target paper: **"Semantics-Guided Diffusion for Deep Joint Source-Channel Coding
+# Paper gap closure — `sgdjscc_lab`를 SGD-JSCC 논문에 정렬
+
+대상 논문: **"Semantics-Guided Diffusion for Deep Joint Source-Channel Coding
 in Wireless Image Transmission"** (Zhang et al., arXiv:2501.01138).
 
-This document is the single source of truth for **what is paper-faithful, what is
-paper-like, and what is unsupported** in `sgdjscc_lab`, and how the `paper_mode`
-guardrails enforce the reproduction path.
+**무엇이 paper-faithful / paper-like / unsupported인지**, 그리고 `paper_mode`
+guardrail이 재현 경로를 어떻게 강제하는지에 대한 single source of truth.
 
-## Fidelity taxonomy
-- **paper-faithful** — matches the paper / public `SGDJSCC` code (numerically or
-  structurally) *given the same data and checkpoints*.
-- **paper-like** — same intent / formula family, but a stated-or-unstated detail
-  differs (a value the paper does not give, a simplified module, …).
-- **unsupported** — cannot be reproduced here (non-public data / weights /
-  details); **guarded** so it cannot masquerade as faithful.
+## 충실도 분류
 
-## `paper_mode` (the keystone)
-`paper_mode: true` (top-level config; default `false`) makes
-`src/sgdjscc_lab/paper_mode.py` **enforce** the paper config and **block**
-non-faithful stand-ins, raising `PaperModeError` *before any checkpoint loads*.
-It is hooked into **both** CLIs: `scripts/train.py` (training, after
-`validate_stage_config` → `paper_mode.enforce`) and `scripts/evaluate.py`
-(evaluation → `paper_mode.enforce_eval`). It enforces:
-- **captions** — blocks *known* auto-generated captions (via the
-  `_AUTOCAPTION_PROVENANCE.json` sentinel) and the `filename` pseudo-source.
-  ⚠️ It does **not** verify that a hand-placed `sidecar`/`manifest` `.txt` is the
-  paper's caption set (those are *trusted*, with a warning) — see item [2];
-- MuGE soft edges (no Canny);
-- `edge_jscc` transport (no `shared_vae` ablation);
-- learned CFG null token (no zero-vector);
-- multi-SNR, SNR-conditioned edge codec;
-- **(eval)** every extension feature disabled (Phase 4/5, packet, regeneration,
-  `shared_vae`) via `enforce_eval`, **and** the metric set must be **exactly**
-  the paper's full reported set (`PAPER_METRICS` = PSNR/LPIPS/CLIP×2/FID),
-  enforced via `enforce_eval_metrics` *after* `--profile`/`--no-clip` are applied
-  — so `--profile extended`, `--no-clip`, *or a reduced set* (e.g.
-  `metrics: [psnr, lpips]` missing CLIP/FID) under `paper_mode` is rejected.
+- **paper-faithful** — *같은 데이터·checkpoint 하에서* 논문 / 공개 `SGDJSCC` 코드와
+  (수치적으로 또는 구조적으로) 일치.
+- **paper-like** — 의도 / 수식은 동일하나 명시·비명시 세부 하나가 다름(논문이 생략한
+  값, 단순화한 모듈 등).
+- **unsupported** — 여기서 재현 불가(비공개 데이터 / 가중치 / 세부); faithful로
+  위장하지 못하도록 **guard**됨.
 
-`paper_mode` **does not delete** any extension — every non-faithful path still
-works with `paper_mode: false`. The paper path is bundled in
-`configs/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml` and
-`configs/paper_eval_awgn.yaml`.
+## `paper_mode` (핵심 축)
 
-## Per-item status (the 8 tasks)
+`paper_mode: true`(top-level config; 기본 `false`)는 `paper_mode.py`가 논문 config를
+**강제**하고 non-faithful 대체물을 **차단**하게 하며, *어떤 checkpoint 로드보다 먼저*
+`PaperModeError`를 raise한다. 두 CLI에 hook됨: `scripts/train.py`
+(`paper_mode.enforce`), `scripts/evaluate.py`(`enforce_eval`). 강제 항목:
 
-| # | Item | Status | Notes |
+- **caption** — *알려진* auto-generated caption(`_AUTOCAPTION_PROVENANCE.json`
+  sentinel 경유)과 `filename` source를 차단. 손으로 둔 `sidecar`/`manifest` `.txt`가
+  논문 caption set인지는 **검증하지 않음**(경고와 함께 신뢰) — remaining gap 참조;
+- MuGE soft edge (Canny 없음); `edge_jscc` transport (`shared_vae` 없음);
+- learned CFG null token (zero-vector 없음); multi-SNR SNR-conditioned edge codec;
+- **(eval)** 모든 확장 비활성(Phase 4/5, packet, regeneration, `shared_vae`), 그리고
+  지표 set이 논문 보고 set과 **정확히** 일치해야 함(`PAPER_METRICS` =
+  PSNR/LPIPS/CLIP×2/FID), `--profile`/`--no-clip` *이후* 강제 — 따라서 `paper_mode`
+  하에서 축소 set이나 `--no-clip`은 거부됨.
+
+`paper_mode`는 어떤 확장도 **삭제하지 않는다** — 모든 경로는 `paper_mode: false`에서
+그대로 동작. 논문 경로는
+`configs/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml` + `paper_eval_awgn.yaml`에
+번들됨.
+
+## 항목별 상태 (8개 task)
+
+| # | 항목 | 상태 | 비고 |
 |---|------|--------|-------|
-| 1 | Stage-3 edge input MuGE (not Canny) | **paper-like → faithful structure** | New `edge_source: muge_sidecar` (precompute via `scripts/prepare_muge_edges.py`, reusing the inference `guidance/edge_extractor`) + `muge_runtime`. MuGE representations are now explicit: `reduced` (1ch legacy), `edge_uncertainty` (2ch `[mean-edge, uncertainty]`, **closest to inference**), `multi` (11ch opt-in). paper configs default to `muge_sidecar + muge_repr=edge_uncertainty`; Canny is ablation-only and **blocked in paper_mode**. The 11→1 mean reduction still exists as the backward-compatible `reduced` path (`data/datasets.muge_reduce`). |
-| 2 | Block CelebA auto-captions in paper_mode | **partial (honest guardrail)** | `generate_captions.py` writes an `_AUTOCAPTION_PROVENANCE.json` sentinel; paper_mode refuses to train a text stage on dirs containing it, and blocks `caption_source: filename`. **Limit (by design):** a hand-placed `sidecar`/`manifest` `.txt` cannot be proven to be the paper's captions — those are *trusted* (with a runtime WARNING), not verified. The log/`summary()` say exactly this (no "dataset-provided only" overclaim). Message on auto-captions: "CelebA-HQ auto-generated captions are not paper-faithful". |
-| 3 | Learned CFG null token (not zero) | **done** | `train.dm.cfg_null_mode: zero\|learned`; `learned` adds a trainable `LearnedNullToken` (registered with the optimizer exactly once, checkpointed). **Resume-safe**: `LearnedNullToken._load_from_state_dict` materialises the token from the checkpoint before the lazy-create on first forward, and the optimizer registration is flag-driven so a *resumed* token is also optimised (tested). paper_mode requires `learned`. |
-| 4 | Edge-JSCC original structure reuse | **unsupported (guardrail) + closest reproducible** | Exact reuse of `SGDJSCC/models/model_canny.py` (WITT Swin + QAM + a hard-coded non-public VAE path) is **unsupported**: the public HF release ships **no edge-codec weights** and the WITT interface doesn't match this edge-latent geometry. `arch='paper'` raises an explicit `NotImplementedError`. The closest reproducible structure is `arch='vit'` (adaLN SNR-conditioned transformer, WITT-location-faithful), which the paper configs use; `conv`/`vit` remain as paper-like/legacy. |
-| 5 | Edge-codec SNR conditioning active | **done** | `train.edge_codec.multi_snr.{enabled,min_db,max_db}` samples the edge-link SNR per step and feeds it through `EdgeJSCC.reconstruct(..., snr_db=...)` → adaLN. paper_mode requires `multi_snr.enabled` (and `vit.snr_cond` for the ViT arch). Fixed-SNR remains supported (`multi_snr.enabled: false`). |
-| 6 | Unify Stage-3 train/infer edge path | **partial (paper default)** | paper_mode forces `edge_transport: edge_jscc` (dedicated edge link, like inference) and blocks `shared_vae`. Training now defaults to the inference-carried **2ch** MuGE representation (`edge_uncertainty`: mean-edge + uncertainty), and the edge codec `in_ch` is derived from `train.dataset.muge_repr` so dataset → codec → transport stay aligned. Full bit-exact train≡infer alignment is still **not** claimed: inference uses the original canny-transmission/VAE path, while training feeds the chosen MuGE representation directly into the trainable edge codec. |
-| 7 | Complex phase / joint CSI (Alg. 3) | **partial (faithful layer, unsupported end-to-end)** | New `channels/complex_ops.py`: the paper C/R maps, complex channel `y=h·z+n`, **two-step equalization** (phase removal `e^{-jφ̂}` then `/√(|h|²+σ²)`), and an **alternating phase/SNR loop** that actually rotates a complex latent (unlike the real-gain `joint_csi_estimate` no-op). **Unsupported end-to-end**: the *public* JSCC emits a **real** latent and its channels are real-gain, so routing this through the frozen JSCC forward needs a non-public complex-JSCC retrain. Smoke-tested (roundtrip + zero-noise recovery + loop shapes). |
-| 8 | Paper-only config bundle | **done** | `configs/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml` + `configs/paper_eval_awgn.yaml`: `paper_mode: true`, fixed AWGN 10 dB JSCC, continuous-timestep sigmoid DM, learned CFG null, MuGE edges, `edge_jscc` transport, extensions disabled. The eval config's `paper_mode` is now **enforced** by `scripts/evaluate.py`: `enforce_eval` rejects any enabled extension / `shared_vae`, and `enforce_eval_metrics` (called *after* `--profile`/`--no-clip`) rejects non-paper metrics and `--no-clip` — so "paper eval" actually runs the paper baseline with the paper metric set. |
+| 1 | Stage-3 MuGE edge (Canny 아님) | **paper-like → faithful structure** | `edge_source: muge_sidecar`(precompute `scripts/prepare_muge_edges.py`). Repr: `reduced`(1ch), `edge_uncertainty`(2ch, inference에 가장 근접), `multi`(11ch). 논문 config 기본 `edge_uncertainty`; paper_mode에서 Canny 차단. |
+| 2 | CelebA auto-caption 차단 | **partial (정직한 guardrail)** | provenance sentinel이 *알려진* auto-caption + `filename` 차단. 손으로 둔 sidecar는 논문 caption임을 *증명 불가* — 경고와 함께 신뢰. |
+| 3 | Learned CFG null token | **done** | `dm.cfg_null_mode: zero\|learned`; `learned`은 학습 가능한 `LearnedNullToken` 추가(1회 등록, checkpoint화, resume-safe). paper_mode는 `learned` 요구. |
+| 4 | Edge-JSCC structure 재사용 | **unsupported (guarded) + 재현 가능한 최근접** | 정확한 `model_canny.py` 재사용은 비공개 edge-codec 가중치 필요; `arch='paper'`는 `NotImplementedError`. 최근접은 `arch='vit'`(adaLN SNR-conditioned, WITT-location-faithful), 논문 config가 사용. |
+| 5 | Edge-codec SNR conditioning | **done** | `edge_codec.multi_snr.{enabled,min_db,max_db}`가 edge-link SNR sampling → `EdgeJSCC.reconstruct(snr_db=…)` → adaLN. paper_mode가 요구. |
+| 6 | Stage-3 train/infer edge 경로 통합 | **partial (논문 기본)** | paper_mode가 `edge_jscc` 강제, `shared_vae` 차단; codec `in_ch`는 `muge_repr`에서 유도(dataset→codec→transport 정렬). Bit-exact train≡infer는 **주장 안 함**(inference는 canny-transmission/VAE 경로 사용). |
+| 7 | Complex phase / joint CSI (Alg. 3) | **partial (faithful layer, unsupported e2e)** | `channels/complex_ops.py`: complex 채널, 2-step equalization(`e^{-jφ̂}` 후 `/√(\|h\|²+σ²)`), phase/SNR 교대 loop. 공개 JSCC는 **real** latent 출력 → e2e complex는 비공개 retrain 필요. |
+| 8 | Paper-only config 번들 | **done** | `configs/paper_*` + eval `paper_mode` 강제(`enforce_eval` + `enforce_eval_metrics`). |
 
-## Remaining paper non-equivalence (honest list)
-- **Captions**: the paper's exact CelebA-HQ / training captions are its own.
-  paper_mode blocks *known* auto-captions + the `filename` source, but **cannot
-  verify** that a hand-placed `sidecar`/`manifest` is the paper's caption set
-  (trusted with a warning). For the strongest guarantee use an intrinsically
-  dataset-provided source (COCO `coco_json`). It does not reproduce the paper's
-  exact caption set.
-- **Edge JSCC**: no public edge-codec weights → the edge link is trained here
-  (`edge_codec` stage) with the `vit` adaLN structure, not the exact WITT module.
-- **Stage-3 edge path**: closer than before (`edge_uncertainty` preserves the
-  inference-carried uncertainty and keeps dataset/codec channel counts aligned),
-  but still not the exact original inference path (`canny_transmission_net` +
-  image-VAE encode is not reused in training).
-- **Complex transport**: implemented as a correct complex layer + estimators, but
-  not wired through the real-valued public JSCC forward (needs a complex-JSCC
-  retrain). End-to-end complex transmission is unsupported.
-- **Hyperparameters** the paper does not publish (CFG dropout prob, exact LR
-  schedule, GAN/LPIPS weights) are paper-like defaults, config-overridable.
+## 남은 논문 비등가성 (정직하게)
 
-## Validation commands
+- **Caption**: paper_mode는 *알려진* auto-caption + `filename`을 차단하나 손으로 둔
+  sidecar는 검증 불가. 가장 강한 보장은 본질적으로 데이터셋 제공 source(COCO
+  `coco_json`). 논문의 정확한 caption set은 재현하지 못함.
+- **Edge JSCC**: 공개 가중치 없음 → 여기서 학습(`edge_codec`), `vit` adaLN 구조이며
+  정확한 WITT 모듈 아님.
+- **Stage-3 edge 경로**: `edge_uncertainty`가 더 가깝지만 원본 inference 경로와 정확히
+  같지는 않음(`canny_transmission_net` + image-VAE를 training에서 재사용 안 함).
+- **Complex transport**: complex layer + estimator는 올바르나 real-valued 공개 JSCC
+  forward에 배선되지 않음. End-to-end complex는 unsupported.
+- 논문이 생략한 **hyperparameter**(CFG dropout, LR schedule, GAN/LPIPS weight)는
+  paper-like 기본값이며 config로 override 가능.
+
+## 검증
+
 ```bash
 cd sgdjscc_lab && conda activate ptest
+python -m pytest tests/test_paper_mode.py -q      # 논문 config 로드 + smoke test
+python -m pytest tests/ -q                          # 전체 suite
 
-# 1) every paper config loads + passes stage/paper-mode validation, plus the
-#    new smoke tests (MuGE source/repr, learned null token, edge_jscc, complex CSI):
-python -m pytest tests/test_paper_mode.py -q
-
-# 2) full suite (no regressions):
-python -m pytest tests/ -q
-
-# 3) paper config dry-run (config/stage/paper-mode wiring; no GPU/checkpoints):
+# 논문 config dry-run (GPU/checkpoint 불필요):
 python scripts/train.py --config configs/paper_train_jscc.yaml \
     --train-list data/imagenet/train --no-models --epochs 1
 
-# 4) paper_mode guardrail demo (a Canny/shared_vae controlnet config is REJECTED):
-python scripts/train.py --config configs/composed_train_controlnet.yaml \
-    --train-list data/coco/train2017 --no-models --epochs 1 \
-    && echo "(this is the extension path; paper configs would block canny)"
-
-# 5) precompute the inference-aligned MuGE training repr (2ch edge+uncertainty):
+# inference-aligned MuGE repr precompute (2ch edge+uncertainty):
 python scripts/prepare_muge_edges.py --input data/coco/train2017 \
     --model-root ../checkpoints --repr edge_uncertainty
 
-# 6) eval paper_mode is enforced (extensions OFF) — the clean paper eval passes:
+# eval paper_mode 강제 (확장 OFF → 하나라도 켜지면 hard exit):
 python scripts/evaluate.py --config configs/paper_eval_awgn.yaml \
-    --input data/kodak --snr 10        # logs "paper_mode=ON (eval)"; any enabled
-                                       # extension or shared_vae → hard exit.
+    --input data/kodak --snr 10
 ```
 
 ## Multi-GPU training (DDP)
 
-`sgdjscc_lab` supports **PyTorch DistributedDataParallel** via `torchrun`. The
-single-process / CPU path is unchanged (every DDP helper degrades to a no-op).
+`torchrun` 기반 PyTorch DDP; single-process / CPU 경로는 불변(모든 DDP helper는
+no-op으로 degrade). `train.batch_size`는 **per-rank**:
+`global_batch = batch_size × world_size × grad_accum_steps`(paper-like 64를 3 GPU에서
+쓰려면 `batch_size≈21`).
 
-**Status (honest):**
-- **Stage 2 (`text_dm`) — supported & validated.** DDP-wrapped denoiser + the
-  learned CFG null token are gradient-synced; verified by a world_size=2 Gloo CPU
-  smoke (`tests/test_ddp.py`: param + null-token sync, DistributedSampler, rank0
-  checkpoint) and on the remote 3×GPU box (NCCL).
-- **Stage 3 (`controlnet`) — structure-ready.** Same runner plumbing
-  (DDP-wrapped denoiser; `edge_transport` left unwrapped as fixed `no_grad` side
-  info). It sets `find_unused_parameters=True` **conservatively** because the base
-  DM is frozen and only the ControlNet branches train, so some wrapped-module
-  params may receive no grad on a step (DDP would otherwise hang). This can be set
-  False if profiling shows all trainable params always get a grad — not yet
-  validated end-to-end on multi-GPU, hence "structure-ready", not "validated".
-- **Stage 1 (`jscc`) / `edge_codec` — not DDP-validated.** The plumbing is generic
-  but the GAN path (Stage 1) and the self-contained codec are untested under DDP.
-
-**What changed for DDP:** `src/sgdjscc_lab/distributed.py` (helpers:
-`setup_distributed`/`is_rank0`/`unwrap_module`/`reduce_metric_sums`/`all_reduce_grads`/
-`maybe_set_epoch`); `scripts/train.py` (torchrun init/cleanup, `cuda:{LOCAL_RANK}`);
-`data/datasets.py` (DistributedSampler when distributed); `train_pipeline.py`
-(rank0-only checkpoint + JSONL log, `sampler.set_epoch`; **sample-weighted**
-validation average — each batch metric is weighted by its batch size and the
-weighted SUMS + total sample count are all-reduced, so an uneven last batch
-doesn't bias the mean (a tiny residual bias remains from DistributedSampler
-padding duplicates); **`best.pth` uses a GLOBAL metric in BOTH epoch- and
-step-mode** — the reduced validation loss if validation ran, else the across-rank
-sample-weighted (epoch) / all-reduced (step) training loss, never a rank-local
-shard loss); `stage_runners.py`
-(DDP-wrapped denoiser called in forward; grad-accum uses `no_sync` on non-boundary
-micro-steps + a grad all-reduce at the epoch-boundary flush; **learned CFG null
-token rebuilt EAGER** — a real `nn.Module` created at runner construction with the
-probed label shape, DDP-wrapped (called with `labels` as the scatter anchor so it
-works on GPU), and optimizer-registered once, so it is no longer a rank-local lazy
-parameter).
-
-**Batch size:** `train.batch_size` is **per-rank**.
-`global_batch = batch_size × world_size × grad_accum_steps`. To keep a paper-like
-global batch (e.g. 64) on 3 GPUs use `batch_size≈21–22` (or raise `grad_accum_steps`).
-
-**Run (3 GPUs):**
 ```bash
 torchrun --standalone --nproc_per_node=3 scripts/train.py \
     --config configs/paper_train_text_dm.yaml \
-    --train-list data/coco/train2017 --val-list data/coco/val2017
-# single-process is unchanged:  python scripts/train.py --config … --device cuda:0
-# torchrun --nproc_per_node=1 … behaves exactly like the single-process path.
+    --train-list data/coco/train2017 --val-list data/coco/val2017 --batch-size 21
 ```
-Export + evaluation stay single-process (DDP is training-only here).
 
-**Remaining DDP limitations:** the validation average is now sample-weighted
-(exact under uneven batch sizes), but `DistributedSampler` still **pads** the
-final batch to a multiple of world_size by duplicating a few samples — those
-duplicates are double-counted, so a *tiny* residual bias remains (to remove it
-entirely would need drop-last or de-duplication). `prepare_muge_edges.py` is not
-DDP-parallelised (split the input folder for manual parallelism). Stage 1's GAN
-two-optimizer path and the `edge_codec` stage are not DDP-validated.
+**상태:**
+- **Stage 2 (`text_dm`) — 지원 & 검증됨.** DDP-wrap된 denoiser + learned CFG null
+  token gradient-sync; world_size=2 Gloo CPU smoke와 3×GPU box(NCCL)로 검증.
+- **Stage 3 (`controlnet`) — 구조 준비됨.** 동일 배선;
+  `find_unused_parameters=False`(기본; base DM frozen, ControlNet branch만 DDP-wrap
+  되어 학습). multi-GPU end-to-end 검증은 미완.
+- **Stage 1 (`jscc`) / `edge_codec` — DDP 미검증.** generic 배선이나 GAN 경로와
+  self-contained codec은 DDP에서 미검증.
 
-**Tests:** `tests/test_ddp.py` covers (a) helper no-ops single-process, (b) a
-world_size=2 Gloo CPU smoke of the Stage-2 runner (param + null-token grad sync,
-DistributedSampler, rank0 save), and (c) an **entrypoint** test that runs the real
-`torchrun → scripts/train.py → setup_distributed` path (Gloo CPU, `--no-models`) so
-launcher/init regressions are caught in CI, not only on the GPU box.
+주요 파일: `distributed.py`(helper), `scripts/train.py`(torchrun init/cleanup),
+`data/datasets.py`(DistributedSampler), `train_pipeline.py`(rank0 save/log,
+`set_epoch`, sample-weighted validation 평균 + global `best.pth` 지표),
+`stage_runners.py`(DDP-wrap denoiser, `no_sync` grad-accum, eager DDP-safe null
+token). Export + evaluation은 single-process 유지. `DistributedSampler` padding
+중복에서 잔여 bias가 남음. Test: `tests/test_ddp.py`.
 
-## Files changed (summary)
-- **new**: `src/sgdjscc_lab/paper_mode.py`, `src/sgdjscc_lab/distributed.py`,
-  `src/sgdjscc_lab/channels/complex_ops.py`, `tests/test_ddp.py`,
-  `scripts/prepare_muge_edges.py`, `configs/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml`,
-  `configs/paper_eval_awgn.yaml`, `tests/test_paper_mode.py`, this doc.
-- **edited**: `training/stages.py` (MuGE edge sources + `muge_repr` validation),
-  `data/datasets.py` (MuGE loading + extractor reuse + multi-channel reprs +
-  DistributedSampler), `training/stage_runners.py` (learned null token →
-  DDP-safe eager, multi-SNR edge codec, DDP-wrapped denoiser + no_sync grad-accum),
-  `models/edge_jscc.py` (per-step SNR override, `arch='paper'` guardrail +
-  multi-channel edge I/O), `training/edge_transport.py` (edge-codec `in_ch` from
-  `muge_repr`), `pipelines/train_pipeline.py` (rank0 save/log, set_epoch, val
-  all-reduce), `scripts/generate_captions.py` (provenance sentinel),
-  `scripts/train.py` (paper_mode hook + torchrun init/cleanup/device),
-  `scripts/evaluate.py` (paper_mode **eval** hook), `configs/train/default.yaml`
-  (`paper_mode`, `cfg_null_mode`, `edge_codec.multi_snr`, `dataset.muge_repr`,
-  per-rank `batch_size` note).
+## 파일 (요약)
+
+- **신규**: `paper_mode.py`, `distributed.py`, `channels/complex_ops.py`,
+  `prepare_muge_edges.py`, `configs/paper_*.yaml`, `tests/test_{paper_mode,ddp}.py`.
+- **수정**: `training/{stages,stage_runners}.py`, `data/datasets.py`,
+  `models/edge_jscc.py`, `training/edge_transport.py`, `pipelines/train_pipeline.py`,
+  `scripts/{generate_captions,train,evaluate}.py`, `configs/train/default.yaml`.
