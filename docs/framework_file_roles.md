@@ -5,6 +5,9 @@
 `sgdjscc_lab` 파일을 실행 흐름 순서로 정렬해 역할을 매핑한다. 핵심은 원본 SGDJSCC
 알고리즘 경로를 보존하되 코드를 명시적 모듈로 재구성했다는 점이다.
 
+> **역할**: 이 문서 = 파일별 **실행 흐름/역할 지도**(무엇이 언제 실행되는가).
+> 원본·논문 **대비 차이/정합**은 [framework_comparison.md](./framework_comparison.md).
+
 논문 Figure 1(b) 블록: `DeepJSCC Encoder` / `Semantic Extractor` /
 `Semantic side info encoder·decoder` / `Wireless Channel` / `Diffusion Denoiser` /
 `DeepJSCC Decoder`. 인프라 파일은 "Fig 1(b) 외부", 여러 블록을 조율하면 "오케스트레이션".

@@ -4,9 +4,13 @@
 
 `sgdjscc_lab`이 SGD-JSCC hyperparameter를 어떻게 설정하는지를 **공개 `SGDJSCC/`
 코드로 confirmed**, **논문 table 값**, **미공개 assumption**으로 구분한다.
-[paper_gap_closure.md](./paper_gap_closure.md)(구조적 충실도 + `paper_mode`)의
-동반 문서. Ground-truth 우선순위: **공개 코드 우선**, 논문 table 차순; 충돌 시
-재현성을 위해 공개 코드 값을 유지한다.
+
+> **역할**: 이 문서 = 하이퍼파라미터 **수치의 출처** + 학습 경로의 논문 비등가(§6).
+> 구조 정합·충실도 분류·`paper_mode` guardrail·DDP 등 **정책**은
+> [paper_gap_closure.md](./paper_gap_closure.md)에서 다룬다.
+
+Ground-truth 우선순위: **공개 코드 우선**, 논문 table 차순; 충돌 시 재현성을 위해
+공개 코드 값을 유지한다.
 
 ## 1. 공개 코드에서 confirmed
 
@@ -68,3 +72,23 @@ torchrun --standalone --nproc_per_node=3 scripts/train.py \
 
 MuGE precompute(split당 1회): `scripts/prepare_muge_edges.py --input <split>
 --model-root checkpoints --repr edge_uncertainty --device cuda:0`.
+
+## 6. 학습 경로의 논문 비등가
+
+`training_scaffold.md`(실행 가이드)에서 이관한, 학습 경로가 논문과 다른 지점:
+
+- **Stage-1 손실** — MSE only / public-code-like(`+0.1·LPIPS(alex)`) / paper-like
+  (patch-GAN) 조합 선택, 기본 전부 off. 원본 LPIPS 결합·가중 스케줄은 미재현이라
+  perceptual 수치를 보장하지 않는다(§3의 GAN weight λ 참조).
+- **Stage-3 edge transport** — baseline은 `edge_jscc`(전용 encoder→채널→projector,
+  `edge_codec`이 학습한 checkpoint 로드), `shared_vae`는 비교용 ablation. codec 학습
+  데이터/스케줄의 논문 수치는 미보장(구조 정책은 [paper_gap_closure.md](./paper_gap_closure.md) item 4·6).
+- **CSI 추정** — `SNREstimator`가 공개 `Prediction_Model`을 미러. 추론이 `net²=α`를
+  쓰므로 net은 진폭 `√α`를 출력(target 메타데이터로 자동 √-wrap). phase/joint(Alg.3)은
+  복소 채널 확장 전까지 scaffold.
+- **adaLN SNR 조건화 edge codec** — `EdgeJSCCViT.vit.snr_cond`가 WITT
+  `SNREmbedder`/modulate 패턴을 미러(선형 SNR `10**(snr_db/10)` 주입), 블록은 DiT식
+  adaLN. multi-SNR 학습 시 SNR-adaptive.
+- **end_to_end_ft** — baseline 아님. 논문 부록의 순차 미세조정을 tractable하게
+  공동(joint)으로, 전체 reverse 대신 1-step denoise로 근사.
+- **데이터 규모** — 논문의 ~14M pair·250k step 스케줄/데이터는 미번들(§4 참조).

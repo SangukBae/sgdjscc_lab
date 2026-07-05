@@ -5,6 +5,9 @@
 두 가지를 비교한다: (1) 원본 `SGDJSCC/` monolithic 추론과 `sgdjscc_lab/`의 모듈화
 구조, (2) **SGD-JSCC 논문**과 `sgdjscc_lab` 구현의 정합 수준.
 
+> **역할**: 이 문서 = 원본·논문 **대비 차이/정합**(무엇이 어떻게 다른가).
+> 파일별 **실행 흐름**은 [framework_file_roles.md](./framework_file_roles.md).
+
 ## 1. 구조 비교 — 원본 vs sgdjscc_lab
 
 동일한 AWGN 시맨틱 이미지 전송 파이프라인을 **알고리즘은 보존**하면서 연구·확장을

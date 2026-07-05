@@ -5,6 +5,33 @@
 > 확장 영역**, **구현 완료 ↔ 부분/스캐폴드 ↔ 미구현**을 구분해, 계획이 아닌 현재
 > 구현 상태를 명시한다.
 
+---
+
+## 한 페이지 요약 (TL;DR)
+
+**무엇** — SGD-JSCC 추론 코어(paper-faithful, forward 수치 불변)를 보존한 채, 원본이
+비운 평가·제어·채널·영상·학습 골격을 얹은 ETRI용 **시맨틱 미디어 전송 신뢰성 플랫폼**.
+
+**목표** — 픽셀 복원(PSNR)이 아니라, 노이즈 채널 통과 후 **송신 의도 보존도**와
+**할루시네이션**을 정량화한다.
+
+**핵심 축 5가지**
+- **평가 3계층** — SRS → srs_packet → srs_v2(+VQA·시간축)
+- **채널 확장** — AWGN → Rayleigh/fast-fading/packet-drop + 채널 조건화
+- **복원 제어** — SNR 적응 guidance + 실패유형 regeneration + 다중전략 search
+- **저지연** — DDIM step-budget · early-exit · consistency 인터페이스
+- **학습 재현** — 논문 3-stage + 보조 stage(edge codec, CSI 추정) scaffold
+
+**충실도 구분** — 추론=paper-faithful / 학습·채널·평가=paper-like·scaffold·ETRI 확장.
+확장 기능은 **기본 off**, 마스터 스위치를 끄면 원본 추론과 수치적으로 동일.
+
+**현황** — Phase 1~4 완료, Phase 5 부분/스캐폴드. 상세는 §3(한계 매핑)·§8(구현 현황)·
+§12(변경표) 및 [phase4.md](./phase4.md) / [phase5.md](./phase5.md).
+
+> 이 아래는 상세 기록(부록 성격)이다. 빠른 파악은 위 요약으로 충분하다.
+
+---
+
 ## 용어 정리
 
 **충실도 4단 분류** — 각 기능이 논문/원본에 얼마나 충실한지를 다음으로 표기한다.

@@ -75,19 +75,10 @@ python scripts/train.py --config configs/composed_train_jscc.yaml \
 (`t~U(0,1)`, `β̄_t=S(t)`, `∇‖f0−ε(f_t)‖²`) + MDTv2 masked 항. Stage 3 text-DM frozen,
 구조 시맨틱 DiT 블록만 갱신.
 
-## 논문과 다른 점 (정직한 목록)
-
-1. **Patch-GAN (stage 1)** — 구조는 표준 `NLayerDiscriminator`(모든 knob config화),
-   `gan.enabled=false`(기본)면 순수 MSE, `true`면 G/D 교대 학습. 단 원본 LPIPS 결합/
-   가중 스케줄은 미재현(perceptual 수치 미보장). `lpips.enabled=true`(공개코드
-   `MSE_LPIPS`와 정렬)도 선택 가능.
-2. **Stage 3 edge transport** — baseline은 `edge_jscc`(전용 edge encoder→채널→
-   projector, `edge_codec`이 학습한 체크포인트 로드). `shared_vae`(이미지 VAE stand-in)는
-   비교용 ablation. codec 학습 데이터/스케줄은 논문 수치 미보장.
-3. **end_to_end_ft** — baseline 아님. 논문 부록의 순차 미세조정을 tractable하게
-   공동(joint)으로, 전체 reverse 대신 1-step denoise로 근사.
-4. **데이터셋 규모** — 논문의 ~14M pair·250k step 스케줄/데이터는 미번들. 폴더 기반
-   dataset + step-based 학습 기능만 제공.
+> **논문과 다른 점**: 학습 경로가 논문과 다른 지점(patch-GAN/LPIPS 손실, Stage-3 edge
+> transport, `end_to_end_ft` 근사, 데이터 규모, CSI `√α`·adaLN edge codec)은
+> [paper_training_alignment.md §6](./paper_training_alignment.md)에, 충실도 분류·
+> `paper_mode` 정책은 [paper_gap_closure.md](./paper_gap_closure.md)에 정리했다.
 
 ## 주요 config (`configs/train/default.yaml`)
 
@@ -200,48 +191,23 @@ conv/ViT(`arch` 선택)이며 추론 ViT canny 코덱과는 **별개 모듈**이
 `edge_jscc.checkpoint`가 채워져 있어 파일이 없으면 즉시 `FileNotFoundError`(의도된
 fail-fast) — stage 3 전에 반드시 `edge_codec`을 먼저 학습해야 한다.
 
-## 논문 정렬 보강 (요약)
+## 데이터 입력
 
-- **Stage-1 손실** — MSE only / public-code-like(`+0.1·LPIPS(alex)`) / paper-like
-  (patch-GAN) 조합 선택. 기본 전부 off.
-- **CSI 추정** — `SNREstimator`(공개 `Prediction_Model` 미러, paper-like) +
-  `csi_estimation` stage로 실제 학습·추론 연결. 추론이 `net²=α`를 쓰므로 net은 진폭
-  `√α`를 출력(target 메타데이터로 자동 √-wrap). phase/joint(Alg.3)은 복소 채널 확장
-  전까지 scaffold.
-- **adaLN SNR 조건화 edge codec** — `EdgeJSCCViT`의 `vit.snr_cond`가 WITT
-  `SNREmbedder`/modulate 패턴 미러(선형 SNR `10**(snr_db/10)` 주입). 위치·값은
-  WITT-aligned이나 블록은 DiT식 adaLN. multi-SNR 학습 시 SNR-adaptive.
+기존 `sidecar`/`canny` 경로와 호환되는 학습 입력 옵션(변환 스크립트·데이터셋 역할
+상세는 [dataset_status.md](./dataset_status.md)):
 
-## 데이터 입력 확장
-
-기존 `sidecar`/`canny` 경로와 완전 호환되는 확장:
-
-- **caption 생성** — `scripts/generate_captions.py`로 caption-less 폴더(CelebA/CelebA-HQ 등)에
-  `<stem>.txt` 생성(`fixed`/`filename`/`model`). `model` 모드는 Qwen2.5-VL-3B-Instruct
-  (`guidance/qwen_caption`)를 사용하며 `transformers>=4.49` + 가중치 + (권장) GPU 필요.
-  이는 inference/eval 파이프라인의 BLIP-2와 **별개**라 논문 충실 forward pass에는 영향 없음.
-  ⚠️ 논문 캡션과 동일하지 않음(paper-like). `paper_mode`에서 차단.
-- **COCO multi-caption** — `caption_source: coco_json`(이미지당 5캡션 보존).
-  train/val JSON이 다르므로 `caption_path`+`val_caption_path`를 각각 지정.
-  `caption_select: first|longest|random`(val은 재현성 위해 `first`로 강등).
-- **file-list 입력** — `input_mode: file_list` + `file_list_path`(DiffJSCC식 train.list).
-  모든 dataset type에서 동작, 상대경로는 리스트 파일 기준.
-- **대규모 변환 스크립트**:
-  - `scripts/prepare_cc3m.py` — CC3M-WDS `.tar` shard → jpg/txt sidecar pair.
-    기본 shard별 하위폴더 레이아웃(full-scale inode 병목 회피). `--append` +
-    `--delete-shard-on-success`로 디스크 압박 없이 순차 변환(원자적 commit,
-    `.shard_done` 마커, 재실행 멱등). ⚠️ `--delete-shard-on-success`는 검증된 shard의
-    원본 tar를 영구 삭제.
-  - `scripts/prepare_sa1b.py` — SA-1B `.tar` → image-only(`.json` 마스크 드롭). 어떤
-    학습 dataset도 마스크를 소비하지 않아 image stage(`jscc`/`csi_estimation`/`edge_codec`)
-    용. 동일한 순차 변환·삭제 안전장치. ⚠️ tar가 root 소유라 **컨테이너 내부(root)**에서 실행.
-
-### stage별 데이터 (요약)
+- **caption** — `caption_source: sidecar|manifest|coco_json|multi_manifest|filename`.
+  caption 없는 폴더는 `scripts/generate_captions.py`로 `<stem>.txt` 생성(`model` 모드는
+  Qwen2.5-VL-3B, `transformers>=4.49`; inference/eval의 BLIP-2와 별개, `paper_mode` 차단).
+  COCO는 `coco_json`(이미지당 5캡션, `caption_select: first|longest|random`).
+- **edge** — `edge_source: canny|sidecar|muge_sidecar`(+`muge_repr`).
+- **입력 모드** — `input_mode: folder|file_list`. 대규모는 `file_list_path`(DiffJSCC식
+  train.list; 상대경로는 리스트 파일 기준).
 
 | stage | 필요 데이터 |
 |-------|-------------|
-| `jscc`/`edge_codec`/`csi_estimation` | image-only (SA-1B는 `prepare_sa1b.py` 변환) |
-| `text_dm`/`controlnet` | caption 필요 (COCO는 `coco_json`, CC3M은 변환, CelebA는 caption 생성) |
+| `jscc`/`edge_codec`/`csi_estimation` | image-only |
+| `text_dm`/`controlnet` | caption(+edge) |
 
 ## 운영 안정성 & 메모리 토글
 
@@ -272,14 +238,9 @@ torchrun --standalone --nproc_per_node=3 scripts/train.py \
     --train-list data/coco/train2017 --val-list data/coco/val2017 --batch-size 21
 ```
 
-- **Stage 2 (`text_dm`)**: 지원·검증(param + learned CFG null token grad sync,
-  DistributedSampler, rank0 checkpoint; CPU Gloo smoke + 3×GPU NCCL).
-- **Stage 3 (`controlnet`)**: 구조 준비(`find_unused_parameters=False` 기본, base DM
-  frozen). 멀티-GPU end-to-end 검증은 미완.
-- **Stage 1/`edge_codec`**: 배선은 generic이나 GAN/codec 경로 DDP 미검증.
-
-export·evaluation은 single-process(DDP는 학습 전용). 상세 DDP 동작·검증은
-[paper_gap_closure.md](./paper_gap_closure.md#multi-gpu-training-ddp).
+stage별 지원·검증 현황(text_dm 검증됨, controlnet 구조 준비, jscc/edge_codec 미검증)과
+상세 동작은 [paper_gap_closure.md](./paper_gap_closure.md#multi-gpu-training-ddp) 참조.
+export·evaluation은 single-process다(DDP는 학습 전용).
 
 ## 관련 문서
 - [smoke_training.md](./smoke_training.md) · [paper_training_alignment.md](./paper_training_alignment.md) · [dataset_status.md](./dataset_status.md) · [phase5.md](./phase5.md)

@@ -66,69 +66,21 @@ python scripts/evaluate.py --config configs/dataset/kodak.yaml
 
 ## Training
 
-`sgdjscc_lab`은 `scripts/train.py`로 **stage-aware** training CLI를 제공한다.
-각 stage는 실제 미분 가능한 forward pass + loss를 가진다. core baseline은 논문의
-3개 stage(`jscc` → `text_dm` → `controlnet`)에 보조 `edge_codec` step과 선택적
-`end_to_end_ft` 확장을 더한 것이다. 기존 inference/evaluation 경로는 영향받지 않는다.
-전체 설계: [docs/training_scaffold.md](./docs/training_scaffold.md). 실제 모델로
-1–2 step training이 도는지 확인: [docs/smoke_training.md](./docs/smoke_training.md).
-
-### Core baseline stage
+`scripts/train.py`는 논문 3-stage(`jscc` → `text_dm` → `controlnet`)에 보조
+`edge_codec`/`csi_estimation`과 선택적 `end_to_end_ft`를 더한 **stage-aware** CLI다.
+inference/evaluation 경로는 영향받지 않는다.
 
 ```bash
-cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
-conda activate ptest
+cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab && conda activate ptest
 
-# Stage 1 — JSCC (image-only, 고정 AWGN SNR=10dB)
 python scripts/train.py --config configs/composed_train_jscc.yaml \
     --train-list /data/imagenet/train/ --device cuda:0 --epochs 20
-
-# Stage 2 — text-guided DM (caption sidecar)
-python scripts/train.py --config configs/composed_train_text_dm.yaml \
-    --train-list /data/pairs/train/ --device cuda:0
-
-# 보조 — Stage-3 edge codec 학습 (BCE+Dice; heavy checkpoint 불필요)
-python scripts/train.py --config configs/composed_train_edge_codec.yaml \
-    --train-list /data/edges/train/ --device cuda:0 --epochs 50
-
-# Stage 3 — edge ControlNet, BASELINE = 전용 edge_jscc transport
-#   (train.controlnet.edge_jscc.checkpoint를 edge_codec 결과로 지정)
-python scripts/train.py --config configs/composed_train_controlnet.yaml \
-    --train-list /data/pairs/train/ --device cuda:0
 ```
 
-`--stage {jscc|text_dm|controlnet|edge_codec|csi_estimation|end_to_end_ft}`로
-config stage를 override하고, `--max-steps N`으로 step 기반 training으로 전환한다.
-Multi-GPU: `torchrun --standalone --nproc_per_node=N scripts/train.py …`.
-
-### Dry-run (checkpoint·GPU 불필요)
-
-```bash
-python scripts/train.py --config configs/composed_train_jscc.yaml \
-    --train-list /path/to/images/ --no-models --epochs 1
-```
-
-### Checkpoint에서 resume
-
-```bash
-python scripts/train.py --config configs/composed_train_controlnet.yaml \
-    --train-list /data/train/ --resume outputs/checkpoints/controlnet/latest.pth
-```
-
-### 주요 config 옵션 (`configs/train/default.yaml`)
-
-| Key | Default | 설명 |
-|-----|---------|-------------|
-| `train.epochs` | 10 | training epoch 수 |
-| `train.batch_size` | 4 | batch size |
-| `train.lr` | 1e-4 | learning rate (AdamW) |
-| `train.save_every` | 5 | N epoch마다 `epoch_N.pth` 저장 |
-| `trainable_modules.freeze_*` | `true` | 각 모듈 freeze (기본 전부 freeze) |
-| `loss.reconstruction_type` | `"l1"` | `"l1"` / `"mse"` / `"huber"` |
-| `checkpoint_dir` | `outputs/checkpoints` | checkpoint 저장 위치 |
-| `train_log_path` | `outputs/train_log.jsonl` | JSONL training log |
-
-전체 training scaffold 설계는 [docs/README.md](./docs/README.md) 참조.
+`--stage`로 stage override, `--max-steps N`으로 step 모드, `--no-models`로 GPU 없는
+dry-run, `--resume latest`로 재개, Multi-GPU는 `torchrun`. 전체 stage·config·freeze·
+export·DDP는 [docs/training_scaffold.md](./docs/training_scaffold.md), 실제 모델로
+1–2 step 배선 검증은 [docs/smoke_training.md](./docs/smoke_training.md) 참조.
 
 ## Tests
 ```bash

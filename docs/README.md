@@ -17,10 +17,10 @@
 | [phase5.md](./phase5.md) | Phase 5: 채널 조건화(5-A), 저지연/consistency(5-B), SRS-v2/regeneration search(5-C) |
 | [training_scaffold.md](./training_scaffold.md) | 학습 CLI: 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage + 데이터 준비 |
 | [smoke_training.md](./smoke_training.md) | real-model smoke 학습(1~2 step 배선 검증) |
-| [paper_gap_closure.md](./paper_gap_closure.md) | 논문 정합/갭 + `paper_mode` guardrail + DDP |
-| [paper_training_alignment.md](./paper_training_alignment.md) | 하이퍼파라미터 출처(공개코드/논문표/가정값) 구분 |
-| [framework_comparison.md](./framework_comparison.md) | 원본 `SGDJSCC/` vs `sgdjscc_lab/` 구조 비교 + 논문 정합표 |
-| [framework_file_roles.md](./framework_file_roles.md) | 실행 순서에 따른 파일별 역할 지도 |
+| [paper_gap_closure.md](./paper_gap_closure.md) | 논문 재현 **정책**: 충실도 분류 · `paper_mode` guardrail · DDP |
+| [paper_training_alignment.md](./paper_training_alignment.md) | 하이퍼파라미터 **수치 출처**(공개코드/논문표/가정값) + 학습 경로 비등가 |
+| [framework_comparison.md](./framework_comparison.md) | 원본·논문 **대비 차이**: 구조 비교 + 논문 정합표 |
+| [framework_file_roles.md](./framework_file_roles.md) | 파일별 **실행 흐름** 역할 지도 |
 | [etri_overview.md](./etri_overview.md) | ETRI 과제 개요: 목표, 파이프라인, SRS, 실험 설정 |
 | [etri_development_roadmap.md](./etri_development_roadmap.md) | 개발 순서와 SGD-JSCC 한계점 개선 매핑 |
 | [limitation_reference_map.md](./limitation_reference_map.md) | SGD-JSCC 한계점 우선순위와 참고문헌 |

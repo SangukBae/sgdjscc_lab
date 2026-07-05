@@ -8,6 +8,10 @@ in Wireless Image Transmission"** (Zhang et al., arXiv:2501.01138).
 **무엇이 paper-faithful / paper-like / unsupported인지**, 그리고 `paper_mode`
 guardrail이 재현 경로를 어떻게 강제하는지에 대한 single source of truth.
 
+> **역할**: 이 문서 = 논문 재현 **정책**(충실도 분류 · `paper_mode` guardrail · DDP).
+> 하이퍼파라미터 **수치의 출처**(공개코드/논문표/가정값)는
+> [paper_training_alignment.md](./paper_training_alignment.md)에서 다룬다.
+
 ## 충실도 분류
 
 - **paper-faithful** — *같은 데이터·checkpoint 하에서* 논문 / 공개 `SGDJSCC` 코드와
