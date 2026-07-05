@@ -19,18 +19,30 @@ if [ "${#GPUS[@]}" -eq 0 ]; then
   exit 1
 fi
 
+# Emit one work unit per line as TAB-separated metadata:
+#   <label>\t<unit_index>\t<unit_total>\t<path>
+# where <label> is the dataset name without the leading data/ (e.g.
+# sa1b_images/train) and unit_index/unit_total are the 1-based shard position
+# within THAT dataset. Datasets split into subfolders (shards) yield one unit per
+# subfolder; flat datasets yield a single 1/1 unit for the folder itself.
 enqueue_work_units() {
   local out_file="$1"
   shift
   : > "$out_file"
-  local root
+  local root label subdir idx total
   for root in "$@"; do
     [ -d "$root" ] || continue
+    label="${root#data/}"
     mapfile -t _subdirs < <(find "$root" -mindepth 1 -maxdepth 1 -type d | sort)
     if [ "${#_subdirs[@]}" -gt 0 ]; then
-      printf '%s\n' "${_subdirs[@]}" >> "$out_file"
+      total="${#_subdirs[@]}"
+      idx=1
+      for subdir in "${_subdirs[@]}"; do
+        printf '%s\t%d\t%d\t%s\n' "$label" "$idx" "$total" "$subdir" >> "$out_file"
+        idx=$((idx + 1))
+      done
     else
-      printf '%s\n' "$root" >> "$out_file"
+      printf '%s\t1\t1\t%s\n' "$label" "$root" >> "$out_file"
     fi
   done
 }
@@ -79,13 +91,17 @@ run_parallel_captions() {
     [ -s "$units_file" ] || continue
     gpu="${GPUS[$gpu_idx]}"
     (
-      while IFS= read -r unit; do
+      while IFS=$'\t' read -r label uidx utot unit; do
         [ -n "$unit" ] || continue
-        echo "[caption][gpu=$gpu] $unit"
+        echo "[caption][gpu=$gpu][$label][$uidx/$utot] start: $unit"
         CUDA_VISIBLE_DEVICES="$gpu" python3 scripts/generate_captions.py \
           --input "$unit" \
           --mode model \
-          --device cuda:0
+          --device cuda:0 \
+          --label "$label" \
+          --unit-index "$uidx" \
+          --unit-total "$utot" \
+          --gpu "$gpu"
       done < "$units_file"
     ) &
     pids+=("$!")
@@ -119,14 +135,18 @@ run_parallel_muge() {
     [ -s "$units_file" ] || continue
     gpu="${GPUS[$gpu_idx]}"
     (
-      while IFS= read -r unit; do
+      while IFS=$'\t' read -r label uidx utot unit; do
         [ -n "$unit" ] || continue
-        echo "[muge][gpu=$gpu] $unit"
+        echo "[muge][gpu=$gpu][$label][$uidx/$utot] start: $unit"
         CUDA_VISIBLE_DEVICES="$gpu" python3 scripts/prepare_muge_edges.py \
           --input "$unit" \
           --model-root "$MODEL_ROOT" \
           --repr "$MUGE_REPR" \
-          --device cuda:0
+          --device cuda:0 \
+          --label "$label" \
+          --unit-index "$uidx" \
+          --unit-total "$utot" \
+          --gpu "$gpu"
       done < "$units_file"
     ) &
     pids+=("$!")

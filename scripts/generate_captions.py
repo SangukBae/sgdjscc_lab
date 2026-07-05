@@ -52,6 +52,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from sgdjscc_lab.data.image_dataset import _IMG_EXTS, _list_images  # noqa: E402
+from sgdjscc_lab.utils.text_progress import format_unit_progress  # noqa: E402
 
 logger = logging.getLogger("generate_captions")
 
@@ -87,6 +88,10 @@ def generate_captions(
     batch_size: int = DEFAULT_MODEL_BATCH_SIZE,
     max_pixels: Optional[int] = DEFAULT_MODEL_MAX_PIXELS,
     min_pixels: Optional[int] = None,
+    label: Optional[str] = None,
+    unit_index: int = 1,
+    unit_total: int = 1,
+    gpu: Optional[str] = None,
 ) -> dict:
     """Write ``<stem>.txt`` next to every image under *input_dir*.
 
@@ -121,7 +126,13 @@ def generate_captions(
     caption_dirs = set()
 
     def _log_progress() -> None:
-        if total and (processed % progress_every == 0 or processed == total):
+        if not (total and (processed % progress_every == 0 or processed == total)):
+            return
+        if label:
+            logger.info("%s", format_unit_progress(
+                stage="caption", gpu=gpu, label=label, unit_index=unit_index,
+                unit_total=unit_total, processed=processed, total=total))
+        else:
             logger.info("  %.1f%% (%d/%d)", 100.0 * processed / total, processed, total)
 
     # --mode model batches images through Qwen2.5-VL; ``_pending`` buffers the
@@ -235,6 +246,15 @@ def _parse_args(argv=None):
                    help=f"Max H*W per image (vision-token cap; default: {DEFAULT_MODEL_MAX_PIXELS}).")
     p.add_argument("--min-pixels", type=int, default=None,
                    help="Min H*W per image (default: model default).")
+    # Progress-bar metadata (set by the parallel prep script; optional standalone).
+    p.add_argument("--label", default=None,
+                   help="Dataset label for the progress bar, e.g. 'sa1b_images/train'. "
+                        "When set, logs a '[caption][gpu=..][label][i/N] |bar| pct' line.")
+    p.add_argument("--unit-index", type=int, default=1,
+                   help="This unit's 1-based index within the dataset (default: 1).")
+    p.add_argument("--unit-total", type=int, default=1,
+                   help="Total units (shards) in the dataset (default: 1).")
+    p.add_argument("--gpu", default=None, help="GPU id shown in the progress bar (display only).")
     return p.parse_args(argv)
 
 
@@ -246,6 +266,7 @@ def main(argv=None) -> int:
         device=args.device, limit=args.limit, progress_every=args.progress_every,
         model_id=args.model_id, prompt=args.prompt, max_new_tokens=args.max_new_tokens,
         batch_size=args.batch_size, max_pixels=args.max_pixels, min_pixels=args.min_pixels,
+        label=args.label, unit_index=args.unit_index, unit_total=args.unit_total, gpu=args.gpu,
     )
     print(f"captions: written={summary['written']} skipped={summary['skipped']} "
           f"total={summary['total']}")

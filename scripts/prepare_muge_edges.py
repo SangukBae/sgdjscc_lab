@@ -37,6 +37,8 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from sgdjscc_lab.utils.text_progress import format_unit_progress  # noqa: E402
+
 logger = logging.getLogger("prepare_muge_edges")
 
 
@@ -51,6 +53,10 @@ def prepare_muge_edges(
     overwrite: bool = False,
     limit: Optional[int] = None,
     progress_every: int = 500,
+    label: Optional[str] = None,
+    unit_index: int = 1,
+    unit_total: int = 1,
+    gpu: Optional[str] = None,
 ) -> dict:
     """Write MuGE soft-edge sidecars for every image under *input_dir*.
 
@@ -99,7 +105,12 @@ def prepare_muge_edges(
             written += 1
         processed = i + 1
         if processed % progress_every == 0 or processed == len(files):
-            logger.info("  %.1f%% (%d/%d)", 100.0 * processed / len(files), processed, len(files))
+            if label:
+                logger.info("%s", format_unit_progress(
+                    stage="muge", gpu=gpu, label=label, unit_index=unit_index,
+                    unit_total=unit_total, processed=processed, total=len(files)))
+            else:
+                logger.info("  %.1f%% (%d/%d)", 100.0 * processed / len(files), processed, len(files))
     logger.info("Done: %d written, %d skipped, %d total (repr=%s, %s)",
                 written, skipped, len(files), repr_name, ext)
     return {"written": written, "skipped": skipped, "total": len(files)}
@@ -123,6 +134,15 @@ def _parse_args(argv=None):
     p.add_argument("--limit", type=int, default=None)
     p.add_argument("--progress-every", type=int, default=500,
                    help="Log progress every N images (default: 500).")
+    # Progress-bar metadata (set by the parallel prep script; optional standalone).
+    p.add_argument("--label", default=None,
+                   help="Dataset label for the progress bar, e.g. 'journey_pairs/val'. "
+                        "When set, logs a '[muge][gpu=..][label][i/N] |bar| pct' line.")
+    p.add_argument("--unit-index", type=int, default=1,
+                   help="This unit's 1-based index within the dataset (default: 1).")
+    p.add_argument("--unit-total", type=int, default=1,
+                   help="Total units (shards) in the dataset (default: 1).")
+    p.add_argument("--gpu", default=None, help="GPU id shown in the progress bar (display only).")
     return p.parse_args(argv)
 
 
@@ -132,7 +152,9 @@ def main(argv=None) -> int:
     s = prepare_muge_edges(a.input, model_root=a.model_root, out_dir=a.out_dir,
                            device=a.device, size=a.size, repr_name=a.repr_name,
                            overwrite=a.overwrite, limit=a.limit,
-                           progress_every=a.progress_every)
+                           progress_every=a.progress_every,
+                           label=a.label, unit_index=a.unit_index,
+                           unit_total=a.unit_total, gpu=a.gpu)
     print(f"muge edges: written={s['written']} skipped={s['skipped']} total={s['total']}")
     return 0
 
