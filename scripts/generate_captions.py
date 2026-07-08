@@ -46,12 +46,15 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from PIL import Image, UnidentifiedImageError
+
 # Make ``src/`` importable when run as a script.
 _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from sgdjscc_lab.data.image_dataset import _IMG_EXTS, _list_images  # noqa: E402
+from sgdjscc_lab.utils.bad_images import quarantine_bad_image  # noqa: E402
 from sgdjscc_lab.utils.text_progress import UnitProgress  # noqa: E402
 
 logger = logging.getLogger("generate_captions")
@@ -121,7 +124,7 @@ def generate_captions(
 
     progress_every = max(1, int(progress_every))
     batch_size = max(1, int(batch_size))
-    written = skipped = 0
+    written = skipped = bad = 0
     processed = 0
     caption_dirs = set()
 
@@ -138,16 +141,27 @@ def generate_captions(
     _pending: List[Path] = []
 
     def _flush_model_batch() -> None:
-        nonlocal written, processed
+        nonlocal written, processed, bad
         if not _pending:
             return
-        from PIL import Image
         images = []
+        good_paths = []
         for fp in _pending:
-            with Image.open(fp) as im:
-                images.append(im.convert("RGB"))
+            try:
+                with Image.open(fp) as im:
+                    images.append(im.convert("RGB"))
+                good_paths.append(fp)
+            except (UnidentifiedImageError, OSError, ValueError) as exc:
+                moved_to = quarantine_bad_image(fp)
+                bad += 1
+                processed += 1
+                logger.warning("Bad image quarantined: %s -> %s (%s)", fp, moved_to, exc)
+                _log_progress()
+        if not good_paths:
+            _pending.clear()
+            return
         captions = extractor.caption_images(images)
-        for fp, cap in zip(_pending, captions):
+        for fp, cap in zip(good_paths, captions):
             caption = cap.strip() if cap and cap.strip() else text
             out_path = fp.with_suffix(".txt")
             out_path.write_text(caption + "\n", encoding="utf-8")
@@ -189,8 +203,8 @@ def generate_captions(
     _write_provenance(set(caption_dirs) | {Path(input_dir)}, mode=mode, text=text,
                       written=written, model_id=(model_id if mode == "model" else None))
 
-    logger.info("Done: %d written, %d skipped, %d total", written, skipped, total)
-    return {"written": written, "skipped": skipped, "total": total}
+    logger.info("Done: %d written, %d skipped, %d bad, %d total", written, skipped, bad, total)
+    return {"written": written, "skipped": skipped, "bad": bad, "total": total}
 
 
 def _write_provenance(dirs, *, mode: str, text: str, written: int,
@@ -269,8 +283,9 @@ def main(argv=None) -> int:
         batch_size=args.batch_size, max_pixels=args.max_pixels, min_pixels=args.min_pixels,
         label=args.label, unit_index=args.unit_index, unit_total=args.unit_total, gpu=args.gpu,
     )
-    print(f"captions: written={summary['written']} skipped={summary['skipped']} "
-          f"total={summary['total']}")
+    print("captions: "
+          f"written={summary['written']} skipped={summary['skipped']} "
+          f"bad={summary['bad']} total={summary['total']}")
     return 0
 
 

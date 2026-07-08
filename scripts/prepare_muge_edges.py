@@ -33,10 +33,13 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from PIL import UnidentifiedImageError
+
 _SRC = Path(__file__).resolve().parents[1] / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from sgdjscc_lab.utils.bad_images import quarantine_bad_image  # noqa: E402
 from sgdjscc_lab.utils.text_progress import UnitProgress  # noqa: E402
 
 logger = logging.getLogger("prepare_muge_edges")
@@ -87,7 +90,7 @@ def prepare_muge_edges(
     if out_base is not None:
         out_base.mkdir(parents=True, exist_ok=True)
     ext = ".png" if as_png else ".npy"
-    written = skipped = 0
+    written = skipped = bad = 0
     total = len(files)
     # Single-line in-place progress on a TTY; line-by-line logging otherwise.
     progress = UnitProgress(stage="muge", total=total, label=label, gpu=gpu,
@@ -98,23 +101,28 @@ def prepare_muge_edges(
         if dst.exists() and not overwrite:
             skipped += 1
         else:
-            img = load_image_as_tensor(fpath)               # [1,3,H,W] in [0,1]
-            img = F.interpolate(img, size=(size, size), mode="bilinear", align_corners=False)
-            data, unc = extractor.extract(img.to(dev), dev)
-            edge = muge_channels(data, unc, repr_name)       # [C,H,W] in [0,1]
-            if as_png:
-                save_tensor_as_image(edge.repeat(3, 1, 1).cpu(), dst)  # 1ch → 3ch png
-            else:
-                np.save(dst, edge.cpu().numpy().astype(np.float16))    # [C,H,W]
-            written += 1
+            try:
+                img = load_image_as_tensor(fpath)               # [1,3,H,W] in [0,1]
+                img = F.interpolate(img, size=(size, size), mode="bilinear", align_corners=False)
+                data, unc = extractor.extract(img.to(dev), dev)
+                edge = muge_channels(data, unc, repr_name)       # [C,H,W] in [0,1]
+                if as_png:
+                    save_tensor_as_image(edge.repeat(3, 1, 1).cpu(), dst)  # 1ch → 3ch png
+                else:
+                    np.save(dst, edge.cpu().numpy().astype(np.float16))    # [C,H,W]
+                written += 1
+            except (UnidentifiedImageError, OSError, ValueError) as exc:
+                moved_to = quarantine_bad_image(fpath)
+                bad += 1
+                logger.warning("Bad image quarantined: %s -> %s (%s)", fpath, moved_to, exc)
         processed = i + 1
         if total and (processed % progress_every == 0 or processed == total):
             progress.update(processed)
     if total:
         progress.close(total)  # commit the final 100% line (TTY only)
-    logger.info("Done: %d written, %d skipped, %d total (repr=%s, %s)",
-                written, skipped, total, repr_name, ext)
-    return {"written": written, "skipped": skipped, "total": total}
+    logger.info("Done: %d written, %d skipped, %d bad, %d total (repr=%s, %s)",
+                written, skipped, bad, total, repr_name, ext)
+    return {"written": written, "skipped": skipped, "bad": bad, "total": total}
 
 
 def _parse_args(argv=None):
@@ -156,7 +164,8 @@ def main(argv=None) -> int:
                            progress_every=a.progress_every,
                            label=a.label, unit_index=a.unit_index,
                            unit_total=a.unit_total, gpu=a.gpu)
-    print(f"muge edges: written={s['written']} skipped={s['skipped']} total={s['total']}")
+    print("muge edges: "
+          f"written={s['written']} skipped={s['skipped']} bad={s['bad']} total={s['total']}")
     return 0
 
 
