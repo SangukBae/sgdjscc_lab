@@ -1,4 +1,4 @@
-> [← 문서 색인](./README.md)
+> [← 문서 색인](../README.md)
 
 # Real-model smoke 학습
 
@@ -6,7 +6,7 @@
 목적은 수렴이 아니라 **배선·gradient·체크포인트 저장/복원** 확인이다. stub 기반 단위
 테스트(`tests/test_train_stages.py`)와 달리 실제 가중치·forward/backward를 거친다.
 
-전체 설계는 [training_scaffold.md](./training_scaffold.md) 참조.
+전체 설계는 [training_scaffold.md](../training_scaffold.md) 참조.
 
 ## 준비
 
@@ -90,5 +90,5 @@ CPU 단위/통합 테스트도 통과해야 한다: `python -m pytest tests/test
 권장 길이 예: jscc/text_dm/controlnet `--max-steps 500`, edge_codec `--epochs 5`.
 
 ## 관련 문서
-- [training_scaffold.md](./training_scaffold.md) · [etri_development_roadmap.md](./etri_development_roadmap.md)
+- [../training_scaffold.md](../training_scaffold.md) · [../etri_strategy.md](../etri_strategy.md)
 </content>

@@ -76,9 +76,8 @@ python scripts/train.py --config configs/composed_train_jscc.yaml \
 구조 시맨틱 DiT 블록만 갱신.
 
 > **논문과 다른 점**: 학습 경로가 논문과 다른 지점(patch-GAN/LPIPS 손실, Stage-3 edge
-> transport, `end_to_end_ft` 근사, 데이터 규모, CSI `√α`·adaLN edge codec)은
-> [paper_training_alignment.md §6](./paper_training_alignment.md)에, 충실도 분류·
-> `paper_mode` 정책은 [paper_gap_closure.md](./paper_gap_closure.md)에 정리했다.
+> transport, `end_to_end_ft` 근사, 데이터 규모, CSI `√α`·adaLN edge codec)과
+> 충실도 분류·`paper_mode` 정책은 [paper_alignment.md](./paper_alignment.md)에 정리했다.
 
 ## 주요 config (`configs/train/default.yaml`)
 
@@ -187,7 +186,7 @@ python scripts/eval_edge_codec.py --config configs/composed_train_edge_codec.yam
   `FileNotFoundError`(의도된 fail-fast) — stage 3 전에 반드시 `edge_codec`을 먼저 학습한다.
 
 논문 정합(전용 링크 정렬 / WITT-exact 아님 등)은
-[paper_training_alignment.md §6](./paper_training_alignment.md) 참조.
+[paper_alignment.md](./paper_alignment.md) 참조.
 
 ## 데이터 입력
 
@@ -236,10 +235,10 @@ torchrun --standalone --nproc_per_node=3 scripts/train.py \
 ```
 
 stage별 지원·검증 현황(text_dm 검증됨, controlnet 구조 준비, jscc/edge_codec 미검증)과
-상세 동작은 [paper_gap_closure.md](./paper_gap_closure.md#multi-gpu-training-ddp) 참조.
+상세 동작은 [paper_alignment.md](./paper_alignment.md) 참조.
 export·evaluation은 single-process다(DDP는 학습 전용).
 
 ## 관련 문서
-- [smoke_training.md](./smoke_training.md) · [paper_training_alignment.md](./paper_training_alignment.md) · [dataset_status.md](./dataset_status.md) · [phase5.md](./phase5.md)
+- [dev/smoke_training.md](./dev/smoke_training.md) · [paper_alignment.md](./paper_alignment.md) · [dataset_status.md](./dataset_status.md) · [phase5.md](./phase5.md)
 - `python scripts/report_datasets.py` — 현재 머신 데이터 보유 상태 리포트
 </content>

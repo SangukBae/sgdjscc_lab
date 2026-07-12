@@ -98,6 +98,6 @@ python -m pytest tests/ -v
 3. **원본 읽기 전용** — 신규 아이디어는 `sgdjscc_lab/`에만 구현.
 
 ## 관련 문서
-- [phases_1to3.md](./phases_1to3.md) · [phase4.md](./phase4.md) · [phase5.md](./phase5.md)
-- [etri_development_roadmap.md](./etri_development_roadmap.md) · [limitation_reference_map.md](./limitation_reference_map.md)
+- [archive/phases_1to3.md](./archive/phases_1to3.md) · [phase4.md](./phase4.md) · [phase5.md](./phase5.md)
+- [etri_strategy.md](./etri_strategy.md)
 </content>

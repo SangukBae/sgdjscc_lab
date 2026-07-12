@@ -115,5 +115,5 @@ python scripts/evaluate_video.py --config configs/composed_video.yaml \
 ---
 
 ### 관련 문서
-- [training_scaffold.md](./training_scaffold.md) · [framework_comparison.md](./framework_comparison.md) · [phase5.md](./phase5.md)
+- [training_scaffold.md](./training_scaffold.md) · [paper_alignment.md](./paper_alignment.md) · [phase5.md](./phase5.md)
 </content>

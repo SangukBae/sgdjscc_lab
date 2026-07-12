@@ -1,6 +1,8 @@
-> [← 문서 색인](./README.md)
+> [← 문서 색인](../README.md)
 
 # Paper training alignment — confirmed vs assumed hyperparameter
+
+> 보관본. 최신 요약은 [paper_alignment.md](../paper_alignment.md)를 우선 참조.
 
 `sgdjscc_lab`이 SGD-JSCC hyperparameter를 어떻게 설정하는지를 **공개 `SGDJSCC/`
 코드로 confirmed**, **논문 table 값**, **미공개 assumption**으로 구분한다.

@@ -6,25 +6,37 @@
 원본은 논문 베이스라인이자 읽기 전용 참조로 두고, 이 패키지는 모듈화·평가·연구
 확장을 위한 깨끗한 계층을 얹는다. 추론 forward-pass는 원본과 수치적으로 동일하다.
 
-이 파일은 **문서 색인**이다. 상세 내용은 아래 주제별 문서를 참조한다.
+이 파일은 **문서 색인**이다. 문서 수를 줄이기 위해 전략 문서와 논문 정합 문서를
+각각 하나로 합쳤고, 오래된 상세 문서는 `archive/`, 개발자용 점검 문서는 `dev/`,
+설명/메모 문서는 `notes/`로 내렸다.
 
-## 문서 지도
+## 핵심 문서
 
 | 문서 | 내용 |
 |---|---|
-| [phases_1to3.md](./phases_1to3.md) | Phase 1~3 요약 (추론 CLI, 모듈화, 평가 프레임워크 + SRS) |
+| [etri_overview.md](./etri_overview.md) | ETRI 과제 목표, 전체 파이프라인, SRS, 실험 설정 |
+| [etri_strategy.md](./etri_strategy.md) | 핵심 한계 3가지, 개발 순서, 현재 구현 상태를 합친 전략 문서 |
+| [paper_alignment.md](./paper_alignment.md) | 논문 정합성, `paper_mode`, 하이퍼파라미터 출처를 합친 정리 문서 |
+| [framework_file_roles.md](./framework_file_roles.md) | 파일별 실행 흐름과 역할 지도 |
+| [training_scaffold.md](./training_scaffold.md) | 학습 CLI: 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage + 데이터 준비 |
 | [phase4.md](./phase4.md) | Phase 4: 패킷 인식 검증기 + 적응형 가이드(4-A), 키프레임/시간적 파이프라인(4-B) |
 | [phase5.md](./phase5.md) | Phase 5: 채널 조건화(5-A), 저지연/consistency(5-B), SRS-v2/regeneration search(5-C) |
-| [training_scaffold.md](./training_scaffold.md) | 학습 CLI: 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage + 데이터 준비 |
-| [smoke_training.md](./smoke_training.md) | real-model smoke 학습(1~2 step 배선 검증) |
-| [paper_gap_closure.md](./paper_gap_closure.md) | 논문 재현 **정책**: 충실도 분류 · `paper_mode` guardrail · DDP |
-| [paper_training_alignment.md](./paper_training_alignment.md) | 하이퍼파라미터 **수치 출처**(공개코드/논문표/가정값) + 학습 경로 비등가 |
-| [framework_comparison.md](./framework_comparison.md) | 원본·논문 **대비 차이**: 구조 비교 + 논문 정합표 |
-| [framework_file_roles.md](./framework_file_roles.md) | 파일별 **실행 흐름** 역할 지도 |
-| [etri_overview.md](./etri_overview.md) | ETRI 과제 개요: 목표, 파이프라인, SRS, 실험 설정 |
-| [etri_development_roadmap.md](./etri_development_roadmap.md) | 개발 순서와 SGD-JSCC 한계점 개선 매핑 |
-| [limitation_reference_map.md](./limitation_reference_map.md) | SGD-JSCC 한계점 우선순위와 참고문헌 |
 | [dataset_status.md](./dataset_status.md) | 데이터셋 역할·stage 매핑·변환 워크플로 |
+
+## 보조 문서
+
+| 문서 | 내용 |
+|---|---|
+| [dev/smoke_training.md](./dev/smoke_training.md) | real-model smoke 학습(1~2 step 배선 검증) |
+| [notes/etri_qna_reply.md](./notes/etri_qna_reply.md) | 비전문가 설명용 Q&A 문서 |
+| [archive/phases_1to3.md](./archive/phases_1to3.md) | 초기 Phase 1~3 스냅샷 |
+| [archive/etri_development_plan_v2.md](./archive/etri_development_plan_v2.md) | 통합 전 개발계획서 보관본 |
+| [archive/etri_development_roadmap.md](./archive/etri_development_roadmap.md) | 통합 전 로드맵 보관본 |
+| [archive/limitation_reference_map.md](./archive/limitation_reference_map.md) | 통합 전 한계점 지도 보관본 |
+| [archive/framework_comparison.md](./archive/framework_comparison.md) | 통합 전 프레임워크 비교 보관본 |
+| [archive/paper_gap_closure.md](./archive/paper_gap_closure.md) | 통합 전 paper-mode 정책 문서 보관본 |
+| [archive/paper_training_alignment.md](./archive/paper_training_alignment.md) | 통합 전 학습 정합 문서 보관본 |
+| [notes/_paper_writing_notes.md](./notes/_paper_writing_notes.md) | 내부 논문 작성 메모 |
 
 ## Phase 현황
 
