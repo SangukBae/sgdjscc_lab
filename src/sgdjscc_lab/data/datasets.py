@@ -619,17 +619,40 @@ def _resolve_input_files(cfg, *, training: bool) -> Optional[List[Path]]:
     p = Path(lp)
     if not p.exists():
         raise FileNotFoundError(f"file list not found: {p}")
-    base = p.parent
     files: List[Path] = []
     for line in p.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        fp = Path(line)
-        files.append(fp.resolve() if fp.is_absolute() else (base / fp).resolve())
+        files.append(_resolve_list_entry(line, p))
     if not files:
         raise FileNotFoundError(f"file list {p} contains no image paths.")
     return files
+
+
+def _resolve_list_entry(entry: str, list_path: Path) -> Path:
+    """Resolve one file-list entry.
+
+    Relative paths are primarily interpreted relative to the list file, preserving
+    the original file-list contract.  If that path does not exist, walk upward
+    from the list directory and return the first existing match.  This supports
+    generated lists that store repo-root-relative entries such as ``data/...``
+    while the list itself lives under ``data/_lists/...``.
+    """
+    fp = Path(entry)
+    if fp.is_absolute():
+        return fp.resolve()
+
+    base = list_path.parent
+    primary = (base / fp).resolve()
+    if primary.exists():
+        return primary
+
+    for parent in base.parents:
+        candidate = (parent / fp).resolve()
+        if candidate.exists():
+            return candidate
+    return primary
 
 
 def build_dataset_for_stage(

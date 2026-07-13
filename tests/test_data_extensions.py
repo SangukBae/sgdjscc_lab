@@ -156,6 +156,20 @@ def test_file_list_relative_paths(tmp_path):
     assert len(ds) == 2
 
 
+def test_file_list_repo_relative_paths_from_nested_list(tmp_path):
+    root = tmp_path / "repo"
+    folder = root / "data" / "pairs" / "train"
+    _make_images(folder, ["a.png", "b.png"])
+    listing = root / "data" / "_lists" / "paper_like_multi" / "train.list"
+    listing.parent.mkdir(parents=True)
+    listing.write_text("data/pairs/train/a.png\ndata/pairs/train/b.png\n", encoding="utf-8")
+
+    cfg = _cfg(type="image", input_mode="file_list", file_list_path=str(listing))
+    ds = build_dataset_for_stage(None, cfg, training=True, stage="jscc")
+    paths = [Path(ds[i]["path"]) for i in range(len(ds))]
+    assert paths == [folder / "a.png", folder / "b.png"]
+
+
 # ── [1] caption generation script ─────────────────────────────────────────────
 
 def test_generate_captions_fixed_and_filename(tmp_path):
