@@ -10,6 +10,8 @@ _defaults_:
 # auto-generated upstream.
 paper_mode: false
 
+model_root: ../../checkpoints/
+
 use_semantic: false
 use_text: false
 use_controlnet: false

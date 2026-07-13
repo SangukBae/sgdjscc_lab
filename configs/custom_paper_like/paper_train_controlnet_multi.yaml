@@ -9,6 +9,8 @@ _defaults_:
 # including BLIP-2-captioned SA-1B images and MuGE sidecars.
 paper_mode: false
 
+model_root: ../../checkpoints/
+
 use_semantic: true
 use_text: true
 use_controlnet: true
