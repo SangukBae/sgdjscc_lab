@@ -647,11 +647,11 @@ def _resolve_list_entry(
     """
     fp = Path(entry)
     if fp.is_absolute():
-        return fp.resolve()
+        return fp
 
     parts = fp.parts
     if len(parts) <= 1:
-        return (base / fp).resolve()
+        return base / fp
 
     first = parts[0]
     if first not in root_cache:
@@ -662,7 +662,7 @@ def _resolve_list_entry(
                 break
 
     root = root_cache[first] or base
-    return (root / fp).resolve()
+    return root / fp
 
 
 def build_dataset_for_stage(
