@@ -21,6 +21,7 @@
 | [training_scaffold.md](./training_scaffold.md) | 학습 CLI: 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage + 데이터 준비 |
 | [phase4.md](./phase4.md) | Phase 4: 패킷 인식 검증기 + 적응형 가이드(4-A), 키프레임/시간적 파이프라인(4-B) |
 | [phase5.md](./phase5.md) | Phase 5: 채널 조건화(5-A), 저지연/consistency(5-B), SRS-v2/regeneration search(5-C) |
+| [video_extension_lgvsc.md](./video_extension_lgvsc.md) | LGVSC 논문 매핑 비디오 전송·복원 확장 설계 (한계 3 장기 축, 미구현 설계안) |
 | [dataset_status.md](./dataset_status.md) | 데이터셋 역할·stage 매핑·변환 워크플로 |
 
 ## 보조 문서
