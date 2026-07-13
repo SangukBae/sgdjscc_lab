@@ -619,40 +619,50 @@ def _resolve_input_files(cfg, *, training: bool) -> Optional[List[Path]]:
     p = Path(lp)
     if not p.exists():
         raise FileNotFoundError(f"file list not found: {p}")
+    base = p.parent
+    root_cache: Dict[str, Optional[Path]] = {}
     files: List[Path] = []
     for line in p.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        files.append(_resolve_list_entry(line, p))
+        files.append(_resolve_list_entry(line, base, root_cache))
     if not files:
         raise FileNotFoundError(f"file list {p} contains no image paths.")
     return files
 
 
-def _resolve_list_entry(entry: str, list_path: Path) -> Path:
+def _resolve_list_entry(
+    entry: str,
+    base: Path,
+    root_cache: Dict[str, Optional[Path]],
+) -> Path:
     """Resolve one file-list entry.
 
-    Relative paths are primarily interpreted relative to the list file, preserving
-    the original file-list contract.  If that path does not exist, walk upward
-    from the list directory and return the first existing match.  This supports
-    generated lists that store repo-root-relative entries such as ``data/...``
-    while the list itself lives under ``data/_lists/...``.
+    Relative paths are primarily interpreted relative to the list file,
+    preserving the original file-list contract.  For multi-part paths, the first
+    segment is resolved once against the list directory and its parents, then
+    cached.  This supports generated lists that store repo-root-relative entries
+    such as ``data/...`` while the list itself lives under ``data/_lists/...``.
     """
     fp = Path(entry)
     if fp.is_absolute():
         return fp.resolve()
 
-    base = list_path.parent
-    primary = (base / fp).resolve()
-    if primary.exists():
-        return primary
+    parts = fp.parts
+    if len(parts) <= 1:
+        return (base / fp).resolve()
 
-    for parent in base.parents:
-        candidate = (parent / fp).resolve()
-        if candidate.exists():
-            return candidate
-    return primary
+    first = parts[0]
+    if first not in root_cache:
+        root_cache[first] = None
+        for root in (base, *base.parents):
+            if (root / first).exists():
+                root_cache[first] = root
+                break
+
+    root = root_cache[first] or base
+    return (root / fp).resolve()
 
 
 def build_dataset_for_stage(
