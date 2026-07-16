@@ -165,37 +165,35 @@ ETRI 문의사항은 "semantic unit 수 절감뿐 아니라 채널 심볼 또는
 
 읽는 법:
 
-- **단계 묶음**은 작업의 성격이다. 평가기 기초, 비디오 파이프라인, 생성 복원, 검증기,
-  비교/전송량으로 나눈다.
+- **PPT 블록**은 발표자료에 실제로 표시된 도형·기능 이름이다. 개발 작업이 어느 그림의
+  어느 부분을 구현하는지 바로 확인하기 위한 열이다.
 - **PPT 대응**은 발표자료에서 어느 한계와 슬라이드에 해당하는지 보여준다.
 - **완료 기준**은 이 단계가 끝났다고 말할 수 있는 최소 산출물이다.
 - 검출기에 의존하는 시간축 지표는 먼저 잠정 구현하고, OWLv2/VQA 보강 후 재측정한다.
 
-| 순서 | 단계 묶음 | 작업 | 무엇을 하는가 | PPT 대응 | 월별 연결 | 완료 기준 |
+| 순서 | PPT 블록 | 무엇을 구현하는가 | 해당 코드/모듈 | PPT 대응 | 월별 연결 | 완료 기준 |
 |---|---|---|---|---|---|---|
-| 0 | 평가기 기초 | CLIP 판정 안정화 + threshold 배선 | 객체 존재 판정 threshold가 실제 evaluator에 전달되게 하고, 히스테리시스·uncertain band를 옵션으로 둔다 | 한계 2·3, 슬라이드 6·7 | 7~8월 기반 작업 | 기존 기본값에서 결과가 깨지지 않고, threshold 변경이 실제 지표에 반영됨 |
-| 1 | 비디오 입출력 | `video_io` + mp4 왕복 | mp4를 프레임으로 풀고, 복원 프레임을 다시 mp4로 저장한다 | 한계 1, 슬라이드 5 | 9월 | 테스트 영상 1개를 입력해 복원 mp4와 프레임별 로그가 생성됨 |
-| 2 | 시간축 지표 | temporal metric 정리 + `PTC`/`SFR`/`SDI` 초기 구현 | temporal SRS와 별도로 packet consistency, 객체 깜빡임, semantic drift를 계산한다 | 한계 1·3, 슬라이드 5·7 | 8월 | `temporal_metrics.csv`에 `PTC`/`SFR`/`SDI` 초기값이 기록됨 |
-| 3 | 비디오 판단 게이트 | motion gate 연결 | semantic delta만 보던 reuse/recompute 판단에 keyframe 대비 motion residual을 추가한다 | 한계 1, 슬라이드 5 | 9월 | 의미 변화는 작지만 카메라 이동이 큰 구간을 reuse하지 않음 |
-| 4 | 비디오 구조화 | segment abstraction | 프레임 단위 처리를 GOP/segment 단위 처리로 묶어 generate 분기를 붙일 수 있게 한다 | 한계 1, 슬라이드 5 | 9월 | 기존 frame-wise 결과와 segment 결과가 동등하게 재현됨 |
-| 5 | 생성 복원 PoC | start-only video generation 분기 | 시작 keyframe, caption, side-info를 조건으로 세그먼트 생성 경로를 붙인다 | 한계 1·2, 슬라이드 5·6 | 9~10월 | `reuse/recompute/generate` 3-way 분기가 동작하고 생성 결과가 저장됨 |
-| 6 | 생성 복원 고도화 | bidirectional generation spike/구현 | 시작 keyframe과 끝 keyframe을 모두 조건으로 넣어 drift를 줄일 수 있는지 확인한다 | 한계 1, 슬라이드 5 | 10월 이후 | start-only 대비 drift/flicker가 줄어드는지 비교 결과가 나옴 |
-| 7 | 수신단 검증 | Packet Verifier + 오류 유형별 regeneration controller | 전송 packet과 복원 packet을 비교하고, 추가·누락·왜곡별로 재생성 조건을 다르게 조정한다 | 한계 2, 슬라이드 6 | 9~10월 | 오류 유형별 report와 재생성 로그가 생성됨 |
-| 8 | 검출기 강화 | OWLv2/VQA 기반 검출 강화 | CLIP 기반 객체 판정을 grounded detector와 VQA 질문으로 보강한다 | 한계 2·3, 슬라이드 6·7 | 9~10월 | verifier 판정의 오탐/미탐 사례가 줄어드는 정성·정량 결과가 나옴 |
-| 9 | 재측정 | flicker/verifier 재평가 | 2단계에서 만든 CLIP 기반 temporal 지표를 OWLv2/VQA 보강 기준으로 다시 계산한다 | 한계 1·3, 슬라이드 7 | 10~11월 | `PTC`/`SFR`/`SDI` 결과가 검출기 보강 전후로 비교됨 |
-| 10 | 평가 신뢰도 | GT metadata 경로 + VLM-judge 가중치 적합 | GT 객체 주석과 VLM 판단을 이용해 SRS/Temporal SRS의 가중치를 보정한다 | 한계 3, 슬라이드 7 | 10~11월 | loop-internal 지표와 held-out 최종 지표가 분리되어 보고됨 |
-| 11 | 전송량 PoC | channel-symbol 절감 PoC | 변화가 작은 latent/semantic 요소를 덜 보내고, 의미 보존 저하와 절감률의 관계를 본다 | 슬라이드 8·10 | 7~8월 | 절감률 vs SRS/PTC 곡선이 생성됨 |
-| 12 | 최종 비교/설계 | bit accounting + adaptive policy + comparison profile | 실제 bitrate/CBR 산정 방식, adaptive keyframe policy, DISTS/downstream 비교 지표를 정리한다 | 슬라이드 8·10·11 | 10~11월 | 최종 보고용 비교 프로토콜과 bit 기준 설계안이 정리됨 |
+| 0 | 슬라이드 6 `Packet Verifier` / 슬라이드 7 `Presence Calibration` | 객체 존재 판정 threshold가 실제 evaluator에 전달되게 하고, 히스테리시스·uncertain band를 옵션으로 둔다 | `object_preservation.py`, `hallucination.py`, `semantic_reliability*.py` | 한계 2·3, 슬라이드 6·7 | 7~8월 기반 작업 | 기존 기본값에서 결과가 깨지지 않고, threshold 변경이 실제 지표에 반영됨 |
+| 1 | 슬라이드 5 `입력 영상(mp4)` / `세그먼트 연결 → 복원 영상(mp4)` | mp4를 프레임으로 풀고, 복원 프레임을 다시 mp4로 저장한다 | 신규 `video_io`, `evaluate_video.py` 확장 | 한계 1, 슬라이드 5 | 9월 | 테스트 영상 1개를 입력해 복원 mp4와 프레임별 로그가 생성됨 |
+| 2 | 슬라이드 5 `시간축 평가` / 슬라이드 7 `PTC·SFR·SDI` | temporal SRS와 별도로 packet consistency, 객체 깜빡임, semantic drift를 계산한다 | `evaluators/temporal_consistency.py`, `video/temporal_pipeline.py` | 한계 1·3, 슬라이드 5·7 | 8월 | `temporal_metrics.csv`에 `PTC`/`SFR`/`SDI` 초기값이 기록됨 |
+| 3 | 슬라이드 5 `세그먼트 판단 게이트` / `의미 델타 + 모션 이중 게이트` | semantic delta만 보던 reuse/recompute 판단에 keyframe 대비 motion residual을 추가한다 | `video/semantic_delta.py`, `video/motion_residual.py`, `video/temporal_pipeline.py` | 한계 1, 슬라이드 5 | 9월 | 의미 변화는 작지만 카메라 이동이 큰 구간을 reuse하지 않음 |
+| 4 | 슬라이드 5 `키프레임` / `비-키프레임` / `세그먼트` 구조 | 프레임 단위 처리를 GOP/segment 단위 처리로 묶어 generate 분기를 붙일 수 있게 한다 | `video/keyframe_extractor.py`, 신규 segment record | 한계 1, 슬라이드 5 | 9월 | 기존 frame-wise 결과와 segment 결과가 동등하게 재현됨 |
+| 5 | 슬라이드 5 `Generate (신규)` | 시작 keyframe, caption, side-info를 조건으로 세그먼트 생성 경로를 붙인다 | 신규 `video_generator`, `use_video_gen` config | 한계 1·2, 슬라이드 5·6 | 9~10월 | `reuse/recompute/generate` 3-way 분기가 동작하고 생성 결과가 저장됨 |
+| 6 | 슬라이드 5 `Generate (start / start+end 양방향)` | 시작 keyframe과 끝 keyframe을 모두 조건으로 넣어 drift를 줄일 수 있는지 확인한다 | `video_generator` bidirectional mode | 한계 1, 슬라이드 5 | 10월 이후 | start-only 대비 drift/flicker가 줄어드는지 비교 결과가 나옴 |
+| 7 | 슬라이드 6 `Packet Verifier` / `오류 유형별 재생성 Controller` | 전송 packet과 복원 packet을 비교하고, 추가·누락·왜곡별로 재생성 조건을 다르게 조정한다 | `evaluators/packet_matcher.py`, `controllers/regeneration*` | 한계 2, 슬라이드 6 | 9~10월 | 오류 유형별 report와 재생성 로그가 생성됨 |
+| 8 | 슬라이드 6 `Packet Verifier` 보강 / 슬라이드 7 `Presence Calibration` | CLIP 기반 객체 판정을 grounded detector와 VQA 질문으로 보강한다 | OWLv2/VQA backend, `hallucination_vqa.py` | 한계 2·3, 슬라이드 6·7 | 9~10월 | verifier 판정의 오탐/미탐 사례가 줄어드는 정성·정량 결과가 나옴 |
+| 9 | 슬라이드 5 `시간축 평가` / 슬라이드 7 `held-out 최종 평가 지표` | 2단계에서 만든 CLIP 기반 temporal 지표를 OWLv2/VQA 보강 기준으로 다시 계산한다 | temporal evaluator 재실행, report 비교 | 한계 1·3, 슬라이드 7 | 10~11월 | `PTC`/`SFR`/`SDI` 결과가 검출기 보강 전후로 비교됨 |
+| 10 | 슬라이드 7 `Temporal SRS Calibration` / `held-out 최종 평가 지표` | GT 객체 주석과 VLM 판단을 이용해 SRS/Temporal SRS의 가중치를 보정한다 | GT metadata loader, VLM judge, SRS weight config | 한계 3, 슬라이드 7 | 10~11월 | loop-internal 지표와 held-out 최종 지표가 분리되어 보고됨 |
+| 11 | 슬라이드 8 `1차 — 채널 심볼 절감 PoC` | 변화가 작은 latent/semantic 요소를 덜 보내고, 의미 보존 저하와 절감률의 관계를 본다 | latent/packet masking, symbol accounting PoC | 슬라이드 8·10 | 7~8월 | 절감률 vs SRS/PTC 곡선이 생성됨 |
+| 12 | 슬라이드 8 `2차 — 비트 기준 설계안` / 슬라이드 10 `평가 벤치마크` | 실제 bitrate/CBR 산정 방식, adaptive keyframe policy, DISTS/downstream 비교 지표를 정리한다 | bit accounting, comparison profile, report scripts | 슬라이드 8·10·11 | 10~11월 | 최종 보고용 비교 프로토콜과 bit 기준 설계안이 정리됨 |
 
-단계별 큰 흐름은 다음과 같다.
+PPT 블록 기준 큰 흐름은 다음과 같다.
 
-| 묶음 | 포함 순서 | 의미 |
+| PPT 블록 묶음 | 포함 순서 | 의미 |
 |---|---|---|
-| 평가기 기초 | 0 | 비디오 지표와 verifier가 의존할 최소 판정 기준을 먼저 맞춘다 |
-| 비디오 파이프라인 | 1~4 | mp4 입출력, 시간축 지표, motion-aware 판단, segment 구조를 만든다 |
-| 생성 복원 | 5~6 | LGVSC-inspired generate 분기를 붙이고 drift 억제 가능성을 본다 |
-| 검증·재생성 | 7~10 | packet verifier, OWLv2/VQA, held-out 평가로 생성 오류를 제어하고 평가 신뢰도를 높인다 |
-| 전송량·비교 | 11~12 | ETRI 문의사항인 channel-symbol 절감과 최종 비교 프로토콜을 정리한다 |
+| 슬라이드 6·7 검증/평가 블록 | 0, 7~10 | 비디오 지표와 verifier가 의존할 최소 판정 기준을 맞추고, 최종 평가는 held-out으로 분리한다 |
+| 슬라이드 5 비디오 확장 블록 | 1~6 | mp4 입출력, 시간축 지표, motion-aware 판단, segment 구조, generate 분기를 만든다 |
+| 슬라이드 8 전송량 절감 블록 | 11~12 | ETRI 문의사항인 channel-symbol 절감과 bit 기준 설계안을 정리한다 |
 
 **게이트 원칙:** 수치에 영향 없는 순수 배선(threshold 전달 등)은 게이트 불필요. 새 판정
 로직, 새 backend(OWLv2·VQA), negative-prompt 재생성, generate 분기, 학습형 adapter/critic은
