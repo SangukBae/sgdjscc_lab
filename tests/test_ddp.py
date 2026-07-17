@@ -185,8 +185,14 @@ def test_entrypoint_torchrun_dryrun(tmp_path):
                        capture_output=True, text=True, timeout=300)
     combined = r.stdout + r.stderr
     assert r.returncode == 0, combined[-3000:]
-    assert "DDP: rank=" in combined                 # setup_distributed ran (world>1)
-    assert combined.count("Dry-run complete") >= 2  # both ranks reached the dry-run
+    # Since 95d3c40 non-rank0 console logs are suppressed
+    # (distributed.configure_worker_logging) and the DDP summary is a single
+    # rank-0 line, so assert on that line — not the old per-rank "DDP: rank=".
+    assert "DDP: world_size=2" in combined          # setup_distributed ran (world>1)
+    # Rank 0 completed the dry-run; rank 1's console is ERROR-only by design,
+    # and its success is guaranteed by torchrun's exit code (any failing rank
+    # makes torchrun return non-zero, which the returncode assert above covers).
+    assert combined.count("Dry-run complete") >= 1
 
 
 def test_run_epoch_is_sample_weighted():
