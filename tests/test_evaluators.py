@@ -393,3 +393,115 @@ class TestSemanticReliabilitySchema:
         r = torch.rand(1, 3, 64, 64)
         result = srs.evaluate(o, r, text_list=["a cat sitting on a mat"])
         assert isinstance(result["clip_text_image"], float)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Presence threshold / uncertain-band wiring (ETRI plan step 0)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _SimMockCLIP:
+    """Mock CLIP whose per-vocabulary similarities are set explicitly.
+
+    The original image must be all-zeros and the reconstruction all-ones; the
+    image encoder maps them to basis vectors e0 / e1, and each vocabulary text
+    feature row is ``[orig_sim, recon_sim, 0, ...]`` so that
+    ``img_feat @ txt_feat.T`` reproduces the requested similarities exactly.
+    """
+
+    def __init__(self, orig_sims, recon_sims):
+        self.orig_sims = orig_sims
+        self.recon_sims = recon_sims
+
+    def _load(self):
+        pass
+
+    def _encode_images(self, tensor):
+        feat = torch.zeros(tensor.shape[0], 8)
+        is_recon = bool(tensor.float().mean() > 0.5)
+        feat[:, 1 if is_recon else 0] = 1.0
+        return feat
+
+    def _encode_texts(self, texts):
+        n = len(texts)
+        feats = torch.zeros(n, 8)
+        for i in range(n):
+            feats[i, 0] = self.orig_sims[i]
+            feats[i, 1] = self.recon_sims[i]
+        return feats
+
+
+class TestPresenceThresholdWiring:
+    """object_presence_threshold / uncertain band must actually reach the
+    evaluators (previously the config key existed but was never wired)."""
+
+    def _pair(self):
+        return torch.zeros(1, 3, 8, 8), torch.ones(1, 3, 8, 8)
+
+    def test_threshold_changes_detection(self):
+        from sgdjscc_lab.evaluators.object_preservation import ObjectPreservationEvaluator
+        o, r = self._pair()
+        clip = _SimMockCLIP(orig_sims=[0.5, 0.1], recon_sims=[0.5, 0.5])
+        low = ObjectPreservationEvaluator(
+            clip_evaluator=clip, vocabulary=["cat", "dog"], presence_threshold=0.25)
+        high = ObjectPreservationEvaluator(
+            clip_evaluator=clip, vocabulary=["cat", "dog"], presence_threshold=0.6)
+        assert low.evaluate(o, r)["original_count"] == 1.0     # cat only
+        assert high.evaluate(o, r)["original_count"] == 0.0    # nothing clears 0.6
+
+    def test_band_zero_matches_legacy(self):
+        from sgdjscc_lab.evaluators.object_preservation import ObjectPreservationEvaluator
+        o, r = self._pair()
+        clip = _SimMockCLIP(orig_sims=[0.5], recon_sims=[0.22])
+        legacy = ObjectPreservationEvaluator(
+            clip_evaluator=clip, vocabulary=["cat"], presence_threshold=0.25)
+        banded0 = ObjectPreservationEvaluator(
+            clip_evaluator=clip, vocabulary=["cat"], presence_threshold=0.25,
+            uncertain_band=0.0)
+        assert legacy.evaluate(o, r) == banded0.evaluate(o, r)
+
+    def test_uncertain_band_keeps_borderline_object(self):
+        from sgdjscc_lab.evaluators.object_preservation import ObjectPreservationEvaluator
+        o, r = self._pair()
+        # cat: confident in orig (0.5) but borderline in recon (0.22 < 0.25).
+        clip = _SimMockCLIP(orig_sims=[0.5], recon_sims=[0.22])
+        no_band = ObjectPreservationEvaluator(
+            clip_evaluator=clip, vocabulary=["cat"], presence_threshold=0.25)
+        band = ObjectPreservationEvaluator(
+            clip_evaluator=clip, vocabulary=["cat"], presence_threshold=0.25,
+            uncertain_band=0.05)
+        assert no_band.evaluate(o, r)["preservation_rate"] == pytest.approx(0.0)
+        assert band.evaluate(o, r)["preservation_rate"] == pytest.approx(1.0)
+
+    def test_uncertain_band_suppresses_borderline_hallucination(self):
+        from sgdjscc_lab.evaluators.hallucination import HallucinationEvaluator
+        o, r = self._pair()
+        # dog: absent in orig (0.1), barely above threshold in recon (0.27).
+        clip = _SimMockCLIP(orig_sims=[0.5, 0.1], recon_sims=[0.5, 0.27])
+        no_band = HallucinationEvaluator(
+            clip_evaluator=clip, vocabulary=["cat", "dog"], presence_threshold=0.25)
+        band = HallucinationEvaluator(
+            clip_evaluator=clip, vocabulary=["cat", "dog"], presence_threshold=0.25,
+            uncertain_band=0.05)
+        assert no_band.evaluate(o, r)["hallucination_score"] > 0.0
+        assert band.evaluate(o, r)["hallucination_score"] == pytest.approx(0.0)
+
+    def test_srs_evaluator_forwards_presence_settings(self):
+        from sgdjscc_lab.evaluators.semantic_reliability import SemanticReliabilityEvaluator
+        srs = SemanticReliabilityEvaluator(
+            clip_evaluator=_SimMockCLIP([0.5], [0.5]),
+            presence_threshold=0.4, presence_uncertain_band=0.1,
+        )
+        assert srs._get_obj_pres().presence_threshold == pytest.approx(0.4)
+        assert srs._get_obj_pres().uncertain_band == pytest.approx(0.1)
+        assert srs._get_hall().presence_threshold == pytest.approx(0.4)
+        assert srs._get_hall().uncertain_band == pytest.approx(0.1)
+
+    def test_eval_context_forwards_presence_settings(self):
+        from sgdjscc_lab.pipelines.eval_pipeline import EvalContext
+        ctx = EvalContext(
+            clip_evaluator=_SimMockCLIP([0.5], [0.5]),
+            presence_threshold=0.4, presence_uncertain_band=0.1,
+        )
+        srs = ctx._get_srs()
+        assert srs.presence_threshold == pytest.approx(0.4)
+        assert srs.presence_uncertain_band == pytest.approx(0.1)

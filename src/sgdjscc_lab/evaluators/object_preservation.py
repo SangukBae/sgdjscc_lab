@@ -10,6 +10,27 @@ CLIP similarity exceeds ``presence_threshold``.
 
 preservation_rate = |objects present in both| / |objects present in original|
 
+Uncertain band / hysteresis (optional, default off)
+---------------------------------------------------
+``uncertain_band`` (default 0.0) opens a hysteresis band of similarity scores
+around the presence threshold: an object that was confidently detected in the
+*original* (score >= threshold) still counts as *preserved* in the
+reconstruction when its reconstruction score stays above
+``threshold - uncertain_band``.  This makes borderline CLIP scores less likely
+to flip an object between "preserved" and "missing" (the flicker source noted
+in docs/etri_strategy.md).  With the default band of 0.0 the behaviour is
+bit-identical to the original single-threshold rule.
+
+PROVISIONAL IMPLEMENTATION NOTE (ETRI plan step 0 / 슬라이드 6·7)
+----------------------------------------------------------------
+The CLIP global text-image probe used here is an *interim* presence judge.
+It is threshold-sensitive and known to misfire on rare objects; per the ETRI
+strategy (docs/etri_strategy.md, 5차 단계) it will be reinforced/replaced by a
+grounded detector (OWLv2) and VQA-based presence verification, after which all
+presence-derived metrics (preservation / hallucination / SRS / PTC / SFR / SDI)
+must be re-measured.  Keep the constructor interface stable so those backends
+can slot in behind the same ``_detect_objects`` contract.
+
 Limitations
 -----------
 - Relies on CLIP's zero-shot text alignment; may misfire on rare objects or
@@ -17,8 +38,9 @@ Limitations
 - Presence threshold (default 0.25) requires per-dataset calibration for
   precise absolute numbers; relative comparisons (original vs reconstructed)
   are more reliable.
-- A full detector-based version (e.g. DETIC, YOLOv8) would be more accurate
-  but requires additional heavyweight dependencies not in the Phase 3 scope.
+- A full detector-based version (e.g. OWLv2, DETIC, YOLOv8) would be more
+  accurate but requires additional heavyweight dependencies (deferred to the
+  OWLv2/VQA reinforcement stage).
 """
 
 from __future__ import annotations
@@ -62,6 +84,11 @@ class ObjectPreservationEvaluator:
     presence_threshold:
         CLIP similarity threshold above which an object is considered "present".
         Default 0.25; lower values detect more objects but increase false positives.
+    uncertain_band:
+        Optional hysteresis band width (default 0.0 = off, legacy behaviour).
+        When > 0, an object detected in the original is still counted as
+        preserved while its reconstruction score is >= ``presence_threshold -
+        uncertain_band`` (see module docstring).
     device:
         Compute device.  Ignored when *clip_evaluator* is provided.
     """
@@ -71,11 +98,13 @@ class ObjectPreservationEvaluator:
         clip_evaluator=None,
         vocabulary: Optional[List[str]] = None,
         presence_threshold: float = 0.25,
+        uncertain_band: float = 0.0,
         device: Optional[torch.device] = None,
     ) -> None:
         self._clip = clip_evaluator
         self.vocabulary = vocabulary or _COCO_CLASSES
         self.presence_threshold = presence_threshold
+        self.uncertain_band = max(float(uncertain_band), 0.0)
         self._device = device or torch.device("cpu")
         self._text_features: Optional[torch.Tensor] = None
 
@@ -95,24 +124,31 @@ class ObjectPreservationEvaluator:
         self._text_features = clip_eval._encode_texts(prompts)  # [V, D]
         return self._text_features
 
-    def _detect_objects(self, image: torch.Tensor) -> List[str]:
+    def _object_similarities(self, image: torch.Tensor) -> List[float]:
+        """Per-vocabulary CLIP similarity scores for *image* (``[1,3,H,W]``)."""
+        clip_eval = self._get_clip()
+        img_feat = clip_eval._encode_images(image)          # [1, D]
+        txt_feat = self._get_text_features()                # [V, D]
+        sims = (img_feat @ txt_feat.T).squeeze(0)           # [V]
+        return sims.tolist()
+
+    def _detect_objects(
+        self, image: torch.Tensor, threshold: Optional[float] = None,
+    ) -> List[str]:
         """Return list of vocabulary items detected in *image*.
 
         Parameters
         ----------
         image:
             ``[1, 3, H, W]`` float tensor in [0, 1].
+        threshold:
+            Optional override of ``self.presence_threshold`` (used by the
+            hysteresis logic; callers such as ``HallucinationEvaluator`` may
+            also pass a stricter threshold).
         """
-        clip_eval = self._get_clip()
-        img_feat = clip_eval._encode_images(image)          # [1, D]
-        txt_feat = self._get_text_features()                # [V, D]
-        sims = (img_feat @ txt_feat.T).squeeze(0)           # [V]
-        detected = [
-            self.vocabulary[i]
-            for i, s in enumerate(sims.tolist())
-            if s >= self.presence_threshold
-        ]
-        return detected
+        thr = self.presence_threshold if threshold is None else float(threshold)
+        sims = self._object_similarities(image)
+        return [self.vocabulary[i] for i, s in enumerate(sims) if s >= thr]
 
     def evaluate(
         self,
@@ -146,12 +182,24 @@ class ObjectPreservationEvaluator:
         orig_counts: List[int] = []
         recon_counts: List[int] = []
 
+        thr = self.presence_threshold
+        band = self.uncertain_band
+        vocab = self.vocabulary
         for i in range(n):
-            orig_objs  = set(self._detect_objects(original[i:i+1]))
-            recon_objs = set(self._detect_objects(reconstructed[i:i+1]))
+            orig_sims  = self._object_similarities(original[i:i+1])
+            recon_sims = self._object_similarities(reconstructed[i:i+1])
+            orig_objs  = {v for v, s in zip(vocab, orig_sims) if s >= thr}
+            recon_objs = {v for v, s in zip(vocab, recon_sims) if s >= thr}
 
-            matched = orig_objs & recon_objs
-            missing = orig_objs - recon_objs
+            # Hysteresis: objects confirmed in the original stay "preserved"
+            # while their recon score is inside the uncertain band below the
+            # threshold.  With band == 0 this is exactly recon_objs (legacy).
+            recon_keep = recon_objs if band == 0.0 else {
+                v for v, s in zip(vocab, recon_sims) if s >= thr - band
+            }
+
+            matched = orig_objs & recon_keep
+            missing = orig_objs - recon_keep
 
             rate = len(matched) / max(len(orig_objs), 1)
             rates.append(rate)

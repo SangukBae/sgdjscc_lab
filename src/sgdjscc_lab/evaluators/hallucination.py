@@ -26,6 +26,16 @@ Same CLIP-probing caveats as ``object_preservation.py``:
 - A POPE-style VQA model would provide more rigorous yes/no per-object evidence.
 - Phase 3 delivers a research-grade first-pass metric, not a benchmark-certified
   hallucination detector.
+
+PROVISIONAL IMPLEMENTATION NOTE (ETRI plan step 0 / 슬라이드 6·7)
+----------------------------------------------------------------
+Like ``object_preservation.py``, the CLIP presence probe here is an interim
+judge; per docs/etri_strategy.md (5차 단계) it will be reinforced by OWLv2
+grounded detection and VQA verification behind the same evaluator interface,
+after which hallucination numbers must be re-measured.  The optional
+``uncertain_band`` (default 0.0 = legacy behaviour) requires a reconstruction
+score of at least ``presence_threshold + uncertain_band`` before flagging an
+object as hallucinated, so borderline CLIP scores do not inflate the rate.
 """
 
 from __future__ import annotations
@@ -49,6 +59,10 @@ class HallucinationEvaluator:
         Object category names to probe.  Defaults to COCO 80 classes.
     presence_threshold:
         CLIP similarity threshold to decide object presence (default 0.25).
+    uncertain_band:
+        Optional hysteresis band (default 0.0 = legacy).  When > 0, an object
+        only counts as hallucinated if its reconstruction score is at least
+        ``presence_threshold + uncertain_band`` (see module docstring).
     device:
         Compute device (used only if clip_evaluator is None).
     """
@@ -58,11 +72,13 @@ class HallucinationEvaluator:
         clip_evaluator=None,
         vocabulary: Optional[List[str]] = None,
         presence_threshold: float = 0.25,
+        uncertain_band: float = 0.0,
         device: Optional[torch.device] = None,
     ) -> None:
         self._clip = clip_evaluator
         self._vocab = vocabulary
         self.presence_threshold = presence_threshold
+        self.uncertain_band = max(float(uncertain_band), 0.0)
         self._device = device or torch.device("cpu")
         self._obj_eval = None
 
@@ -73,6 +89,7 @@ class HallucinationEvaluator:
                 clip_evaluator=self._clip,
                 vocabulary=self._vocab,
                 presence_threshold=self.presence_threshold,
+                uncertain_band=self.uncertain_band,
                 device=self._device,
             )
         return self._obj_eval
@@ -104,9 +121,12 @@ class HallucinationEvaluator:
         scores: List[float] = []
         extra_last: List[str] = []
 
+        # Hysteresis: with a band, flagging an object as hallucinated requires a
+        # confidently-above-threshold recon score (thr + band); band 0 = legacy.
+        extra_thr = self.presence_threshold + self.uncertain_band
         for i in range(n):
             orig_objs  = set(obj_eval._detect_objects(original[i:i+1]))
-            recon_objs = set(obj_eval._detect_objects(reconstructed[i:i+1]))
+            recon_objs = set(obj_eval._detect_objects(reconstructed[i:i+1], threshold=extra_thr))
 
             extra = recon_objs - orig_objs
             score = len(extra) / max(len(orig_objs), 1)

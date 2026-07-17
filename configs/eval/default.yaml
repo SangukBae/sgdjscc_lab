@@ -70,7 +70,12 @@ semantic_reliability_weights:
   w_add:  0.10    # penalty: additional (hallucinated) object rate
 
 # ── Object probing ────────────────────────────────────────────────────────────
+# PROVISIONAL: presence is judged by a CLIP text-image probe (see
+# evaluators/object_preservation.py); OWLv2/VQA reinforcement is a later stage.
 object_presence_threshold: 0.25        # CLIP similarity threshold for detection
+object_presence_uncertain_band: 0.0    # optional hysteresis band around the
+                                       # threshold (0.0 = legacy single-threshold
+                                       # behaviour; see object_preservation.py)
 
 # ── Regeneration loop ─────────────────────────────────────────────────────────
 use_regeneration_loop: false           # Enable semantic-reliability-triggered retry

@@ -279,10 +279,18 @@ def main() -> None:
     from sgdjscc_lab.utils.seed import set_global_seed
     device = resolve_device(cfg.device)
 
+    # Object presence judge settings (provisional CLIP probe; see
+    # object_preservation.py). object_presence_threshold previously existed in
+    # eval/default.yaml but was never wired to the evaluators — it now is.
+    presence_threshold = float(_OC.select(cfg, "object_presence_threshold", default=0.25))
+    presence_band = float(_OC.select(cfg, "object_presence_uncertain_band", default=0.0))
+
     eval_ctx = EvalContext(
         enabled_metrics=enabled,
         clip_model_name=clip_model_name,
         srs_weights=srs_weights,
+        presence_threshold=presence_threshold,
+        presence_uncertain_band=presence_band,
         packet_weights=packet_weights,
         packet_blend=packet_blend,
         use_srs_v2=use_srs_v2,

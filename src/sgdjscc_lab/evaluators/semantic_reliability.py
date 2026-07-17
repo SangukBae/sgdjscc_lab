@@ -81,6 +81,13 @@ class SemanticReliabilityEvaluator:
     weights:
         Dict with keys ``w_img``, ``w_txt``, ``w_pres``, ``w_miss``, ``w_add``.
         Missing keys default to ``_DEFAULT_WEIGHTS``.
+    presence_threshold / presence_uncertain_band:
+        Object presence settings forwarded to the lazily-built
+        ObjectPreservation / Hallucination sub-evaluators (config keys
+        ``object_presence_threshold`` / ``object_presence_uncertain_band``).
+        Ignored when the corresponding evaluator instance is injected directly.
+        NOTE: the presence judge is the provisional CLIP probe — see the
+        provisional-implementation notes in ``object_preservation.py``.
     device:
         Compute device (used when sub-evaluators are created internally).
     """
@@ -93,11 +100,15 @@ class SemanticReliabilityEvaluator:
         weights: Optional[Dict[str, float]] = None,
         packet_weights: Optional[Dict[str, float]] = None,
         packet_blend: float = 0.5,
+        presence_threshold: float = 0.25,
+        presence_uncertain_band: float = 0.0,
         device: Optional[torch.device] = None,
     ) -> None:
         self._clip = clip_evaluator
         self._obj_pres = obj_pres_evaluator
         self._hall = hallucination_evaluator
+        self.presence_threshold = float(presence_threshold)
+        self.presence_uncertain_band = float(presence_uncertain_band)
         self._device = device or torch.device("cpu")
 
         w = dict(_DEFAULT_WEIGHTS)
@@ -124,7 +135,10 @@ class SemanticReliabilityEvaluator:
         if self._obj_pres is None:
             from sgdjscc_lab.evaluators.object_preservation import ObjectPreservationEvaluator
             self._obj_pres = ObjectPreservationEvaluator(
-                clip_evaluator=self._get_clip(), device=self._device
+                clip_evaluator=self._get_clip(),
+                presence_threshold=self.presence_threshold,
+                uncertain_band=self.presence_uncertain_band,
+                device=self._device,
             )
         return self._obj_pres
 
@@ -132,7 +146,10 @@ class SemanticReliabilityEvaluator:
         if self._hall is None:
             from sgdjscc_lab.evaluators.hallucination import HallucinationEvaluator
             self._hall = HallucinationEvaluator(
-                clip_evaluator=self._get_clip(), device=self._device
+                clip_evaluator=self._get_clip(),
+                presence_threshold=self.presence_threshold,
+                uncertain_band=self.presence_uncertain_band,
+                device=self._device,
             )
         return self._hall
 

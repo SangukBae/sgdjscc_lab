@@ -81,6 +81,12 @@ class EvalContext:
     enabled_metrics:   Optional[set]    = None
     clip_model_name:   str              = "ViT-B/32"
     srs_weights:       Optional[dict]   = None
+    # Object presence judge settings (provisional CLIP probe — see
+    # object_preservation.py). Wired from cfg keys object_presence_threshold /
+    # object_presence_uncertain_band so threshold changes actually reach the
+    # ObjectPreservation / Hallucination evaluators (ETRI plan step 0).
+    presence_threshold: float           = 0.25
+    presence_uncertain_band: float      = 0.0
     # Compute device for the eval-side models (CLIP / packet BLIP2 / VQA). When
     # None they default to CPU, which breaks fp16 (Half) caption/VQA models —
     # set this to the model device (e.g. cuda:0) to keep everything consistent.
@@ -141,6 +147,8 @@ class EvalContext:
                 weights=self.srs_weights,
                 packet_weights=self.packet_weights,
                 packet_blend=self.packet_blend,
+                presence_threshold=self.presence_threshold,
+                presence_uncertain_band=self.presence_uncertain_band,
             )
         return self.srs_evaluator
 
