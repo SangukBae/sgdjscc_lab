@@ -1,0 +1,45 @@
+# configs/composed_video_smoke.yaml – fast real-model validation config for the
+# ETRI 1차 video pipeline (see docs/etri_stage1_validation.md).
+#
+# Identical to composed_video.yaml except:
+#   - diffusion_step: 10 (vs 50) to keep the real-model smoke run short — this
+#     is a PIPELINE validation config, not an evaluation-quality config;
+#   - the motion gate is ON (temporal.motion_threshold) so the real-model path
+#     exercises the dual reuse gate and logs per-frame decisions;
+#   - outputs land under outputs/smoke_video/ to keep them separate from real
+#     evaluation artefacts.
+#
+# Usage (short sample clip, real model loading):
+#   python scripts/evaluate_video.py --config configs/composed_video_smoke.yaml \
+#       --input outputs/smoke_video/sample.mp4 --snr 5 --save-video
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - video/default
+
+use_phase4: true
+use_phase5: false
+use_packet_eval: true
+
+# Smoke speed-up: NOT an evaluation setting (paper/eval runs use 50).
+diffusion_step: 10
+
+# Exercise the motion gate in the real path (threshold is a smoke value, not a
+# tuned one — real-data tuning is a follow-up item).
+temporal:
+  motion_threshold: 0.08
+
+# Smoke outputs (separate from real evaluation artefacts)
+keyframe_json: "../outputs/smoke_video/keyframes.json"
+segment_json: "../outputs/smoke_video/segments.json"
+temporal_csv: "../outputs/smoke_video/temporal_metrics.csv"
+frame_log_csv: "../outputs/smoke_video/temporal_frames.csv"
+video_io:
+  extracted_frames_dir: "../outputs/smoke_video/video_frames"
+  recon_frames_dir: "../outputs/smoke_video/recon_frames"
+  save_recon_frames: true
+  save_recon_video: true
+  recon_video: "../outputs/smoke_video/recon.mp4"

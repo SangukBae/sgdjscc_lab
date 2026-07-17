@@ -16,6 +16,7 @@
 |---|---|
 | [etri_overview.md](./etri_overview.md) | ETRI 과제 목표, 전체 파이프라인, SRS, 실험 설정 |
 | [etri_strategy.md](./etri_strategy.md) | 핵심 한계 3가지, 개발 순서, 현재 구현 상태를 합친 전략 문서 |
+| [etri_stage1_validation.md](./etri_stage1_validation.md) | 1차 구현(순서 0~4) 검증 리포트 — 기준 커밋, 테스트/실행 결과, 산출물, 후속 항목 |
 | [paper_alignment.md](./paper_alignment.md) | 논문 정합성, `paper_mode`, 하이퍼파라미터 출처를 합친 정리 문서 |
 | [framework_file_roles.md](./framework_file_roles.md) | 파일별 실행 흐름과 역할 지도 |
 | [training_scaffold.md](./training_scaffold.md) | 학습 CLI: 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage + 데이터 준비 |
