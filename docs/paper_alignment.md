@@ -59,7 +59,10 @@ Wireless Image Transmission"**.
 - auto-caption, `filename` caption source 차단
 - Canny stand-in 차단, MuGE sidecar 요구
 - `shared_vae` edge transport 차단, `edge_jscc` 경로 요구
+- Stage 3 `edge_jscc`는 학습된 edge codec checkpoint를 요구
+- Stage 1 JSCC는 MSE-only가 아니라 MSE + patch-GAN 구조를 요구
 - zero-vector CFG null 차단, learned null token 요구
+- 논문 미공개값은 `paper_assumed_hparams`에 명시하고 실제 `train.*` 값과 일치해야 함
 - 확장 기능(Phase 4/5, packet, regeneration 등) 비활성 요구
 - eval metric set을 논문 보고 set에 맞춤
 
@@ -75,13 +78,17 @@ assumption**이다.
 | `diffusion_step=50`, `guidance_scale=4.0`, `controlnet_scale=0.3` | 유지 | 공개 코드 confirmed |
 | backbone hidden size 512 / timestep embedding 256 | 유지 | 공개 코드 confirmed |
 | JSCC stage 기본 SNR 10 dB | 유지 | 논문 + 공개 코드 관례 |
-| `cfg_dropout_prob=0.1`, `lr=1e-4`, `weight_decay=1e-5` | assumed default | 논문 미공개 |
+| `cfg_dropout_prob=0.1`, `lr=1e-4`, `weight_decay=1e-5` | `paper_assumed_hparams`에 분리 | 논문 미공개 |
+| Stage-1 `gan.weight=0.5`, hinge PatchGAN 설정 | `paper_assumed_hparams`에 분리 | 논문 미공개 |
 | edge codec ViT / multi-SNR range 0~20 dB | recent faithful approximation | 공개 exact WITT 재사용 불가 |
 
 ## 학습 경로의 주요 비등가
 
-- Stage 1 손실은 patch-GAN exact 재현이 아니라 MSE/LPIPS/GAN 조합 선택형이다.
+- Stage 1 paper config는 논문 구조에 맞춰 MSE+patch-GAN을 사용한다. 단,
+  GAN weight와 discriminator 세부값은 논문 미공개라 `paper_assumed_hparams`의
+  가정값이다. MSE-only는 paper-mode baseline이 아니라 ablation으로 둔다.
 - Stage 3 edge transport는 `edge_jscc` baseline과 `shared_vae` ablation을 함께 둔다.
+  paper_mode에서는 학습된 `edge_codec` checkpoint가 없는 `edge_jscc`를 거부한다.
 - `end_to_end_ft`는 논문 baseline이 아니라 추가 실험이다.
 - 논문의 대규모(~14M pair, 250k step) 데이터/스케줄은 repo에 번들되지 않았다.
 - complex transport와 joint CSI는 layer 수준 scaffold이지 e2e faithful 재학습 경로는 아니다.

@@ -38,12 +38,12 @@ Ground-truth 우선순위: **공개 코드 우선**, 논문 table 차순; 충돌
 
 | 항목 | 기본값 | 상태 |
 |---|---|---|
-| `lr` / `weight_decay` | 1e-4 / 1e-5 | assumed (전형적 AdamW latent-DM); 미공개 |
+| `lr` / `weight_decay` | 1e-4 / 1e-5 | assumed (전형적 AdamW latent-DM); 미공개; `paper_assumed_hparams`에 명시 |
 | `cfg_dropout_prob` | 0.1 | assumed (PixArt 관례); 미공개 |
 | CFG null token | `learned`(논문 cfg) / `zero`(기본) | paper-like intent |
 | edge codec (`vit`, embed 128, depth 4, heads 4) | 표기대로 | 재현 가능한 최근접; 정확한 WITT 재사용은 **unsupported** |
 | edge codec multi-SNR range | 0–20 dB | assumed; 미공개 |
-| JSCC GAN weight λ | 0.5 | paper-LIKE objective(MSE+λ·GAN); λ 미공개 |
+| JSCC GAN weight λ | 0.5 | paper-LIKE objective(MSE+λ·GAN); λ 미공개; `paper_assumed_hparams`에 명시 |
 | DM stage step / batch size | 250k / 64 | 논문 table-scale target; 코드 미확인 |
 
 pipeline이 돌고 *구조적으로* faithful하도록 설정했으며, config에 정직하게
@@ -79,12 +79,13 @@ MuGE precompute(split당 1회): `scripts/prepare_muge_edges.py --input <split>
 
 `training_scaffold.md`(실행 가이드)에서 이관한, 학습 경로가 논문과 다른 지점:
 
-- **Stage-1 손실** — MSE only / public-code-like(`+0.1·LPIPS(alex)`) / paper-like
-  (patch-GAN) 조합 선택, 기본 전부 off. 원본 LPIPS 결합·가중 스케줄은 미재현이라
-  perceptual 수치를 보장하지 않는다(§3의 GAN weight λ 참조).
+- **Stage-1 손실** — paper config는 논문 구조에 맞춰 MSE+patch-GAN을 사용한다.
+  다만 GAN weight λ와 discriminator 세부값은 미공개라 `paper_assumed_hparams`의
+  가정값이다. MSE-only / LPIPS 조합은 paper-mode baseline이 아니라 ablation이다.
 - **Stage-3 edge transport** — baseline은 `edge_jscc`(전용 encoder→채널→projector,
-  `edge_codec`이 학습한 checkpoint 로드), `shared_vae`는 비교용 ablation. codec 학습
-  데이터/스케줄의 논문 수치는 미보장(구조 정책은 [paper_gap_closure.md](./paper_gap_closure.md) item 4·6).
+  `edge_codec`이 학습한 checkpoint 로드), `shared_vae`는 비교용 ablation. paper_mode는
+  null/missing edge checkpoint를 거부한다. codec 학습 데이터/스케줄의 논문 수치는
+  미보장(구조 정책은 [paper_gap_closure.md](./paper_gap_closure.md) item 4·6).
 - **CSI 추정** — `SNREstimator`가 공개 `Prediction_Model`을 미러. 추론이 `net²=α`를
   쓰므로 net은 진폭 `√α`를 출력(target 메타데이터로 자동 √-wrap). phase/joint(Alg.3)은
   복소 채널 확장 전까지 scaffold.
