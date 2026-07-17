@@ -37,6 +37,7 @@ _PATH_KEYS = (
     "keyframe_json",
     "temporal_csv",
     "frame_log_csv",
+    "segment_json",
     # Training artefacts
     "train_input_path",
     "val_input_path",
@@ -50,6 +51,10 @@ _PATH_KEYS = (
 # Nested path fields (dotted) resolved the same way as the top-level ones, so
 # they land relative to the config dir regardless of the CWD the CLI runs from.
 _NESTED_PATH_KEYS = (
+    # Video IO artefacts (evaluate_video.py)
+    "video_io.extracted_frames_dir",           # mp4 → extracted frame folders
+    "video_io.recon_frames_dir",               # reconstructed frame folder
+    "video_io.recon_video",                    # re-assembled reconstruction mp4
     "train.controlnet.edge_jscc.checkpoint",   # trained edge codec for Stage 3
     "train.dataset.caption_path",              # manifest / coco_json / multi_manifest (train)
     "train.dataset.val_caption_path",          # manifest / coco_json / multi_manifest (val)

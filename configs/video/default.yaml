@@ -24,8 +24,32 @@ keyframe:
 temporal:
   reuse_threshold: 0.2                 # delta magnitude below which a frame reuses
                                        # the keyframe reconstruction (no diffusion)
+  # semantic_delta_threshold: 0.2      # optional alias for reuse_threshold
+                                       # (ETRI naming; overrides it when set)
+  # ── Motion gate (ETRI 1차 step 3 — semantic delta + motion dual gate) ──────
+  # Default null = motion gate OFF → decisions identical to the legacy
+  # semantic-delta-only pipeline. When set, inter-frames whose motion score vs
+  # the keyframe is >= motion_threshold are recomputed even if the semantic
+  # delta is small (catches camera pan/zoom with an unchanged object set).
+  # score = (1 - motion_weight)*residual_energy + motion_weight*block_max
+  motion_threshold: null               # e.g. 0.08 — tune per dataset
+  motion_weight: 0.5                   # blend: global residual vs max block motion
+  motion_grid: 8                       # block grid for motion_residual estimates
+
+# ── Video IO (ETRI 1차 step 1 — mp4 input / reconstructed frames + mp4) ───────
+video_io:
+  extracted_frames_dir: "../outputs/video_frames"  # mp4 input → frame folder here
+  recon_frames_dir: "../outputs/recon_frames"      # reconstructed frame folder
+  save_recon_frames: true              # write reconstructed frames as PNGs
+  save_recon_video: false              # re-assemble an mp4 (or use --save-video)
+  recon_video: "../outputs/recon.mp4"  # output mp4 path
+  fps: null                            # output fps; null = source fps (mp4 input)
+                                       # or 24 for frame-folder inputs
 
 # ── Outputs ───────────────────────────────────────────────────────────────────
 keyframe_json: "../outputs/keyframes.json"        # GOP / keyframe structure
+segment_json: "../outputs/segments.json"          # GOP/segment records (step 4)
 temporal_csv: "../outputs/temporal_metrics.csv"   # per-sequence temporal metrics
-frame_log_csv: "../outputs/temporal_frames.csv"   # per-frame log
+                                                  # incl. provisional PTC/SFR/SDI
+frame_log_csv: "../outputs/temporal_frames.csv"   # per-frame log incl. gate
+                                                  # decision + motion score

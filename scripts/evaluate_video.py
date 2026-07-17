@@ -1,23 +1,33 @@
 #!/usr/bin/env python
 """evaluate_video.py – Phase 4-B keyframe/temporal evaluation CLI.
 
-Processes a folder of *ordered* frames (an extracted video sequence) through the
-keyframe-oriented temporal pipeline:
+Processes an ordered frame sequence — either a folder of frames or a video file
+(mp4/avi/…, unpacked via utils/video_io) — through the keyframe-oriented
+temporal pipeline:
 
   scene-change detection → keyframe / inter-frame split → per-frame
-  reconstruction (full inference at keyframes, keyframe-reuse + semantic delta at
-  inter-frames) → temporal metrics.
+  reconstruction (full inference at keyframes, keyframe-reuse + semantic
+  delta + optional motion gate at inter-frames) → temporal metrics.
 
 Outputs
 -------
-- keyframe / GOP structure JSON   (cfg.keyframe_json)
-- per-sequence temporal metrics    (cfg.temporal_csv)
-- per-frame log CSV                 (cfg.frame_log_csv)
+- keyframe / GOP structure JSON       (cfg.keyframe_json)
+- GOP/segment records JSON             (cfg.segment_json)
+- per-sequence temporal metrics CSV    (cfg.temporal_csv) — includes the ETRI
+  1차 provisional time-axis metrics PTC / SFR / SDI
+- per-frame log CSV                    (cfg.frame_log_csv) — includes the
+  reuse/recompute gate decision + motion score per frame
+- reconstructed frame folder           (cfg.video_io.recon_frames_dir)
+- optional reconstructed mp4           (--save-video / cfg.video_io.save_recon_video)
 
 Usage
 -----
 python scripts/evaluate_video.py --config configs/composed_video.yaml \
     --input /path/to/ordered_frames/ --snr 5 --device cuda:0
+
+# mp4 input + re-assembled mp4 output:
+python scripts/evaluate_video.py --config configs/composed_video.yaml \
+    --input /path/to/clip.mp4 --save-video --snr 5
 
 # Dry run of the keyframe/delta logic without loading SGD-JSCC checkpoints:
 python scripts/evaluate_video.py --config configs/composed_video.yaml \
@@ -54,9 +64,19 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--config", "-c", required=True, help="Path to YAML config file")
-    p.add_argument("--input", "-i", default=None, help="Folder of ordered frames")
+    p.add_argument(
+        "--input", "-i", default=None,
+        help="Folder of ordered frames, or a video file (mp4/avi/mov/mkv/webm) "
+        "that is unpacked into ordered frames first (needs cv2 or ffmpeg).",
+    )
     p.add_argument("--snr", type=float, default=None, help="AWGN SNR (dB)")
     p.add_argument("--device", default=None, help="Compute device override")
+    p.add_argument(
+        "--save-video", action="store_true",
+        help="Assemble the reconstructed frames into an mp4 "
+        "(cfg.video_io.recon_video; also enabled via cfg.video_io.save_recon_video). "
+        "Uses the source fps for video inputs, else cfg.video_io.fps (default 24).",
+    )
     p.add_argument(
         "--no-models", action="store_true",
         help="Skip SGD-JSCC model loading; dry run with identity reconstruction. "
@@ -91,11 +111,34 @@ def _load_captions(captions_arg, files):
     return None
 
 
-def _load_frames(input_path: str):
+def _load_frames(cfg, input_path: str):
+    """Load ordered frames from a folder OR a video file.
+
+    Video inputs are unpacked into cfg.video_io.extracted_frames_dir/<stem>/ as
+    ordered PNGs first, then fed through the same loader as a frame folder.
+
+    Returns ``(files, frames, source_fps)`` — source_fps is None for folders.
+    """
     from sgdjscc_lab.io import list_image_files, load_image_as_tensor
-    files = list_image_files(input_path)
+    from sgdjscc_lab.utils import video_io
+
+    source_fps = None
+    if video_io.is_video_file(input_path):
+        if video_io.get_backend() is None:
+            sys.exit(
+                "Error: video input given but no video backend is available "
+                "(install opencv-python or make ffmpeg/ffprobe available on PATH)."
+            )
+        frames_root = Path(OmegaConf.select(
+            cfg, "video_io.extracted_frames_dir", default="../outputs/video_frames"))
+        out_dir = frames_root / Path(input_path).stem
+        extracted = video_io.extract_frames(input_path, out_dir)
+        files = extracted["files"]
+        source_fps = extracted["fps"]
+    else:
+        files = list_image_files(input_path)
     frames = [load_image_as_tensor(f) for f in files]
-    return files, frames
+    return files, frames, source_fps
 
 
 def main() -> None:
@@ -116,7 +159,7 @@ def main() -> None:
     logger.info("Video eval config: %s", args.config)
     logger.info("  input_path = %s", cfg.input_path)
 
-    files, frames = _load_frames(cfg.input_path)
+    files, frames, source_fps = _load_frames(cfg, cfg.input_path)
     logger.info("Loaded %d ordered frames.", len(frames))
 
     captions = _load_captions(args.captions, files)
@@ -137,6 +180,18 @@ def main() -> None:
     )
     max_gop = int(OmegaConf.select(cfg, "keyframe.max_gop", default=12))
     reuse_threshold = float(OmegaConf.select(cfg, "temporal.reuse_threshold", default=0.2))
+    # ETRI-plan alias: temporal.semantic_delta_threshold overrides reuse_threshold.
+    _sdt = OmegaConf.select(cfg, "temporal.semantic_delta_threshold", default=None)
+    if _sdt is not None:
+        reuse_threshold = float(_sdt)
+    # Motion gate (dual gate, ETRI 1차 step 3). Default None = disabled →
+    # identical to the legacy semantic-delta-only reuse decision.
+    motion_threshold = OmegaConf.select(cfg, "temporal.motion_threshold", default=None)
+    motion_weight = float(OmegaConf.select(cfg, "temporal.motion_weight", default=0.5))
+    motion_grid = int(OmegaConf.select(cfg, "temporal.motion_grid", default=8))
+    if motion_threshold is not None:
+        logger.info("Motion gate enabled: threshold=%.4g weight=%.2f grid=%d",
+                    float(motion_threshold), motion_weight, motion_grid)
 
     # ── Build reconstruct_fn / packet_fn ─────────────────────────────────────
     models = None
@@ -207,9 +262,14 @@ def main() -> None:
         def reconstruct_fn(frame, run_cfg):
             return frame.clone()
 
-    # SRS function (packet-aware)
+    # SRS function (packet-aware). Presence settings wired per ETRI step 0
+    # (provisional CLIP probe; see evaluators/object_preservation.py).
     from sgdjscc_lab.evaluators.semantic_reliability import SemanticReliabilityEvaluator
-    srs_eval = SemanticReliabilityEvaluator(clip_evaluator=clip_eval)
+    srs_eval = SemanticReliabilityEvaluator(
+        clip_evaluator=clip_eval,
+        presence_threshold=float(OmegaConf.select(cfg, "object_presence_threshold", default=0.25)),
+        presence_uncertain_band=float(OmegaConf.select(cfg, "object_presence_uncertain_band", default=0.0)),
+    )
 
     def srs_fn(op, rp):
         return srs_eval.score_packet(op, rp, srs_base=None)["srs_packet"]
@@ -225,6 +285,9 @@ def main() -> None:
         delta=None,
         cfg=cfg,
         reuse_threshold=reuse_threshold,
+        motion_threshold=(None if motion_threshold is None else float(motion_threshold)),
+        motion_weight=motion_weight,
+        motion_grid=motion_grid,
         diffusion_step=int(cfg.get("diffusion_step", 50)),
         srs_fn=srs_fn,
     )
@@ -260,6 +323,52 @@ def main() -> None:
         w.writerow(temporal_metrics)
     logger.info("Temporal metrics → %s", tcsv)
 
+    # ── GOP/segment records (ETRI 1차 step 4) ────────────────────────────────
+    seg_json = Path(OmegaConf.select(cfg, "segment_json", default="../outputs/segments.json"))
+    seg_json.parent.mkdir(parents=True, exist_ok=True)
+    with open(seg_json, "w", encoding="utf-8") as fh:
+        json.dump(result["segment_records"], fh, indent=2)
+    logger.info("Segment records → %s", seg_json)
+
+    # ── Reconstructed frames / video (ETRI 1차 step 1) ───────────────────────
+    saved_frames = []
+    if bool(OmegaConf.select(cfg, "video_io.save_recon_frames", default=True)):
+        from torchvision.utils import save_image as tv_save_image
+        recon_dir = Path(OmegaConf.select(
+            cfg, "video_io.recon_frames_dir", default="../outputs/recon_frames"))
+        recon_dir.mkdir(parents=True, exist_ok=True)
+        # Remove recon_*.png left by a previous run so the folder holds exactly
+        # this run's frames (a shorter re-run must not keep older tail frames).
+        # Only that pattern is deleted — other files in the folder are kept.
+        stale = sorted(recon_dir.glob("recon_*.png"))
+        for f in stale:
+            f.unlink()
+        if stale:
+            logger.info("Removed %d stale recon_*.png from %s", len(stale), recon_dir)
+        for rec in result["records"]:
+            if rec.recon is None:
+                continue
+            fp = recon_dir / f"recon_{rec.index:05d}.png"
+            tv_save_image(rec.recon.cpu().float().clamp(0, 1), str(fp))
+            saved_frames.append(fp)
+        logger.info("Reconstructed frames → %s (%d files)", recon_dir, len(saved_frames))
+
+    want_video = args.save_video or bool(
+        OmegaConf.select(cfg, "video_io.save_recon_video", default=False))
+    if want_video:
+        from sgdjscc_lab.utils import video_io
+        if not saved_frames:
+            logger.warning("--save-video: no reconstructed frames were saved "
+                           "(video_io.save_recon_frames is false?) — skipping mp4.")
+        elif video_io.get_backend() is None:
+            logger.warning("--save-video: no video backend (cv2/ffmpeg) available — skipping mp4.")
+        else:
+            fps = OmegaConf.select(cfg, "video_io.fps", default=None) or source_fps or 24.0
+            vpath = Path(OmegaConf.select(
+                cfg, "video_io.recon_video", default="../outputs/recon.mp4"))
+            video_io.write_video(saved_frames, vpath, fps=float(fps))
+            logger.info("Reconstructed video → %s", vpath)
+
     # ── Console summary ──────────────────────────────────────────────────────
     print("\n" + "=" * 66)
     print("  Temporal evaluation complete")
@@ -267,6 +376,7 @@ def main() -> None:
     for k, v in temporal_metrics.items():
         print(f"  {k:<32} {v}")
     print(f"\n  Keyframes: {result['keyframe_structure']['keyframes']}")
+    print(f"  Segments:  {len(result['segment_records'])}")
 
 
 if __name__ == "__main__":
