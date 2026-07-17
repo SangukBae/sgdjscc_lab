@@ -140,6 +140,13 @@ class FrameRecord:
     orig_packet: Optional[Dict] = None
     recon_packet: Optional[Dict] = None
     staged_schedule: Optional[Dict] = None
+    # Motion gate (Phase 4-B dual gate): keyframe-anchored motion estimate and
+    # the resulting decision. decision ∈ {"keyframe", "reuse",
+    # "recompute_semantic", "recompute_motion"}; motion fields stay None when
+    # motion gating is disabled (default).
+    motion: Optional[Dict] = None
+    motion_score: Optional[float] = None
+    decision: Optional[str] = None
     recon: Optional[object] = None   # reconstructed frame tensor (not logged)
 
     def to_log(self) -> Dict:
@@ -147,10 +154,14 @@ class FrameRecord:
             "index": self.index,
             "role": self.role,
             "reused": self.reused,
+            "decision": self.decision,
             "guidance_scale": self.guidance_scale,
             "transmitted_units": self.transmitted_units,
             "magnitude": (self.delta or {}).get("magnitude") if self.delta else None,
             "num_changes": (self.delta or {}).get("num_changes") if self.delta else None,
+            "motion_score": self.motion_score,
+            "motion_residual": (self.motion or {}).get("residual_energy") if self.motion else None,
+            "motion_block_max": (self.motion or {}).get("block_max") if self.motion else None,
             "srs": self.srs,
         }
 
@@ -183,8 +194,22 @@ class TemporalPipeline:
     cfg:
         Optional base run config passed to ``reconstruct_fn`` (copied per frame).
     reuse_threshold:
-        Delta magnitude below which an inter-frame reuses the keyframe
-        reconstruction instead of recomputing.
+        Semantic-delta magnitude below which an inter-frame is a *candidate* for
+        reusing the keyframe reconstruction (config alias:
+        ``temporal.semantic_delta_threshold``).
+    motion_threshold:
+        Optional keyframe-anchored motion-score threshold (Phase 4-B dual gate).
+        Default None = motion gating DISABLED → behaviour identical to the
+        semantic-delta-only pipeline.  When set, an inter-frame whose semantic
+        delta is small but whose motion score vs the keyframe is >= this value
+        is NOT reused; it is recomputed (decision "recompute_motion").  This
+        catches camera pan/zoom where the object inventory is unchanged but the
+        pixels moved (docs/etri_strategy.md 한계 1).
+    motion_weight:
+        Blend between global and localised motion in the score:
+        ``score = (1-w)*residual_energy + w*block_max`` (default 0.5).
+    motion_grid:
+        Block grid size for ``motion_residual.block_motion`` (default 8).
     diffusion_step:
         Single source of truth for the denoising-step count used by **both** the
         staged schedule (stage boundaries) and the per-frame reconstruction
@@ -205,6 +230,9 @@ class TemporalPipeline:
         delta=None,
         cfg=None,
         reuse_threshold: float = 0.2,
+        motion_threshold: Optional[float] = None,
+        motion_weight: float = 0.5,
+        motion_grid: int = 8,
         diffusion_step: Optional[int] = None,
         srs_fn: Optional[Callable] = None,
     ) -> None:
@@ -212,6 +240,9 @@ class TemporalPipeline:
         self.packet_fn = packet_fn
         self.cfg = cfg
         self.reuse_threshold = reuse_threshold
+        self.motion_threshold = None if motion_threshold is None else float(motion_threshold)
+        self.motion_weight = float(motion_weight)
+        self.motion_grid = int(motion_grid)
         # Resolve the authoritative step count: explicit arg wins, else cfg, else 50.
         if diffusion_step is not None:
             self.diffusion_step = int(diffusion_step)
@@ -266,6 +297,21 @@ class TemporalPipeline:
             out.guidance_scale = gs
         return out, gs
 
+    def _motion_vs_keyframe(self, keyframe_frame, frame):
+        """Keyframe-anchored motion estimate → ``(motion_dict, motion_score)``.
+
+        Only computed when motion gating is enabled (``motion_threshold`` set)
+        and a keyframe pixel reference exists; returns ``(None, None)``
+        otherwise, keeping the default path identical to the legacy pipeline.
+        """
+        if self.motion_threshold is None or keyframe_frame is None:
+            return None, None
+        from sgdjscc_lab.video.motion_residual import estimate
+        motion = estimate(keyframe_frame, frame, grid=self.motion_grid)
+        w = min(max(self.motion_weight, 0.0), 1.0)
+        score = float((1.0 - w) * motion["residual_energy"] + w * motion["block_max"])
+        return motion, score
+
     def run(self, frames: List) -> Dict:
         """Process an ordered list of frame tensors.
 
@@ -283,10 +329,12 @@ class TemporalPipeline:
         roles = structure["frame_roles"]
 
         records: List[FrameRecord] = []
-        # GOP anchor — both the packet reference (for delta) and the pixel
-        # reference (for reuse) are the current keyframe, kept consistent.  These
-        # are NOT advanced by inter-frame recomputations.
+        # GOP anchor — the packet reference (for delta), the pixel reference (for
+        # reuse) and the raw keyframe pixels (for the motion gate) are the current
+        # keyframe, kept consistent.  These are NOT advanced by inter-frame
+        # recomputations.
         keyframe_packet: Optional[Dict] = None
+        keyframe_frame = None
         keyframe_recon = None
         keyframe_recon_packet: Optional[Dict] = None
 
@@ -299,8 +347,9 @@ class TemporalPipeline:
                 cfg_i, gs = self._frame_cfg(schedule, magnitude=None)
                 recon = self.reconstruct_fn(frame, cfg_i)
                 recon_packet = self.packet_fn(recon, f"recon_{i:05d}")
-                # Set the GOP anchor (packet + pixel reference together).
+                # Set the GOP anchor (packet + pixel + motion reference together).
                 keyframe_packet = curr_packet
+                keyframe_frame = frame
                 keyframe_recon = recon
                 keyframe_recon_packet = recon_packet
                 rec = FrameRecord(
@@ -308,12 +357,18 @@ class TemporalPipeline:
                     guidance_scale=gs,
                     transmitted_units=count_units(curr_packet),
                     orig_packet=curr_packet, recon_packet=recon_packet,
-                    staged_schedule=schedule,
+                    staged_schedule=schedule, decision="keyframe",
                 )
             else:
                 # Reference = keyframe packet (consistent with the pixel reference).
                 d = self.delta.compute(keyframe_packet or {}, curr_packet)
-                if d["magnitude"] < self.reuse_threshold:
+                # Dual gate (Phase 4-B): semantic delta AND keyframe-anchored
+                # motion must both be small to reuse.  Motion gating is off by
+                # default (motion_threshold=None) → legacy semantic-only gate.
+                motion, motion_score = self._motion_vs_keyframe(keyframe_frame, frame)
+                semantic_ok = d["magnitude"] < self.reuse_threshold
+                motion_ok = motion_score is None or motion_score < self.motion_threshold
+                if semantic_ok and motion_ok:
                     # Reuse the keyframe reconstruction AND its packet — the pixel
                     # and packet references are the same keyframe, so reuse
                     # semantics stay consistent.  Only the delta is "transmitted".
@@ -325,12 +380,21 @@ class TemporalPipeline:
                         transmitted_units=d["num_changes"],
                         orig_packet=curr_packet, recon_packet=recon_packet,
                         staged_schedule=schedule,
+                        motion=motion, motion_score=motion_score,
+                        decision="reuse",
                     )
                 else:
                     # Recompute this frame with the staged prompt + attenuated
                     # guidance.  The GOP anchor is left unchanged so subsequent
-                    # inter-frames keep referencing the keyframe.
-                    cfg_i, gs = self._frame_cfg(schedule, magnitude=d["magnitude"])
+                    # inter-frames keep referencing the keyframe.  When the
+                    # recompute was triggered by motion (semantic delta small),
+                    # fold the motion score into the guidance magnitude so large
+                    # motion leans more on the current frame's own evidence.
+                    decision = "recompute_semantic" if not semantic_ok else "recompute_motion"
+                    mag = float(d["magnitude"])
+                    if not motion_ok:
+                        mag = max(mag, min(1.0, float(motion_score)))
+                    cfg_i, gs = self._frame_cfg(schedule, magnitude=mag)
                     recon = self.reconstruct_fn(frame, cfg_i)
                     recon_packet = self.packet_fn(recon, f"recon_{i:05d}")
                     rec = FrameRecord(
@@ -339,6 +403,8 @@ class TemporalPipeline:
                         transmitted_units=d["num_changes"],
                         orig_packet=curr_packet, recon_packet=recon_packet,
                         staged_schedule=schedule,
+                        motion=motion, motion_score=motion_score,
+                        decision=decision,
                     )
 
             rec.recon = recon
@@ -351,10 +417,21 @@ class TemporalPipeline:
             records.append(rec)
 
         summary = self._summarize(records)
+
+        # GOP/segment abstraction (ETRI 1차 step 4): frame records grouped per
+        # GOP with delta/motion/temporal summaries.  Pure aggregation over the
+        # already-computed records — no numeric effect on the frame path.  The
+        # generate branch (3차) will attach per-segment generation results via
+        # SegmentRecord.generation.
+        from sgdjscc_lab.video.segment import build_segments
+        segments = build_segments(records, structure)
+
         return {
             "frame_records": [r.to_log() for r in records],
             "keyframe_structure": structure,
             "records": records,
+            "segments": segments,
+            "segment_records": [s.to_dict() for s in segments],
             "summary": summary,
         }
 
@@ -372,6 +449,8 @@ class TemporalPipeline:
             "n_keyframes": n_key,
             "n_interframes": n - n_key,
             "n_reused": n_reused,
+            "n_recompute_semantic": sum(1 for r in records if r.decision == "recompute_semantic"),
+            "n_recompute_motion": sum(1 for r in records if r.decision == "recompute_motion"),
             "transmitted_units": transmitted,
             "naive_units": naive,
             "overhead_reduction": float(round(reduction, 6)),

@@ -180,7 +180,10 @@ class TestTemporalPipeline:
     def test_run_returns_expected_structure(self):
         frames = _two_scene_frames(3)
         res = self._pipeline().run(frames)
-        assert set(res.keys()) == {"frame_records", "keyframe_structure", "records", "summary"}
+        assert set(res.keys()) == {
+            "frame_records", "keyframe_structure", "records",
+            "segments", "segment_records", "summary",
+        }
         assert len(res["frame_records"]) == 6
 
     def test_two_keyframes_detected(self):
@@ -377,3 +380,204 @@ class TestTemporalConsistency:
         ]
         out = evaluate_sequence(recs)
         assert out["temporal_srs"] == pytest.approx(0.9)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ETRI 1차 time-axis metrics: PTC / SFR / SDI (provisional, packet-based)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPTCSFRSDI:
+    def _rec(self, role, orig_objs, recon_objs):
+        return {
+            "role": role,
+            "orig_packet": build_packet(objects=orig_objs, scene="s"),
+            "recon_packet": build_packet(objects=recon_objs, scene="s"),
+        }
+
+    def test_keys_present(self):
+        from sgdjscc_lab.evaluators.temporal_consistency import evaluate_sequence
+        out = evaluate_sequence([self._rec("keyframe", ["car"], ["car"])])
+        for k in ("ptc", "sfr", "sdi"):
+            assert k in out
+
+    def test_ptc_perfect_match_is_one(self):
+        from sgdjscc_lab.evaluators.temporal_consistency import evaluate_sequence
+        recs = [
+            self._rec("keyframe", ["car"], ["car"]),
+            self._rec("inter", ["car"], ["car"]),
+        ]
+        out = evaluate_sequence(recs)
+        assert out["ptc"] == pytest.approx(1.0)
+        assert out["sfr"] == pytest.approx(0.0)
+
+    def test_ptc_drops_on_packet_mismatch(self):
+        from sgdjscc_lab.evaluators.temporal_consistency import evaluate_sequence
+        recs = [
+            self._rec("keyframe", ["car", "tree"], ["car", "tree"]),
+            self._rec("inter", ["car", "tree"], ["car"]),          # missing tree
+        ]
+        out = evaluate_sequence(recs)
+        assert out["ptc"] < 1.0
+
+    def test_sfr_counts_spurious_birth(self):
+        from sgdjscc_lab.evaluators.temporal_consistency import evaluate_sequence
+        # Original object set is constant, but the recon makes a dog appear then
+        # vanish → pure flicker.
+        recs = [
+            self._rec("keyframe", ["car"], ["car"]),
+            self._rec("inter", ["car"], ["car", "dog"]),
+            self._rec("inter", ["car"], ["car"]),
+        ]
+        out = evaluate_sequence(recs)
+        assert out["sfr"] > 0.0
+
+    def test_sfr_ignores_genuine_scene_change(self):
+        from sgdjscc_lab.evaluators.temporal_consistency import evaluate_sequence
+        # The dog genuinely appears in the original too → not flicker.
+        recs = [
+            self._rec("keyframe", ["car"], ["car"]),
+            self._rec("inter", ["car", "dog"], ["car", "dog"]),
+        ]
+        out = evaluate_sequence(recs)
+        assert out["sfr"] == pytest.approx(0.0)
+
+    def test_sdi_positive_when_drifting_from_keyframe(self):
+        from sgdjscc_lab.evaluators.temporal_consistency import evaluate_sequence
+        # Recon packet loses more objects the further the frame is from its
+        # keyframe → drift grows with keyframe distance → positive slope.
+        recs = [
+            self._rec("keyframe", ["car", "tree", "dog", "bus"], ["car", "tree", "dog", "bus"]),
+            self._rec("inter", ["car", "tree", "dog", "bus"], ["car", "tree", "dog"]),
+            self._rec("inter", ["car", "tree", "dog", "bus"], ["car", "tree"]),
+            self._rec("inter", ["car", "tree", "dog", "bus"], ["car"]),
+        ]
+        out = evaluate_sequence(recs)
+        assert out["sdi"] is not None and out["sdi"] > 0.0
+
+    def test_sdi_zero_when_no_drift(self):
+        from sgdjscc_lab.evaluators.temporal_consistency import evaluate_sequence
+        recs = [
+            self._rec("keyframe", ["car"], ["car"]),
+            self._rec("inter", ["car"], ["car"]),
+            self._rec("inter", ["car"], ["car"]),
+        ]
+        out = evaluate_sequence(recs)
+        assert out["sdi"] == pytest.approx(0.0)
+
+    def test_sdi_none_without_roles(self):
+        from sgdjscc_lab.evaluators.temporal_consistency import evaluate_sequence
+        recs = [
+            {"orig_packet": build_packet(objects=["car"]),
+             "recon_packet": build_packet(objects=["car"])},
+        ]
+        assert evaluate_sequence(recs)["sdi"] is None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Motion gate (semantic delta + motion dual gate)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMotionGate:
+    """Inter-frames with an unchanged packet but large pixel motion must not be
+    reused when the motion gate is enabled (docs/etri_strategy.md 순서 3)."""
+
+    def _run(self, motion_threshold):
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+
+        # Frame 1 has identical semantics (same packet) but big pixel change.
+        frames = [torch.zeros(1, 3, 16, 16), torch.full((1, 3, 16, 16), 0.9)]
+
+        def packet_fn(frame, fid):
+            return build_packet(objects=["car"], scene="street scene")
+
+        kfx = KeyframeExtractor(_StubDetector([True, False]), max_gop=None)
+        pipe = TemporalPipeline(
+            reconstruct_fn=lambda f, c: f.clone(),
+            packet_fn=packet_fn,
+            keyframe_extractor=kfx,
+            reuse_threshold=0.2,
+            motion_threshold=motion_threshold,
+        )
+        return pipe.run(frames)
+
+    def test_default_no_motion_gate_reuses(self):
+        res = self._run(motion_threshold=None)
+        rec = res["records"][1]
+        assert rec.reused is True
+        assert rec.decision == "reuse"
+        assert rec.motion_score is None            # gate off → no motion computed
+
+    def test_high_motion_not_reused(self):
+        res = self._run(motion_threshold=0.1)
+        rec = res["records"][1]
+        assert rec.reused is False
+        assert rec.decision == "recompute_motion"
+        assert rec.motion_score is not None and rec.motion_score >= 0.1
+        assert res["summary"]["n_recompute_motion"] == 1
+
+    def test_low_motion_still_reuses(self):
+        # Threshold above the actual motion (≈0.9) → gate passes → reuse.
+        res = self._run(motion_threshold=5.0)
+        rec = res["records"][1]
+        assert rec.reused is True
+        assert rec.decision == "reuse"
+        assert rec.motion_score is not None        # gate on → motion logged
+
+    def test_motion_fields_in_frame_log(self):
+        res = self._run(motion_threshold=0.1)
+        log = res["frame_records"][1]
+        for k in ("decision", "motion_score", "motion_residual", "motion_block_max"):
+            assert k in log
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Segment abstraction (GOP/segment records)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSegmentRecords:
+    def _run(self):
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.scene_change_detector import SceneChangeDetector, SceneChangeConfig
+        pipe = TemporalPipeline(
+            reconstruct_fn=lambda frame, cfg: frame.clone(),
+            packet_fn=_packet_fn,
+            scene_detector=SceneChangeDetector(SceneChangeConfig(threshold=0.35)),
+            reuse_threshold=0.2,
+        )
+        return pipe.run(_two_scene_frames(3))
+
+    def test_one_segment_per_keyframe(self):
+        res = self._run()
+        assert len(res["segment_records"]) == res["summary"]["n_keyframes"]
+
+    def test_segments_cover_all_frames(self):
+        res = self._run()
+        covered = []
+        for seg in res["segment_records"]:
+            covered.append(seg["keyframe_index"])
+            covered.extend(seg["inter_frame_indices"])
+        assert sorted(covered) == list(range(res["summary"]["n_frames"]))
+
+    def test_segment_record_schema(self):
+        res = self._run()
+        seg = res["segment_records"][0]
+        for k in ("segment_id", "keyframe_index", "inter_frame_indices",
+                  "frame_decisions", "transmitted_units", "semantic_delta",
+                  "motion", "temporal_metrics", "generation"):
+            assert k in seg
+        # Generate branch is a reserved interface in the 1차 scope.
+        assert seg["generation"] is None
+        # Decisions align with the segment's frames.
+        assert [d["index"] for d in seg["frame_decisions"]] == \
+            [seg["keyframe_index"]] + seg["inter_frame_indices"]
+
+    def test_segment_units_sum_to_summary(self):
+        res = self._run()
+        total = sum(s["transmitted_units"] for s in res["segment_records"])
+        assert total == res["summary"]["transmitted_units"]
+
+    def test_segment_json_serialisable(self):
+        import json
+        res = self._run()
+        json.dumps(res["segment_records"])   # must not raise
