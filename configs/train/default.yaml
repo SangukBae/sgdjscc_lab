@@ -10,10 +10,38 @@
 # ── Paper-faithful reproduction mode ──────────────────────────────────────────
 # When true, sgdjscc_lab/paper_mode.py enforces the paper's intended config and
 # BLOCKS non-faithful stand-ins (auto-captions, Canny edges, shared_vae edge
-# transport, zero-vector CFG null, single-fixed-SNR edge codec). Default false →
-# all extensions remain available. See docs/paper_gap_closure.md and the
-# configs/paper_train_*.yaml bundle.
+# transport, random/missing edge codec checkpoints, zero-vector CFG null,
+# single-fixed-SNR edge codec, MSE-only Stage-1 paper claims). Default false →
+# all extensions/ablations remain available. See docs/paper_alignment.md and
+# the configs/paper_train_*.yaml bundle.
 paper_mode: false
+
+# ── Paper-assumed hyperparameters ────────────────────────────────────────────
+# The SGD-JSCC paper does not publish every training knob needed to reproduce a
+# run. Keep those assumed values in ONE place so they are auditable and cannot be
+# mistaken for paper-confirmed constants. paper_mode.py checks the active train.*
+# values against this block for the relevant stages.
+paper_assumed_hparams:
+  optimizer:
+    lr:           1.0e-4
+    weight_decay: 1.0e-5
+  jscc_gan:
+    weight: 0.5
+    mode:   hinge
+    lr:     1.0e-4
+    ndf:    64
+    n_layers: 3
+    norm:   batch
+  dm:
+    cfg_dropout_prob: 0.1
+    cfg_null_mode: learned
+  edge_codec:
+    multi_snr_min_db: 0.0
+    multi_snr_max_db: 20.0
+    vit_embed_dim: 128
+    vit_depth: 4
+    vit_num_heads: 4
+    vit_mlp_ratio: 2.0
 
 train:
   enabled:      true

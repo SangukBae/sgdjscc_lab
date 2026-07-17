@@ -1,17 +1,15 @@
-# configs/paper_train_jscc_gan.yaml – Stage 1 (JSCC), closer-to-paper MSE+GAN variant
+# configs/paper_train_jscc_gan.yaml – Stage 1 (JSCC), MSE+GAN compatibility alias
 #
-# The paper describes the JSCC autoencoder trained with a perceptual objective of
-# the form  L = MSE + λ · L_GAN  (Sec. VI). The EXACT λ (and the exact
-# discriminator architecture) are NOT published. This variant enables the
-# patch-GAN term with an ASSUMED weight so the training objective is structurally
-# closer to the paper than the MSE-only default — but the specific numbers are
-# reasonable defaults, NOT paper-confirmed.
+# The paper describes the JSCC autoencoder trained with an objective of the form
+# L = MSE + λ · L_GAN (Sec. VI). configs/paper_train_jscc.yaml now enables this
+# path by default; this file is kept as a backward-compatible explicit MSE+GAN
+# entry point. The exact λ and discriminator details remain unpublished.
 #
 # Honest labelling:
 #   - MSE + λ·GAN structure      -> paper-LIKE (matches the described objective)
 #   - gan.weight (λ = 0.5)       -> ASSUMED / unpublished in the paper
 #   - gan.* discriminator dims   -> ASSUMED reasonable defaults (config-driven)
-# Use configs/paper_train_jscc.yaml for the conservative MSE-only reproduction.
+# MSE-only is now an ablation, not the paper-mode Stage-1 baseline.
 # See docs/paper_training_alignment.md for the confirmed/assumed breakdown.
 #
 # Usage:

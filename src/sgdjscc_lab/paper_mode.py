@@ -172,6 +172,41 @@ def enforce_edge_transport_policy(cfg: DictConfig, stage: str) -> None:
         )
 
 
+def enforce_trained_edge_checkpoint_policy(cfg: DictConfig, stage: str) -> None:
+    """Require a concrete, existing edge-codec checkpoint for Stage-3 paper mode."""
+    if stage != STAGE_CONTROLNET:
+        return
+    checkpoint = OmegaConf.select(cfg, "train.controlnet.edge_jscc.checkpoint", default=None)
+    if not checkpoint:
+        raise PaperModeError(
+            "paper_mode: Stage-3 ControlNet requires a TRAINED edge_codec "
+            "checkpoint. Set train.controlnet.edge_jscc.checkpoint to the "
+            "best.pth produced by the edge_codec stage. A null checkpoint would "
+            "make edge_jscc a random stand-in, not a paper-oriented edge link."
+        )
+    path = Path(str(checkpoint))
+    if not path.is_file():
+        raise PaperModeError(
+            "paper_mode: Stage-3 ControlNet points to a missing edge_codec "
+            "checkpoint:\n"
+            f"  {path}\n"
+            "Train edge_codec first, or fix train.controlnet.edge_jscc.checkpoint."
+        )
+
+
+def enforce_jscc_gan_policy(cfg: DictConfig, stage: str) -> None:
+    """Require Stage-1 paper mode to use the paper-described MSE + GAN objective."""
+    if stage != STAGE_JSCC:
+        return
+    enabled = bool(OmegaConf.select(cfg, "train.jscc.gan.enabled", default=False))
+    if not enabled:
+        raise PaperModeError(
+            "paper_mode: Stage-1 JSCC must use the paper-described MSE + "
+            "patch-GAN objective. Set train.jscc.gan.enabled=true. If you want "
+            "the conservative MSE-only ablation, run with paper_mode=false."
+        )
+
+
 def enforce_cfg_null_policy(cfg: DictConfig, stage: str) -> None:
     """Require the learned CFG null token (not the zero-vector simplification)."""
     if stage not in (STAGE_TEXT_DM, STAGE_CONTROLNET, STAGE_END_TO_END_FT):
@@ -293,6 +328,81 @@ def enforce_edge_codec_snr_policy(cfg: DictConfig, stage: str) -> None:
         )
 
 
+def _assumed(cfg: DictConfig, dotted: str, default=None):
+    return OmegaConf.select(cfg, f"paper_assumed_hparams.{dotted}", default=default)
+
+
+def _require_float_match(cfg: DictConfig, actual_key: str, assumed_key: str) -> None:
+    actual = OmegaConf.select(cfg, actual_key, default=None)
+    assumed = _assumed(cfg, assumed_key, default=None)
+    if actual is None or assumed is None:
+        raise PaperModeError(
+            "paper_mode: missing paper-assumed hyperparameter wiring. "
+            f"Need both {actual_key!r} and paper_assumed_hparams.{assumed_key!r}."
+        )
+    if abs(float(actual) - float(assumed)) > 1e-12:
+        raise PaperModeError(
+            "paper_mode: active hyperparameter differs from the explicit "
+            f"paper-assumed value: {actual_key}={actual} but "
+            f"paper_assumed_hparams.{assumed_key}={assumed}. Update both "
+            "intentionally, or run with paper_mode=false for an ablation."
+        )
+
+
+def _require_str_match(cfg: DictConfig, actual_key: str, assumed_key: str) -> None:
+    actual = OmegaConf.select(cfg, actual_key, default=None)
+    assumed = _assumed(cfg, assumed_key, default=None)
+    if actual is None or assumed is None:
+        raise PaperModeError(
+            "paper_mode: missing paper-assumed hyperparameter wiring. "
+            f"Need both {actual_key!r} and paper_assumed_hparams.{assumed_key!r}."
+        )
+    if str(actual).lower() != str(assumed).lower():
+        raise PaperModeError(
+            "paper_mode: active hyperparameter differs from the explicit "
+            f"paper-assumed value: {actual_key}={actual!r} but "
+            f"paper_assumed_hparams.{assumed_key}={assumed!r}. Update both "
+            "intentionally, or run with paper_mode=false for an ablation."
+        )
+
+
+def enforce_assumed_hparams_policy(cfg: DictConfig, stage: str) -> None:
+    """Keep unpublished paper-like knobs explicit and in sync with train.* values."""
+    if OmegaConf.select(cfg, "paper_assumed_hparams", default=None) is None:
+        raise PaperModeError(
+            "paper_mode: missing top-level paper_assumed_hparams block. "
+            "Unpublished values must be explicit rather than hidden in train.*."
+        )
+
+    # Shared optimizer assumptions.
+    _require_float_match(cfg, "train.lr", "optimizer.lr")
+    _require_float_match(cfg, "train.weight_decay", "optimizer.weight_decay")
+
+    if stage == STAGE_JSCC:
+        _require_float_match(cfg, "train.jscc.gan.weight", "jscc_gan.weight")
+        _require_str_match(cfg, "train.jscc.gan.mode", "jscc_gan.mode")
+        _require_float_match(cfg, "train.jscc.gan.lr", "jscc_gan.lr")
+        _require_float_match(cfg, "train.jscc.gan.ndf", "jscc_gan.ndf")
+        _require_float_match(cfg, "train.jscc.gan.n_layers", "jscc_gan.n_layers")
+        _require_str_match(cfg, "train.jscc.gan.norm", "jscc_gan.norm")
+
+    if stage in (STAGE_TEXT_DM, STAGE_CONTROLNET, STAGE_END_TO_END_FT):
+        _require_float_match(cfg, "train.dm.cfg_dropout_prob", "dm.cfg_dropout_prob")
+        _require_str_match(cfg, "train.dm.cfg_null_mode", "dm.cfg_null_mode")
+
+    if stage == STAGE_EDGE_CODEC:
+        _require_float_match(
+            cfg, "train.edge_codec.multi_snr.min_db", "edge_codec.multi_snr_min_db")
+        _require_float_match(
+            cfg, "train.edge_codec.multi_snr.max_db", "edge_codec.multi_snr_max_db")
+        arch = str(OmegaConf.select(cfg, "train.edge_codec.arch", default="")).lower()
+        if arch == "vit":
+            _require_float_match(cfg, "train.edge_codec.vit.embed_dim", "edge_codec.vit_embed_dim")
+            _require_float_match(cfg, "train.edge_codec.vit.depth", "edge_codec.vit_depth")
+            _require_float_match(cfg, "train.edge_codec.vit.num_heads", "edge_codec.vit_num_heads")
+            _require_float_match(cfg, "train.edge_codec.vit.mlp_ratio", "edge_codec.vit_mlp_ratio")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Top-level entry point
 # ─────────────────────────────────────────────────────────────────────────────
@@ -307,9 +417,12 @@ def enforce(cfg: DictConfig, stage: str,
     if not is_enabled(cfg):
         return
     logger.info("paper_mode=ON → enforcing paper-faithful guardrails for stage=%s", stage)
+    enforce_assumed_hparams_policy(cfg, stage)
+    enforce_jscc_gan_policy(cfg, stage)
     enforce_caption_policy(cfg, stage, input_dirs)
     enforce_edge_policy(cfg, stage)
     enforce_edge_transport_policy(cfg, stage)
+    enforce_trained_edge_checkpoint_policy(cfg, stage)
     enforce_cfg_null_policy(cfg, stage)
     enforce_edge_codec_snr_policy(cfg, stage)
 
@@ -324,7 +437,8 @@ def summary() -> str:
     return (
         "paper_mode enforces: blocks auto-generated captions (provenance sentinel) "
         "and the 'filename' pseudo-source (sidecar/manifest are TRUSTED, not "
-        "verified); MuGE soft edges (no Canny); edge_jscc transport (no shared_vae); "
-        "learned CFG null token (no zero-vector); multi-SNR edge codec; and "
-        "(eval) all extensions disabled."
+        "verified); Stage-1 MSE+GAN (no MSE-only paper claim); MuGE soft edges "
+        "(no Canny); trained edge_jscc checkpoint (no random/shared_vae edge link); "
+        "learned CFG null token (no zero-vector); explicit paper_assumed_hparams; "
+        "multi-SNR edge codec; and (eval) all extensions disabled."
     )

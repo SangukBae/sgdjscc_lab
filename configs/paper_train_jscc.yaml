@@ -8,10 +8,10 @@
 #   python scripts/train.py --config configs/paper_train_jscc.yaml \
 #       --train-list data/imagenet/train --val-list data/imagenet/val --device cuda:0
 #
-# See docs/paper_gap_closure.md for what paper_mode enforces and the remaining gaps.
-# This base config stays MSE-only (the conservative, reproducible default). For a
-# closer-to-paper MSE+GAN variant — with an ASSUMED, unpublished GAN weight — use
-# configs/paper_train_jscc_gan.yaml (a variant, NOT paper-confirmed).
+# See docs/paper_gap_closure.md for what paper_mode enforces and the remaining
+# gaps. The paper describes Stage 1 with an MSE + patch-GAN objective; the exact
+# GAN weight/discriminator details are unpublished, so those values are tracked
+# under top-level paper_assumed_hparams and checked by paper_mode.
 
 _defaults_:
   - channel/awgn
@@ -32,8 +32,14 @@ train:
   jscc:
     snr_db: 10.0            # FIXED AWGN SNR for JSCC training (paper)
     gan:
-      enabled: false        # MSE-only by default; the paper couples MSE (+GAN/LPIPS)
-                            # — enable train.jscc.gan/lpips for the perceptual term.
+      enabled: true         # MSE + λ·GAN structure from the paper
+      weight:  0.5          # λ — ASSUMED / unpublished, see paper_assumed_hparams
+      mode:    hinge        # assumed discriminator loss flavour
+      lr:      1.0e-4       # assumed discriminator optimizer lr
+      in_channels: 3
+      ndf:         64
+      n_layers:    3
+      norm:        batch
 
 checkpoint_dir:  "../outputs/checkpoints/paper_jscc"
 train_log_path:  "../outputs/paper_jscc_train_log.jsonl"

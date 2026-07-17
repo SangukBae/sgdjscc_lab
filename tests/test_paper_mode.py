@@ -60,6 +60,66 @@ def test_paper_text_dm_passes_validation_and_paper_mode():
     paper_mode.enforce(cfg, "text_dm", input_dirs=[])
 
 
+def test_paper_mode_requires_jscc_gan_and_assumed_match():
+    """Stage-1 paper mode rejects MSE-only and stale assumed-hparam wiring."""
+    cfg = OmegaConf.create({
+        "paper_mode": True,
+        "paper_assumed_hparams": {
+            "optimizer": {"lr": 1e-4, "weight_decay": 1e-5},
+            "jscc_gan": {"weight": 0.5, "mode": "hinge", "lr": 1e-4,
+                          "ndf": 64, "n_layers": 3, "norm": "batch"},
+        },
+        "train": {
+            "lr": 1e-4,
+            "weight_decay": 1e-5,
+            "jscc": {"gan": {"enabled": False, "weight": 0.5, "mode": "hinge",
+                              "lr": 1e-4, "ndf": 64, "n_layers": 3, "norm": "batch"}},
+        },
+    })
+    with pytest.raises(PaperModeError, match="MSE \\+ patch-GAN"):
+        paper_mode.enforce(cfg, "jscc", input_dirs=[])
+
+    cfg.train.jscc.gan.enabled = True
+    paper_mode.enforce(cfg, "jscc", input_dirs=[])
+
+    cfg.train.jscc.gan.weight = 0.25
+    with pytest.raises(PaperModeError, match="paper_assumed_hparams"):
+        paper_mode.enforce(cfg, "jscc", input_dirs=[])
+
+
+def test_paper_mode_requires_trained_edge_checkpoint(tmp_path):
+    """Stage-3 paper mode refuses null/missing edge_jscc checkpoints."""
+    base = {
+        "paper_mode": True,
+        "paper_assumed_hparams": {
+            "optimizer": {"lr": 1e-4, "weight_decay": 1e-5},
+            "dm": {"cfg_dropout_prob": 0.1, "cfg_null_mode": "learned"},
+        },
+        "train": {
+            "lr": 1e-4,
+            "weight_decay": 1e-5,
+            "dataset": {"caption_source": "coco_json", "edge_source": "muge_sidecar"},
+            "dm": {"cfg_dropout_prob": 0.1, "cfg_null_mode": "learned"},
+            "controlnet": {
+                "edge_transport": "edge_jscc",
+                "edge_jscc": {"checkpoint": None},
+            },
+        },
+    }
+    cfg = OmegaConf.create(base)
+    with pytest.raises(PaperModeError, match="TRAINED edge_codec"):
+        paper_mode.enforce(cfg, "controlnet", input_dirs=[])
+
+    cfg.train.controlnet.edge_jscc.checkpoint = str(tmp_path / "missing.pth")
+    with pytest.raises(PaperModeError, match="missing edge_codec"):
+        paper_mode.enforce(cfg, "controlnet", input_dirs=[])
+
+    ckpt = tmp_path / "best.pth"
+    ckpt.write_bytes(b"placeholder")
+    cfg.train.controlnet.edge_jscc.checkpoint = str(ckpt)
+    paper_mode.enforce(cfg, "controlnet", input_dirs=[])
+
+
 # ── [2] caption guardrails ────────────────────────────────────────────────────
 
 def test_paper_mode_blocks_filename_caption():

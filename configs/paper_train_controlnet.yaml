@@ -4,7 +4,8 @@
 # structural guidance via a ControlNet branch (only the structural DiT blocks
 # train). paper_mode enforces:
 #   • MuGE soft edges        (edge_source=muge_sidecar — precompute first)
-#   • dedicated edge link     (edge_transport=edge_jscc; no shared_vae ablation)
+#   • trained dedicated edge link
+#     (edge_transport=edge_jscc + existing edge_codec checkpoint; no shared_vae/random)
 #   • learned CFG null token  (cfg_null_mode=learned)
 #   • dataset-provided captions (no auto-captions)
 #
