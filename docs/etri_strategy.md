@@ -199,6 +199,35 @@ PPT 블록 기준 큰 흐름은 다음과 같다.
 로직, 새 backend(OWLv2·VQA), negative-prompt 재생성, generate 분기, 학습형 adapter/critic은
 phase/config gate 뒤에 두고, 기본값에서 원본 SGD-JSCC 경로와 동일하게 동작하도록 관리한다.
 
+### 단계별 구현 묶음과 완료 확인 기준
+
+위 표의 0~12번을 그대로 직렬로만 처리하면 generate 분기보다 verifier가 늦게 붙는 문제가
+생긴다. 실제 개발은 아래 묶음 단위로 진행한다. 핵심 원칙은 **비디오 기반을 먼저 만들고,
+생성 분기를 붙이기 전에 packet verifier를 먼저 준비하는 것**이다.
+
+| 단계 | 포함 순서 | 구현할 것 | 완료 확인 |
+|---|---|---|---|
+| 1차 | 0~4 | Presence threshold 배선, mp4/frame IO, `PTC`/`SFR`/`SDI`, motion-aware gate, segment 구조 | 테스트 영상 입력 후 복원 frame/mp4가 생성되고, `temporal_metrics.csv`에 `PTC`/`SFR`/`SDI`가 기록되며, motion이 큰 구간이 reuse되지 않는지 로그로 확인 |
+| 2차 | 7 | `Packet Verifier`, 전송 packet과 복원 packet 비교, 오류 유형별 리포트, regeneration controller 기본 구조 | 추가/누락/왜곡 객체가 report에 분리 기록되고, 오류 유형별 controller decision 로그가 남음 |
+| 3차 | 5 | `video_generator` 인터페이스, `reuse`/`recompute`/`generate` 3-way 분기, start-only generation 경로 | config에서 generate를 켰을 때 inter-frame 일부가 generate branch로 들어가고, 생성 프레임이 저장됨 |
+| 4차 | 6 | start+end keyframe 조건을 받는 bidirectional generation mode | start-only와 start+end 결과를 같은 영상에서 비교하고, `SFR`/`SDI`/flicker가 별도 CSV로 기록됨 |
+| 5차 | 8~10 | OWLv2/VQA verifier 보강, temporal metric 재측정, GT/VLM 기반 SRS 보정 | CLIP-only 결과와 OWLv2/VQA 보강 결과가 비교 리포트로 나오고, loop-internal 지표와 held-out 지표가 분리되어 저장됨 |
+| 6차 | 11~12 | channel-symbol 절감 PoC, bit accounting 설계, 비교 프로토콜 | 절감률 vs `SRS`/`PTC` 곡선이 생성되고, symbol/pixel 또는 bpp 계산 로그와 최종 비교 조건 표가 생성됨 |
+
+각 단계의 최소 산출물은 다음과 같이 둔다.
+
+| 단계 | 최소 산출물 |
+|---|---|
+| 1차 | 복원 mp4 또는 frame folder, `temporal_frames.csv`, `temporal_metrics.csv`, keyframe/segment 구조 JSON, motion gate decision log |
+| 2차 | `packet_match_report.json` 또는 CSV, 오류 유형별 additional/missing/distorted 기록, controller decision log |
+| 3차 | `reuse`/`recompute`/`generate` 분기 로그, generated frames, generate ON/OFF 비교 metric CSV |
+| 4차 | start-only vs bidirectional 비교 CSV, `SFR`/`SDI`/flicker 비교 결과, drift 감소 여부 리포트 |
+| 5차 | CLIP-only vs OWLv2/VQA verifier 비교 리포트, temporal metric 재측정 결과, held-out 평가 결과, Temporal SRS Calibration 설정/결과 |
+| 6차 | channel-symbol 절감률 로그, 절감률 vs 의미 신뢰도 곡선, bit accounting 설계 문서, 최종 비교 프로토콜 |
+
+완료 기준은 "코드가 실행된다"가 아니라 **각 단계 결과가 파일로 남고, 이전 단계와 비교
+가능한 로그/CSV가 생성되는지**로 판단한다.
+
 ## 월별 추진계획
 
 | 시기 | 초점 | 산출물 |
