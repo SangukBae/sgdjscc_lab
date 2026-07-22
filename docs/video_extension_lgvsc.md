@@ -382,6 +382,20 @@ LGVSC 구성요소별로 현재 코드의 대응물과 필요한 작업.
 > 즉 generated segment length는 전송 payload가 아니라 **CBR 계산의 분모(구간 길이)**다.
 > 이 accounting 전까지는 "동일 CBR" 대신 "동일 semantic-unit overhead"처럼 무엇을 고정한
 > 비교인지 명시한다.
+>
+> **ETRI 6차 반영 (2026-07)** — 위에서 요구한 bit accounting이 신규
+> `accounting/bit_accounting.py`/`pipelines/transmission_accounting.py`로
+> **PoC 수준 구현**됐다: keyframe visual latent + edge side-info + semantic
+> packet/caption + motion side-info를 decision(`keyframe`/`reuse`/
+> `recompute_*`/`generate`)별로 bit/channel-symbol 단위로 합산하고,
+> `naive_full_frame_packet`/`keyframe_only_lgvsc_style` 두 baseline 대비
+> 절감률을 계산한다. `pipelines/rate_reliability_report.py`가 이 절감률을
+> `PTC`/`SFR`/`SDI`/severity와 한 행으로 묶어 rate-reliability trade-off를
+> 만든다. **여전히 실제 CBR/표준 bitstream 재현은 아니다** — latent symbol
+> 수는 실제 `encode_features` 텐서가 아니라 프레임 shape + 고정 아키텍처
+> 상수로부터의 추론이고, edge/motion side-info는 명시적 proxy 비율/quantization
+> 가정이다(모든 component에 `proxy: true/false` 플래그가 붙는다). 자세한
+> 내용은 docs/etri_strategy.md "6차 구현 결과" 참조.
 
 ### 6.3 단계별 계획
 
@@ -528,7 +542,13 @@ MVP 임계경로가 아닌 고도화 묶음.
   분기와 무의존이라 여기로 내린다
 - **adaptive keyframe policy** — 초기 proxy(semantic delta + motion + bit cost) →
   후속 generator difficulty proxy(❗반사실 추정·Tx/Rx 경계는 §7 참조)
-- **bit accounting 모델** — 주의 2대로 실제 전송량 산정. 이게 있어야 "동일 CBR" 비교 가능
+- **bit accounting 모델** — 주의 2대로 실제 전송량 산정. 이게 있어야 "동일 CBR" 비교 가능.
+  **ETRI 6차(2026-07)에서 PoC 수준으로 구현됨** — `accounting/bit_accounting.py`/
+  `pipelines/transmission_accounting.py`(decision별 bit/channel-symbol 합산 +
+  naive baseline 2종 대비 절감률) + `pipelines/rate_reliability_report.py`(절감률
+  vs `PTC`/`SFR`/`SDI`/severity trade-off). 남은 것은 실제 CBR/표준 bitstream 재현과
+  실 채널 코딩/변조 반영 — 이 PoC의 proxy 상수(edge_cr/symbols_per_bit_proxy/motion
+  quantization)를 실측치로 교체하는 작업이 후속이다.
 
 **판정 기준** — 각 항목이 **비용 대비 held-out 지표 이득**을 보이면 채택.
 
