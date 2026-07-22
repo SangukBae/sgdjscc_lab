@@ -201,6 +201,153 @@ class TestPacketVerifier:
         assert rep["severity"] == pytest.approx(1.0)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PacketVerifier presence-backend enhancement (ETRI 5차, step 8)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _always_present_calibrator():
+    """A PresenceCalibrator whose sole backend disagrees with every packet by
+    always saying "present" — used to prove the calibration path can actually
+    override the raw comparison (a plain MockPresenceBackend never can, since
+    it derives its answer from the same packet being verified)."""
+    from sgdjscc_lab.evaluators.presence_backends import PresenceBackend, PresenceResult
+    from sgdjscc_lab.evaluators.presence_calibration import PresenceCalibrator
+
+    class _AlwaysPresent(PresenceBackend):
+        backend_name = "clip"
+        def check(self, object_name, image=None, packet=None, gt_metadata=None):
+            return PresenceResult(object_name=object_name, present=True, confidence=0.95, backend="clip")
+
+    return PresenceCalibrator({"clip": _AlwaysPresent()}, mode="clip_only")
+
+
+def _always_absent_calibrator():
+    from sgdjscc_lab.evaluators.presence_backends import PresenceBackend, PresenceResult
+    from sgdjscc_lab.evaluators.presence_calibration import PresenceCalibrator
+
+    class _AlwaysAbsent(PresenceBackend):
+        backend_name = "clip"
+        def check(self, object_name, image=None, packet=None, gt_metadata=None):
+            return PresenceResult(object_name=object_name, present=False, confidence=0.05, backend="clip")
+
+    return PresenceCalibrator({"clip": _AlwaysAbsent()}, mode="clip_only")
+
+
+class TestPacketVerifierPresenceCalibration:
+    def test_default_unchanged_no_calibrator(self):
+        """No presence_calibrator at all → byte-identical to 2~4차 (plus the
+        new always-present metric_role/raw_clip_result/calibrated_presence_result
+        bookkeeping fields, which mirror the top-level values / stay None)."""
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        recon = build_packet(objects=["car"], scene="street scene")
+        rep = PacketVerifier().verify(_orig(), recon)
+        assert rep["missing_objects"] == ["dog"]
+        assert rep["metric_role"] == "loop_internal"
+        assert rep["calibrated_presence_result"] is None
+        assert rep["raw_clip_result"]["missing_objects"] == ["dog"]
+        assert rep["raw_clip_result"]["severity"] == rep["severity"]
+
+    def test_image_required_backend_without_image_leaves_report_unchanged(self):
+        """A calibrator whose only backend NEEDS an image (mirrors
+        ClipPresenceBackend) reports itself unavailable per-object when no
+        ``reconstructed_image`` is passed — the report must stay unchanged
+        rather than crash or fabricate an answer."""
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        from sgdjscc_lab.evaluators.presence_backends import PresenceBackend, PresenceBackendUnavailableError
+        from sgdjscc_lab.evaluators.presence_calibration import PresenceCalibrator
+
+        class _NeedsImage(PresenceBackend):
+            backend_name = "clip"
+            def check(self, object_name, image=None, packet=None, gt_metadata=None):
+                if image is None:
+                    raise PresenceBackendUnavailableError("needs an image")
+                raise AssertionError("should never be reached in this test")
+
+        recon = build_packet(objects=["car"], scene="street scene")
+        v = PacketVerifier(presence_calibrator=PresenceCalibrator({"clip": _NeedsImage()}, mode="clip_only"))
+        rep = v.verify(_orig(), recon)   # reconstructed_image omitted
+        assert rep["missing_objects"] == ["dog"]
+        assert rep["calibrated_presence_result"] is None
+
+    def test_image_free_backend_calibrates_without_image(self):
+        """The whole point of image-free backends (mock/gt): calibration must
+        still run — and be able to correct the report — even when
+        ``reconstructed_image`` is never supplied (e.g. held-out
+        remeasurement from saved packets with no pixels available)."""
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        recon = build_packet(objects=["car"], scene="street scene")
+        v = PacketVerifier(presence_calibrator=_always_present_calibrator())
+        rep = v.verify(_orig(), recon)   # reconstructed_image omitted — backend doesn't need it
+        assert rep["missing_objects"] == []
+        assert rep["raw_clip_result"]["missing_objects"] == ["dog"]
+        assert rep["calibrated_presence_result"] is not None
+
+    def test_gt_metadata_forwarded_to_gt_backend(self):
+        """PacketVerifier.verify(gt_metadata=...) must reach GtPresenceBackend,
+        even without an image."""
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        from sgdjscc_lab.evaluators.presence_backends import GtPresenceBackend
+        from sgdjscc_lab.evaluators.presence_calibration import PresenceCalibrator
+
+        recon = build_packet(objects=["car"], scene="street scene")
+        cal = PresenceCalibrator({"gt": GtPresenceBackend()}, mode="gt_only")   # no default metadata
+        v = PacketVerifier(presence_calibrator=cal)
+        rep = v.verify(_orig(), recon, gt_metadata={"dog": True})
+        assert rep["missing_objects"] == []   # GT (per-call) says dog IS present → corrected
+        assert rep["calibrated_presence_result"][0]["per_backend"][0]["backend"] == "gt"
+
+    def test_calibration_removes_false_missing(self):
+        import torch
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        recon = build_packet(objects=["car"], scene="street scene")
+        v = PacketVerifier(presence_calibrator=_always_present_calibrator())
+        rep = v.verify(_orig(), recon, reconstructed_image=torch.rand(1, 3, 4, 4))
+        assert rep["missing_objects"] == []                       # calibration disagreed → corrected
+        assert rep["raw_clip_result"]["missing_objects"] == ["dog"]   # raw snapshot preserved
+        assert rep["object_match_rate"] == pytest.approx(1.0)
+        assert rep["severity"] < rep["raw_clip_result"]["severity"]
+        assert rep["calibrated_presence_result"] is not None
+        assert rep["calibrated_presence_result"][0]["object_name"] == "dog"
+
+    def test_calibration_removes_false_additional(self):
+        import torch
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        orig = build_packet(objects=["car"], scene="street scene")
+        recon = build_packet(objects=["car", "dog"], scene="street scene")
+        v = PacketVerifier(presence_calibrator=_always_absent_calibrator())
+        rep = v.verify(orig, recon, reconstructed_image=torch.rand(1, 3, 4, 4))
+        assert rep["additional_objects"] == []                    # calibration says dog isn't really there
+        assert rep["raw_clip_result"]["additional_objects"] == ["dog"]
+        assert rep["severity"] < rep["raw_clip_result"]["severity"]
+
+    def test_calibration_confirms_missing_when_backend_agrees(self):
+        """A calibrator that agrees an object is absent must leave the report
+        as-is (missing stays missing) — calibration should not fabricate
+        false negatives just because it ran."""
+        import torch
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        recon = build_packet(objects=["car"], scene="street scene")
+        v = PacketVerifier(presence_calibrator=_always_absent_calibrator())
+        rep = v.verify(_orig(), recon, reconstructed_image=torch.rand(1, 3, 4, 4))
+        assert rep["missing_objects"] == ["dog"]
+        assert rep["severity"] == pytest.approx(rep["raw_clip_result"]["severity"])
+
+    def test_metric_role_override_per_call(self):
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        v = PacketVerifier(metric_role="loop_internal")
+        rep = v.verify(_orig(), _orig(), metric_role="held_out")
+        assert rep["metric_role"] == "held_out"
+
+    def test_report_stays_json_serialisable_with_calibration(self):
+        import json
+        import torch
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        recon = build_packet(objects=["car"], scene="street scene")
+        v = PacketVerifier(presence_calibrator=_always_present_calibrator())
+        rep = v.verify(_orig(), recon, reconstructed_image=torch.rand(1, 3, 4, 4))
+        json.dumps(rep)   # must not raise (no stray tensors/objects)
+
+
 class TestSegmentationConsistency:
     def test_none_when_absent(self):
         from sgdjscc_lab.evaluators.semantic_packet_matcher import segmentation_consistency

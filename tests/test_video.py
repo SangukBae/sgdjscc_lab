@@ -711,6 +711,73 @@ class TestPacketVerifierWiring:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Presence-backend calibration wiring through the video pipeline (ETRI 5차,
+# step 8). build_verifier_and_controller()/maybe_run() must stay byte-identical
+# to 2~4차 when verifier.use_presence_calibration is left at its default
+# (false); enabling it (with a stub backend that disagrees with the packet)
+# must visibly correct the packet_match_report rows.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _calibration_cfg(tmp_path, use_presence_calibration, presence_backends=("clip",), presence_mode="clip_only"):
+    cfg = _verifier_cfg(tmp_path)
+    cfg.verifier.use_presence_calibration = use_presence_calibration
+    cfg.verifier.presence_mode = presence_mode
+    cfg.verifier.presence_backends = list(presence_backends)
+    return cfg
+
+
+class TestPresenceCalibrationWiring:
+    def test_disabled_by_default_unchanged(self, tmp_path):
+        from sgdjscc_lab.pipelines.packet_verification import maybe_run, build_verifier_and_controller
+
+        res = _run_temporal_pipeline_with_hallucination()
+        cfg = _calibration_cfg(tmp_path, use_presence_calibration=False)
+        verifier, _ = build_verifier_and_controller(cfg)
+        assert verifier.presence_calibrator is None
+
+        out = maybe_run(res, cfg)
+        for row in out["rows"]:
+            assert row["calibrated_presence_result"] is None
+            assert row["metric_role"] == "loop_internal"
+            assert row["raw_clip_result"]["missing_objects"] == row["missing_objects"]
+
+    def test_enabled_with_unavailable_backend_degrades_silently(self, tmp_path):
+        # "gt" backend with no annotations configured raises
+        # PresenceBackendUnavailableError for every object (deterministic, no
+        # network/model dependency), which PacketVerifier catches per-object —
+        # rows must stay identical to the uncalibrated case rather than crash.
+        from sgdjscc_lab.pipelines.packet_verification import maybe_run
+
+        res = _run_temporal_pipeline_with_hallucination()
+        cfg = _calibration_cfg(
+            tmp_path, use_presence_calibration=True,
+            presence_backends=["gt"], presence_mode="gt_only",
+        )
+        out = maybe_run(res, cfg)
+        for row in out["rows"]:
+            assert row["missing_objects"] == row["raw_clip_result"]["missing_objects"]
+            assert row["additional_objects"] == row["raw_clip_result"]["additional_objects"]
+
+    def test_enabled_with_mock_backend_runs_without_crashing(self, tmp_path):
+        from sgdjscc_lab.pipelines.packet_verification import maybe_run
+
+        res = _run_temporal_pipeline_with_hallucination()
+        cfg = _calibration_cfg(
+            tmp_path, use_presence_calibration=True,
+            presence_backends=["mock"], presence_mode="ensemble_majority",
+        )
+        out = maybe_run(res, cfg)
+        # MockPresenceBackend derives its answer from the SAME reconstructed
+        # packet being verified, so it can never disagree with the raw
+        # comparison — this just proves the wiring (image passed through,
+        # calibrator invoked) doesn't crash end-to-end.
+        for row in out["rows"]:
+            assert row["calibrated_presence_result"] is not None or not (
+                row["missing_objects"] or row["additional_objects"]
+            )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Start-only generate branch (ETRI 3차, step 5) — TemporalPipeline 3-way
 # decision (reuse / recompute / generate) and SegmentRecord.generation wiring.
 # Default off (enable_generate=False) must reproduce the pre-3차 pipeline

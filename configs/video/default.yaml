@@ -85,6 +85,27 @@ verifier:
   decisions_json: "../outputs/controller_decisions.json"
   decisions_csv: "../outputs/controller_decisions.csv"
 
+  # ── Presence-backend enhancement (ETRI 5차 step 8) ──────────────────────────
+  # Lets missing/additional-object judgments be re-checked by a presence
+  # backend (evaluators/presence_backends.py) instead of trusting the packet's
+  # CLIP/caption-derived object list alone. Default OFF — with
+  # use_presence_calibration: false, PacketVerifier.verify() is byte-identical
+  # to 2~4차 (calibrated_presence_result stays None, raw_clip_result mirrors
+  # the same numbers as the top-level fields). This is calibration
+  # *structure*, not a verified accuracy improvement — real OWLv2/VQA weights
+  # are optional and never required for tests (see presence_backends.py).
+  use_presence_calibration: false
+  presence_mode: clip_only             # clip_only | owlv2_only | vqa_only | gt_only |
+                                       # ensemble_majority | ensemble_weighted
+  presence_backends: ["clip"]          # backend(s) to build; "*_only" modes only need
+                                       # their one matching backend, ensemble modes use all
+  presence_backend_weights: {}         # optional per-backend weight for ensemble_weighted
+                                       # (default 1.0 for any backend not listed)
+  # metric_role tags every packet_match_report row so a loop-internal
+  # (regeneration-driving) score is never confused with a held-out
+  # (final-report) one — see evaluators/packet_verifier.py.
+  metric_role: loop_internal           # loop_internal | held_out
+
 # ── Start-only / bidirectional video generation branch (ETRI 3차 step 5 + 4차 step 6) ──
 # Adds a third TemporalPipeline inter-frame branch — reuse / recompute / generate
 # — alongside the existing reuse/recompute-only pipeline. Scope: prove the
@@ -141,3 +162,32 @@ video_generator:
   comparison_output: "../outputs/generation_mode_comparison.json"
   comparison_start_only_csv: "../outputs/temporal_metrics_start_only.csv"
   comparison_bidirectional_csv: "../outputs/temporal_metrics_bidirectional.csv"
+
+# ── Held-out re-measurement pipeline (ETRI 5차 step 9) ────────────────────────
+# Re-reads TemporalPipeline records (or saved packets) and recomputes
+# clip-only vs presence-calibrated packet-verifier reports + PTC/SFR/SDI —
+# see pipelines/heldout_remeasurement.py and scripts/remeasure_video_metrics.py.
+# Default OFF. With no presence_calibrator (verifier.use_presence_calibration:
+# false), "calibrated" == "clip_only" exactly (a built-in sanity check), so
+# turning this on alone changes nothing about 1~4차 numbers — it only adds new
+# output files.
+heldout:
+  enabled: false
+  clip_only_json: "../outputs/heldout/clip_only_metrics.json"
+  clip_only_csv: "../outputs/heldout/clip_only_metrics.csv"
+  calibrated_json: "../outputs/heldout/calibrated_metrics.json"
+  calibrated_csv: "../outputs/heldout/calibrated_metrics.csv"
+  output_json: "../outputs/heldout/metric_delta.json"     # metric_delta.json
+  output_csv: "../outputs/heldout/metric_delta.csv"       # metric_delta.csv
+
+# ── Temporal SRS Calibration scaffold (ETRI 5차 step 10) ──────────────────────
+# Weight-config load/save + a least-squares weight-FITTING STUB
+# (evaluators/temporal_srs_calibration.py). No real VLM judge or human-label
+# collection happens from this config — target scores must be supplied by the
+# caller (mock/synthetic in tests). Default OFF; enabling only saves a weights
+# JSON when a caller explicitly invokes the fitting entry point.
+temporal_srs_calibration:
+  enabled: false
+  weights_output: "../outputs/temporal_srs_calibration_weights.json"
+  # srs_weights: {}       # optional override of the initial w_img/w_txt/... guess
+  # temporal_weights: {}  # optional override of the initial w_ptc/w_sfr/w_sdi guess

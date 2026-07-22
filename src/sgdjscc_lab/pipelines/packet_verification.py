@@ -1,4 +1,4 @@
-"""pipelines/packet_verification.py – Packet Verifier + Controller wiring (ETRI 2차 step 7).
+"""pipelines/packet_verification.py – Packet Verifier + Controller wiring (ETRI 2차 step 7 + 5차 step 8).
 
 Glues ``evaluators/packet_verifier.py`` (report + severity) and
 ``controllers/verifier_controller.py`` (error-type decision + candidate
@@ -45,6 +45,10 @@ REQUIRED_REPORT_FIELDS = (
 REPORT_FIELDS = REQUIRED_REPORT_FIELDS + (
     "role", "missing_object_count", "additional_object_count",
     "relation_error_count", "attribute_error_count", "triggered_modes", "reason",
+    # ETRI 5차: metric_role is always "loop_internal" unless verifier.metric_role
+    # says otherwise; raw_clip_result/calibrated_presence_result are None unless
+    # verifier.use_presence_calibration is on (see packet_verifier.py).
+    "metric_role", "raw_clip_result", "calibrated_presence_result",
 )
 DECISION_FIELDS = (
     "frame_index", "severity", "controller_decision", "candidate_actions",
@@ -64,7 +68,13 @@ def gate_enabled(cfg) -> bool:
 
 
 def build_verifier_and_controller(cfg):
-    """Build a ``(PacketVerifier, VerifierController)`` pair from ``verifier.*`` cfg keys."""
+    """Build a ``(PacketVerifier, VerifierController)`` pair from ``verifier.*`` cfg keys.
+
+    ETRI 5차: also builds a presence calibrator when
+    ``verifier.use_presence_calibration`` is true (default False — the
+    returned ``PacketVerifier`` then behaves exactly as in 2~4차) and stamps
+    ``verifier.metric_role`` (default ``"loop_internal"``) onto every report.
+    """
     from omegaconf import OmegaConf
     from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
     from sgdjscc_lab.controllers.verifier_controller import (
@@ -88,14 +98,29 @@ def build_verifier_and_controller(cfg):
         ),
     )
 
-    verifier = PacketVerifier()
+    presence_calibrator = None
+    if bool(OmegaConf.select(cfg, "verifier.use_presence_calibration", default=False)):
+        from sgdjscc_lab.evaluators.presence_calibration import build_presence_calibrator
+        presence_calibrator = build_presence_calibrator(cfg)
+
+    metric_role = str(OmegaConf.select(cfg, "verifier.metric_role", default="loop_internal"))
+    verifier = PacketVerifier(presence_calibrator=presence_calibrator, metric_role=metric_role)
     return verifier, VerifierController(vcfg)
 
 
-def _row_for_frame(index, role, verifier, controller, orig_packet, recon_packet) -> Dict:
-    """Verify one frame and merge the report + controller decision into one row."""
+def _row_for_frame(index, role, verifier, controller, orig_packet, recon_packet, reconstructed_image=None) -> Dict:
+    """Verify one frame and merge the report + controller decision into one row.
+
+    ``reconstructed_image`` (ETRI 5차) is forwarded to the verifier so a
+    configured presence calibrator can actually recheck missing/additional
+    objects against pixels; ``None`` (the default from ``verify_records``
+    when the caller doesn't pass frame reconstructions) reproduces 2~4차
+    behaviour exactly regardless of whether a calibrator is configured.
+    """
     is_interframe = role != "keyframe"
-    report = verifier.verify(orig_packet or {}, recon_packet or {}, item_id=index)
+    report = verifier.verify(
+        orig_packet or {}, recon_packet or {}, item_id=index, reconstructed_image=reconstructed_image,
+    )
     decision = controller.decide(report, is_interframe=is_interframe)
 
     row = {
@@ -112,14 +137,24 @@ def _row_for_frame(index, role, verifier, controller, orig_packet, recon_packet)
         "attribute_error_count": report["attribute_error_count"],
         "scene_match": report["scene_match"],
         "severity": report["severity"],
+        "metric_role": report.get("metric_role"),
+        "raw_clip_result": report.get("raw_clip_result"),
+        "calibrated_presence_result": report.get("calibrated_presence_result"),
     }
     row.update(decision.to_dict())
     return row
 
 
-def verify_records(records, verifier=None, controller=None) -> List[Dict]:
+def verify_records(records, verifier=None, controller=None, use_reconstructed_images: bool = False) -> List[Dict]:
     """Verify a list of ``FrameRecord``-like objects (need ``.index``, ``.role``,
-    ``.orig_packet``, ``.recon_packet``) and return one report+decision row per frame."""
+    ``.orig_packet``, ``.recon_packet``) and return one report+decision row per frame.
+
+    ``use_reconstructed_images`` (ETRI 5차, default False): when True, also
+    reads each record's ``.recon`` tensor and forwards it as
+    ``reconstructed_image`` so a configured presence calibrator can run.
+    Default False keeps 2~4차 behaviour byte-identical even if a caller passes
+    a calibrator-enabled verifier without opting into this.
+    """
     from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
     from sgdjscc_lab.controllers.verifier_controller import VerifierController
 
@@ -132,7 +167,10 @@ def verify_records(records, verifier=None, controller=None) -> List[Dict]:
         role = getattr(rec, "role", None)
         orig_packet = getattr(rec, "orig_packet", None) or {}
         recon_packet = getattr(rec, "recon_packet", None) or {}
-        rows.append(_row_for_frame(index, role, verifier, controller, orig_packet, recon_packet))
+        reconstructed_image = getattr(rec, "recon", None) if use_reconstructed_images else None
+        rows.append(_row_for_frame(
+            index, role, verifier, controller, orig_packet, recon_packet, reconstructed_image,
+        ))
     return rows
 
 
@@ -238,7 +276,10 @@ def maybe_run(result: Dict, cfg) -> Optional[Dict]:
     from omegaconf import OmegaConf
 
     verifier, controller = build_verifier_and_controller(cfg)
-    rows = verify_records(result.get("records") or [], verifier, controller)
+    use_calibration = bool(OmegaConf.select(cfg, "verifier.use_presence_calibration", default=False))
+    rows = verify_records(
+        result.get("records") or [], verifier, controller, use_reconstructed_images=use_calibration,
+    )
     rows_by_index = {r["frame_index"]: r for r in rows}
 
     for flog in result.get("frame_records") or []:
