@@ -35,6 +35,8 @@ temporal:
   motion_threshold: null               # e.g. 0.08 — tune per dataset
   motion_weight: 0.5                   # blend: global residual vs max block motion
   motion_grid: 8                       # block grid for motion_residual estimates
+  # Start-only generate branch (ETRI 3차) is configured under video_generator:
+  # below (use_video_gen + video_generator.enabled), not here.
 
 # ── Video IO (ETRI 1차 step 1 — mp4 input / reconstructed frames + mp4) ───────
 video_io:
@@ -82,3 +84,60 @@ verifier:
   report_csv: "../outputs/packet_match_report.csv"
   decisions_json: "../outputs/controller_decisions.json"
   decisions_csv: "../outputs/controller_decisions.csv"
+
+# ── Start-only / bidirectional video generation branch (ETRI 3차 step 5 + 4차 step 6) ──
+# Adds a third TemporalPipeline inter-frame branch — reuse / recompute / generate
+# — alongside the existing reuse/recompute-only pipeline. Scope: prove the
+# 3-way branch (and, since 4차, its bidirectional conditioning variant) works
+# structurally with cheap mock backends (copy / linear interpolation /
+# bidirectional interpolation), NOT deliver production generation quality or
+# a verified drift/flicker reduction. Real backends (SVD/Open-Sora) are a
+# reserved extension point — see src/sgdjscc_lab/video/video_generator.py.
+#
+# Default OFF (both use_video_gen and video_generator.enabled must be true, on
+# top of the use_phase4 master switch — mirrors the verifier's dual-flag gate
+# above). With this off, TemporalPipeline never builds/calls a video_generator
+# and every inter-frame decision is exactly the pre-3차 reuse/recompute choice
+# — numerically identical to 1~3차 output. conditioning_mode also defaults to
+# start_only, so simply turning generate ON (without touching conditioning_mode
+# or comparison_enabled) reproduces exact 3차 behaviour.
+use_video_gen: false                   # phase4-gated master flag for this feature
+video_generator:
+  enabled: false                       # second explicit switch (both must be true)
+  backend: auto                        # "auto" chooses copy for start_only and
+                                       # bidirectional_interpolation for bidirectional.
+                                       # Explicit values: "copy" | "interpolation" (start_only),
+                                       # "bidirectional_interpolation" (bidirectional).
+                                       # Mock backends only — unknown/real-backend names
+                                       # raise NotImplementedError.
+  conditioning_mode: start_only         # "start_only" (3차, default) | "bidirectional" (4차)
+  interpolation_alpha: 0.5              # blend weight when backend: interpolation (start_only only)
+  allow_ground_truth_reference: false   # TEST/MOCK ONLY — never enable for real evaluation
+                                       # (see video/video_generator.py's Rx-legal boundary note)
+  # Generate-candidacy band (only reached once a frame fails the reuse dual
+  # gate — see TemporalPipeline._is_generate_candidate). Defaults derive from
+  # temporal.reuse_threshold / temporal.motion_threshold when left null.
+  generate_delta_min: null              # default: temporal.reuse_threshold
+  generate_delta_max: null              # default: min(1.0, 3 * temporal.reuse_threshold)
+  generate_motion_max: null             # default: temporal.motion_threshold (or unconstrained if
+                                       # motion gating itself is off)
+  save_generated_frames: true           # write generate-decision frames to generated_frames_dir
+  generated_frames_dir: "../outputs/generated_frames"
+
+  # ── Bidirectional conditioning (ETRI 4차) ────────────────────────────────────
+  # Applies only when conditioning_mode: bidirectional. A GOP's "end" keyframe
+  # is the NEXT GOP's keyframe; the last GOP in a sequence has none.
+  bidirectional_missing_end_policy: error   # "error" (raise, default) | "fallback_start_only"
+                                            # (degrade that frame to a start-keyframe copy instead)
+
+  # ── start_only vs bidirectional comparison pipeline (ETRI 4차 step 6) ────────
+  # Runs the SAME input through both conditioning modes (2x compute) and diffs
+  # PTC/SFR/SDI/n_generate/n_reused/n_recompute_*. Requires use_video_gen +
+  # video_generator.enabled to also be true; otherwise ignored. Mock backends
+  # only — see the module-level scope note in
+  # pipelines/generation_mode_comparison.py before citing any diff as a
+  # quality/drift-reduction result.
+  comparison_enabled: false
+  comparison_output: "../outputs/generation_mode_comparison.json"
+  comparison_start_only_csv: "../outputs/temporal_metrics_start_only.csv"
+  comparison_bidirectional_csv: "../outputs/temporal_metrics_bidirectional.csv"

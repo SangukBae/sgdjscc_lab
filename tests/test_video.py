@@ -710,6 +710,340 @@ class TestPacketVerifierWiring:
         assert all(r["controller_decision"] for r in rows)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Start-only generate branch (ETRI 3차, step 5) — TemporalPipeline 3-way
+# decision (reuse / recompute / generate) and SegmentRecord.generation wiring.
+# Default off (enable_generate=False) must reproduce the pre-3차 pipeline
+# exactly — covered by every TemporalPipeline test above that doesn't pass
+# enable_generate=True.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _generate_branch_packet_fn(frame, fid):
+    fid = str(fid)
+    idx = int(fid.split("_")[1]) if fid.startswith(("frame_", "recon_")) else 0
+    base = dict(
+        objects=["car", "tree", "bus"], scene="street scene",
+        relations=[{"subject": "car", "predicate": "near", "object": "tree"}],
+        attributes={"car": ["red"]},
+    )
+    if idx == 0 or idx == 2:
+        return build_packet(**base)                     # keyframe / back-to-keyframe (reuse)
+    if idx == 1:
+        # 2 new objects vs. 3 reference objects → magnitude ≈0.33 (moderate:
+        # above reuse_threshold=0.2, within the default generate band [0.2, 0.6]).
+        objs = base["objects"] + ["dog", "cat"]
+        return build_packet(objects=objs, scene=base["scene"],
+                             relations=base["relations"], attributes=base["attributes"])
+    # idx == 3: object + relation + scene collapse → magnitude ≈0.8, above the
+    # default generate_delta_max=0.6 → must fall through to recompute.
+    return build_packet(objects=[], scene="an entirely different scene",
+                         relations=[], attributes={})
+
+
+def _run_generate_branch_pipeline(enable_generate, **kw):
+    from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+    from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+
+    frames = [torch.full((1, 3, 8, 8), 0.1 * (i + 1)) for i in range(4)]
+
+    def recon_fn(frame, cfg):
+        return frame * 10.0
+
+    kfx = KeyframeExtractor(_StubDetector([True, False, False, False]), max_gop=None)
+    pipe = TemporalPipeline(
+        reconstruct_fn=recon_fn, packet_fn=_generate_branch_packet_fn,
+        keyframe_extractor=kfx, reuse_threshold=0.2,
+        enable_generate=enable_generate, **kw,
+    )
+    return pipe.run(frames)
+
+
+class TestGenerateBranch:
+    def test_gate_off_never_generates(self):
+        res = _run_generate_branch_pipeline(enable_generate=False)
+        decisions = [r["decision"] for r in res["frame_records"]]
+        assert "generate" not in decisions
+        assert res["summary"]["n_generate"] == 0
+        assert all(seg["generation"] is None for seg in res["segment_records"])
+
+    def test_gate_off_pipeline_unchanged_vs_pre_3cha_defaults(self):
+        # enable_generate defaults False even when omitted entirely — the
+        # 3-way branch never activates unless explicitly requested.
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+        frames = [torch.full((1, 3, 8, 8), 0.1 * (i + 1)) for i in range(4)]
+        kfx = KeyframeExtractor(_StubDetector([True, False, False, False]), max_gop=None)
+        pipe = TemporalPipeline(
+            reconstruct_fn=lambda f, c: f * 10.0, packet_fn=_generate_branch_packet_fn,
+            keyframe_extractor=kfx, reuse_threshold=0.2,
+        )
+        assert pipe.enable_generate is False
+        res = pipe.run(frames)
+        assert "generate" not in [r["decision"] for r in res["frame_records"]]
+
+    def test_moderate_delta_generates_when_enabled(self):
+        res = _run_generate_branch_pipeline(enable_generate=True)
+        decisions = {r["index"]: r["decision"] for r in res["frame_records"]}
+        assert decisions[1] == "generate"
+        assert decisions[2] == "reuse"
+        assert res["summary"]["n_generate"] == 1
+
+    def test_large_delta_still_recomputes_not_generates(self):
+        res = _run_generate_branch_pipeline(enable_generate=True)
+        decisions = {r["index"]: r["decision"] for r in res["frame_records"]}
+        assert decisions[3] in ("recompute_semantic", "recompute_motion")
+
+    def test_narrower_generate_band_falls_back_to_recompute(self):
+        res = _run_generate_branch_pipeline(enable_generate=True, generate_delta_max=0.3)
+        decisions = {r["index"]: r["decision"] for r in res["frame_records"]}
+        assert decisions[1] in ("recompute_semantic", "recompute_motion")
+
+    def test_generated_frame_shape_matches_input(self):
+        res = _run_generate_branch_pipeline(enable_generate=True)
+        rec1 = next(r for r in res["records"] if r.index == 1)
+        assert rec1.decision == "generate"
+        assert rec1.recon.shape == torch.Size([1, 3, 8, 8])
+
+    def test_generation_metadata_on_frame_record(self):
+        res = _run_generate_branch_pipeline(enable_generate=True)
+        rec1 = next(r for r in res["records"] if r.index == 1)
+        meta = rec1.generation
+        assert meta["backend"] == "copy"
+        assert meta["conditioning_mode"] == "start_only"
+        assert meta["source_keyframe_index"] == 0
+        assert meta["target_indices"] == [1]
+        assert meta["mock"] is True
+
+    def test_segment_record_generation_populated_when_enabled(self):
+        import json
+        res = _run_generate_branch_pipeline(enable_generate=True)
+        seg = res["segment_records"][0]
+        assert seg["generation"] is not None
+        assert 1 in seg["generation"]["target_indices"]
+        assert seg["generation"]["backend"] == "copy"
+        assert seg["generation"]["conditioning_mode"] == "start_only"
+        assert seg["generation"]["mock"] is True
+        json.dumps(seg["generation"])   # must stay JSON-serialisable
+
+    def test_interpolation_backend_can_be_injected(self):
+        from sgdjscc_lab.video.video_generator import InterpolationGenerator
+        res = _run_generate_branch_pipeline(
+            enable_generate=True, video_generator=InterpolationGenerator(alpha=0.5),
+        )
+        rec1 = next(r for r in res["records"] if r.index == 1)
+        assert rec1.generation["backend"] == "interpolation"
+        assert rec1.recon.shape == torch.Size([1, 3, 8, 8])
+
+    def test_generated_frames_saved_to_disk(self, tmp_path):
+        from sgdjscc_lab.video.video_generator import save_generated_frames
+        res = _run_generate_branch_pipeline(enable_generate=True)
+        saved = save_generated_frames(res["records"], tmp_path)
+        assert len(saved) == res["summary"]["n_generate"] == 1
+        assert all(p.exists() for p in saved)
+        assert saved[0].name == "generated_00001.png"
+
+    def test_start_only_default_backend_selection(self):
+        # Backend-registry behaviour (build_generator itself, including the
+        # now-implemented bidirectional mode) is covered in detail in
+        # tests/test_video_generator.py; this just confirms the 3차 default
+        # path still resolves to CopyGenerator.
+        from omegaconf import OmegaConf
+        from sgdjscc_lab.video.video_generator import build_generator, CopyGenerator
+        cfg = OmegaConf.create({"video_generator": {"conditioning_mode": "start_only", "backend": "copy"}})
+        gen = build_generator(cfg)
+        assert isinstance(gen, CopyGenerator)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Bidirectional generate branch — TemporalPipeline wiring (ETRI 4차, step 6)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _bidirectional_fixture_frames_and_packet_fn():
+    """8 frames / 2 GOPs (keyframes at 0 and 4). Frame 1 has a moderate delta
+    vs its keyframe (generate candidate, end keyframe = 4). Frame 5 is a
+    generate candidate in the LAST GOP (no following keyframe)."""
+    obj_map = {
+        0: ["car", "tree", "bus"], 1: ["car", "tree", "bus", "dog", "cat"],
+        2: ["car", "tree", "bus"], 3: ["car", "tree", "bus"],
+        4: ["boat"], 5: ["boat", "fish"], 6: ["boat"], 7: ["boat"],
+    }
+
+    def packet_fn(frame, fid):
+        fid = str(fid)
+        idx = int(fid.split("_")[1]) if fid.startswith(("frame_", "recon_")) else 0
+        return build_packet(objects=obj_map.get(idx, ["car"]), scene="s")
+
+    frames = [torch.full((1, 3, 8, 8), 0.05 * (i + 1)) for i in range(8)]
+    return frames, packet_fn
+
+
+_BIDI_BOUNDARIES = [True, False, False, False, True, False, False, False]
+
+
+def _run_bidirectional_pipeline(missing_end_policy="fallback_start_only", **kw):
+    from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+    from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+    from sgdjscc_lab.video.video_generator import BidirectionalInterpolationGenerator
+
+    frames, packet_fn = _bidirectional_fixture_frames_and_packet_fn()
+    kfx = KeyframeExtractor(_StubDetector(_BIDI_BOUNDARIES), max_gop=None)
+    pipe = TemporalPipeline(
+        reconstruct_fn=lambda f, c: f * 10.0, packet_fn=packet_fn,
+        keyframe_extractor=kfx, reuse_threshold=0.2,
+        enable_generate=True, conditioning_mode="bidirectional",
+        video_generator=BidirectionalInterpolationGenerator(missing_end_policy=missing_end_policy),
+        **kw,
+    )
+    return pipe.run(frames)
+
+
+class TestBidirectionalGenerateBranch:
+    def test_start_only_mode_unaffected_by_bidirectional_machinery(self):
+        # Default conditioning_mode ("start_only") never touches end-keyframe
+        # machinery, even with enable_generate=True — regression vs 3차.
+        res = _run_generate_branch_pipeline(enable_generate=True)
+        for rec in res["records"]:
+            if rec.generation is not None:
+                assert rec.generation["conditioning_mode"] == "start_only"
+                assert rec.generation.get("end_keyframe_index") is None
+
+    def test_bidirectional_metadata_conditioning_mode(self):
+        res = _run_bidirectional_pipeline()
+        rec1 = next(r for r in res["records"] if r.index == 1)
+        assert rec1.decision == "generate"
+        assert rec1.generation["conditioning_mode"] == "bidirectional"
+        assert rec1.generation["end_keyframe_index"] == 4
+        assert rec1.generation["relative_position"] == pytest.approx(0.25)
+
+    def test_end_keyframe_recon_reaches_generator(self):
+        # frame 1's generated pixels must reflect a genuine blend of the start
+        # (keyframe 0) and end (keyframe 4) reconstructions, not a start-only copy.
+        res = _run_bidirectional_pipeline()
+        rec0 = next(r for r in res["records"] if r.index == 0)
+        rec4 = next(r for r in res["records"] if r.index == 4)
+        rec1 = next(r for r in res["records"] if r.index == 1)
+        a = 0.25
+        expected = (1 - a) * rec0.recon + a * rec4.recon
+        assert torch.allclose(rec1.recon, expected)
+
+    def test_last_gop_falls_back_to_start_only(self):
+        res = _run_bidirectional_pipeline(missing_end_policy="fallback_start_only")
+        rec5 = next(r for r in res["records"] if r.index == 5)
+        rec4 = next(r for r in res["records"] if r.index == 4)
+        assert rec5.decision == "generate"
+        assert rec5.generation["conditioning_mode"] == "start_only"
+        assert rec5.generation["end_keyframe_index"] is None
+        assert torch.equal(rec5.recon, rec4.recon)
+
+    def test_last_gop_raises_with_error_policy(self):
+        with pytest.raises(ValueError):
+            _run_bidirectional_pipeline(missing_end_policy="error")
+
+    def test_frame_log_records_generation_conditioning_mode(self):
+        res = _run_bidirectional_pipeline()
+        log1 = next(r for r in res["frame_records"] if r["index"] == 1)
+        assert log1["generation_conditioning_mode"] == "bidirectional"
+        log2 = next(r for r in res["frame_records"] if r["index"] == 2)
+        assert log2["generation_conditioning_mode"] is None   # reuse, not generate
+
+    def test_segment_generation_summary_has_bidirectional_fields(self):
+        import json
+        res = _run_bidirectional_pipeline()
+        seg0 = next(s for s in res["segment_records"] if s["segment_id"] == 0)
+        assert seg0["generation"]["conditioning_mode"] == "bidirectional"
+        assert seg0["generation"]["end_keyframe_index"] == 4
+        json.dumps(seg0["generation"])
+
+    def test_keyframes_not_double_reconstructed(self):
+        # The bidirectional prepass must not cause a keyframe to be
+        # reconstructed twice — verify via a call-counting reconstruct_fn.
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+        from sgdjscc_lab.video.video_generator import BidirectionalInterpolationGenerator
+
+        frames, packet_fn = _bidirectional_fixture_frames_and_packet_fn()
+        calls = []
+
+        def counting_recon(f, c):
+            calls.append(f)
+            return f * 10.0
+
+        kfx = KeyframeExtractor(_StubDetector(_BIDI_BOUNDARIES), max_gop=None)
+        pipe = TemporalPipeline(
+            reconstruct_fn=counting_recon, packet_fn=packet_fn,
+            keyframe_extractor=kfx, reuse_threshold=0.2,
+            enable_generate=True, conditioning_mode="bidirectional",
+            video_generator=BidirectionalInterpolationGenerator(missing_end_policy="fallback_start_only"),
+        )
+        pipe.run(frames)
+        # Frames 1 and 5 are "generate" (no reconstruct_fn call), 2/3/6/7 are
+        # "reuse" (no call either) — only the 2 keyframes (0, 4) ever call
+        # reconstruct_fn, and each exactly once (prepass result reused, not
+        # recomputed in the main loop).
+        assert len(calls) == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# start-only vs bidirectional comparison pipeline (ETRI 4차, step 6)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestGenerationModeComparison:
+    def test_compare_metrics_computes_diffs(self):
+        from sgdjscc_lab.pipelines.generation_mode_comparison import compare_metrics
+        start = {"ptc": 0.8, "sfr": 0.1, "sdi": 0.05, "n_generate": 0, "n_reused": 3,
+                 "n_recompute_semantic": 1, "n_recompute_motion": 0}
+        bidi = {"ptc": 0.9, "sfr": 0.05, "sdi": 0.02, "n_generate": 2, "n_reused": 1,
+                "n_recompute_semantic": 1, "n_recompute_motion": 0}
+        out = compare_metrics(start, bidi)
+        assert out["ptc_start_only"] == 0.8
+        assert out["ptc_bidirectional"] == 0.9
+        assert out["ptc_diff"] == pytest.approx(0.1)
+        assert out["n_generate_diff"] == 2
+        assert "note" in out
+
+    def test_compare_metrics_handles_missing_keys(self):
+        from sgdjscc_lab.pipelines.generation_mode_comparison import compare_metrics
+        out = compare_metrics({}, {})
+        assert out["ptc_start_only"] is None
+        assert out["ptc_diff"] is None
+
+    def test_run_comparison_end_to_end(self, tmp_path):
+        from sgdjscc_lab.pipelines.generation_mode_comparison import run_comparison
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+        from sgdjscc_lab.video.video_generator import CopyGenerator, BidirectionalInterpolationGenerator
+
+        frames, packet_fn = _bidirectional_fixture_frames_and_packet_fn()
+
+        def pipeline_factory(mode):
+            kfx = KeyframeExtractor(_StubDetector(_BIDI_BOUNDARIES), max_gop=None)
+            gen = (CopyGenerator() if mode == "start_only"
+                   else BidirectionalInterpolationGenerator(missing_end_policy="fallback_start_only"))
+            return TemporalPipeline(
+                reconstruct_fn=lambda f, c: f * 10.0, packet_fn=packet_fn,
+                keyframe_extractor=kfx, reuse_threshold=0.2,
+                enable_generate=True, conditioning_mode=mode, video_generator=gen,
+            )
+
+        out = run_comparison(
+            frames, pipeline_factory,
+            output_json=str(tmp_path / "comparison.json"),
+            start_only_csv=str(tmp_path / "start_only.csv"),
+            bidirectional_csv=str(tmp_path / "bidirectional.csv"),
+        )
+        assert set(out.keys()) == {"start_only", "bidirectional", "comparison"}
+        for key in ("ptc", "sfr", "sdi", "n_generate", "n_reused"):
+            assert key in out["start_only"]
+            assert key in out["bidirectional"]
+        assert (tmp_path / "comparison.json").exists()
+        assert (tmp_path / "start_only.csv").exists()
+        assert (tmp_path / "bidirectional.csv").exists()
+
+        import json as _json
+        data = _json.loads((tmp_path / "comparison.json").read_text())
+        assert set(data.keys()) == {"start_only", "bidirectional", "comparison"}
+
+
 class TestPacketVerifierWiringRegression:
     def test_severity_zero_for_perfect_reconstruction(self, tmp_path):
         """Regression: the existing (non-hallucinating) fixtures used elsewhere

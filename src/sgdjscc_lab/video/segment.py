@@ -14,13 +14,16 @@ A :class:`SegmentRecord` summarises, per GOP:
 - semantic-delta and motion summaries,
 - temporal metrics computed over just this segment's frames.
 
-Generate-branch interface (reserved, NOT implemented here)
-----------------------------------------------------------
-The 3차 start-only generate branch (docs/etri_strategy.md 순서 5,
-docs/video_extension_lgvsc.md §6.3 4단계) will operate on the segment contract
-``(start_keyframe, [end_keyframe], segment packets, side_info, length) →
-frames``.  ``SegmentRecord.generation`` is the attachment point for its result;
-it stays ``None`` in the 1차 implementation.
+Generate-branch attachment (ETRI 3차 start-only + 4차 bidirectional)
+---------------------------------------------------------------------
+The generate branch (docs/etri_strategy.md 순서 5·6) runs *per-frame* inside
+``TemporalPipeline.run()`` (see ``video/video_generator.py``), not as a single
+batched per-segment call, in both its start-only (3차) and bidirectional (4차)
+conditioning modes. ``SegmentRecord.generation`` is populated here as a pure
+aggregation over whichever frames in the segment got ``decision ==
+"generate"`` — it stays ``None`` when the segment has no generated frames
+(including the default, generate-disabled case, which is numerically
+identical to 1~3차).
 """
 
 from __future__ import annotations
@@ -50,8 +53,10 @@ class SegmentRecord:
     semantic_delta: Dict = field(default_factory=dict)
     motion: Dict = field(default_factory=dict)
     temporal_metrics: Dict = field(default_factory=dict)
-    # Reserved for the 3차 generate branch (start-only segment generation);
-    # always None in the 1차 implementation.
+    # Generate-branch summary (see _generation_summary() above): None when the
+    # segment has no generated frames — always None while the generate branch
+    # stays disabled (default), so 1~3차 output is unaffected. Covers both
+    # start-only (3차) and bidirectional (4차) conditioning modes.
     generation: Optional[Dict] = None
 
     @property
@@ -82,6 +87,34 @@ def _delta_summary(records) -> Dict:
         "mean_magnitude": _mean(mags),
         "max_magnitude": max(mags) if mags else None,
         "total_changes": sum(changes) if changes else 0,
+    }
+
+
+def _generation_summary(records) -> Optional[Dict]:
+    """Aggregate the generate-branch metadata of one segment (ETRI 3차
+    start-only; ETRI 4차 adds bidirectional).
+
+    Returns ``None`` when no frame in the segment was generated (the default,
+    generate-disabled case — keeps ``SegmentRecord.generation`` byte-identical
+    to the pre-3차 always-``None`` value). ``conditioning_mode`` /
+    ``end_keyframe_index`` reflect the FIRST generated frame's metadata as a
+    convenience summary; per-frame detail (including cases where a
+    bidirectional request fell back to start_only — see
+    ``BidirectionalInterpolationGenerator``) is always in ``frames``.
+    """
+    gen_records = [r for r in records if r.decision == "generate" and r.generation]
+    if not gen_records:
+        return None
+    backends = sorted({r.generation.get("backend") for r in gen_records})
+    return {
+        "n_generated": len(gen_records),
+        "target_indices": [r.index for r in gen_records],
+        "backend": backends[0] if len(backends) == 1 else backends,
+        "conditioning_mode": gen_records[0].generation.get("conditioning_mode"),
+        "source_keyframe_index": gen_records[0].generation.get("source_keyframe_index"),
+        "end_keyframe_index": gen_records[0].generation.get("end_keyframe_index"),
+        "mock": any(bool(r.generation.get("mock")) for r in gen_records),
+        "frames": [dict(r.generation) for r in gen_records],
     }
 
 
@@ -144,5 +177,6 @@ def build_segments(records, structure: Dict) -> List[SegmentRecord]:
             semantic_delta=_delta_summary(seg_records),
             motion=_motion_summary(seg_records),
             temporal_metrics=evaluate_sequence(seg_records),
+            generation=_generation_summary(seg_records),
         ))
     return segments

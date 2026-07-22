@@ -59,6 +59,10 @@ _NESTED_PATH_KEYS = (
     "verifier.report_csv",                     # packet_match_report.csv (ETRI 2차)
     "verifier.decisions_json",                 # controller_decisions.json (ETRI 2차)
     "verifier.decisions_csv",                  # controller_decisions.csv (ETRI 2차)
+    "video_generator.generated_frames_dir",    # generate-branch output frames (ETRI 3차)
+    "video_generator.comparison_output",              # generation_mode_comparison.json (ETRI 4차)
+    "video_generator.comparison_start_only_csv",      # start_only temporal metrics (ETRI 4차)
+    "video_generator.comparison_bidirectional_csv",   # bidirectional temporal metrics (ETRI 4차)
     "train.controlnet.edge_jscc.checkpoint",   # trained edge codec for Stage 3
     "train.dataset.caption_path",              # manifest / coco_json / multi_manifest (train)
     "train.dataset.val_caption_path",          # manifest / coco_json / multi_manifest (val)

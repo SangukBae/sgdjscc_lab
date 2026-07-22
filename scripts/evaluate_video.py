@@ -193,6 +193,33 @@ def main() -> None:
         logger.info("Motion gate enabled: threshold=%.4g weight=%.2f grid=%d",
                     float(motion_threshold), motion_weight, motion_grid)
 
+    # ── Start-only / bidirectional generate branch (ETRI 3차 step 5 + 4차 step 6;
+    # gated, default OFF) ──────────────────────────────────────────────────────
+    # Both use_video_gen (phase4-gated) and video_generator.enabled must be
+    # true, mirroring the Phase 4-A packet-verifier dual-flag gate. Off by
+    # default → TemporalPipeline never builds/calls a video_generator and the
+    # 1~3차 reuse/recompute-only decisions are unchanged. conditioning_mode
+    # defaults to start_only (3차 behaviour); bidirectional (4차) is opt-in.
+    from sgdjscc_lab.phase_gates import effective_flag as _eff_video_gen
+    enable_generate = _eff_video_gen(cfg, "use_video_gen", phase=4) and bool(
+        OmegaConf.select(cfg, "video_generator.enabled", default=False)
+    )
+    video_generator = None
+    conditioning_mode = str(OmegaConf.select(cfg, "video_generator.conditioning_mode", default="start_only"))
+    generate_delta_min = generate_delta_max = generate_motion_max = None
+    allow_ground_truth_reference = False
+    if enable_generate:
+        from sgdjscc_lab.video.video_generator import build_generator
+        video_generator = build_generator(cfg)
+        generate_delta_min = OmegaConf.select(cfg, "video_generator.generate_delta_min", default=None)
+        generate_delta_max = OmegaConf.select(cfg, "video_generator.generate_delta_max", default=None)
+        generate_motion_max = OmegaConf.select(cfg, "video_generator.generate_motion_max", default=None)
+        allow_ground_truth_reference = bool(
+            OmegaConf.select(cfg, "video_generator.allow_ground_truth_reference", default=False)
+        )
+        logger.info("Generate branch enabled: backend=%s conditioning_mode=%s",
+                    video_generator.backend_name, conditioning_mode)
+
     # ── Build reconstruct_fn / packet_fn ─────────────────────────────────────
     models = None
     clip_eval = None
@@ -290,11 +317,66 @@ def main() -> None:
         motion_grid=motion_grid,
         diffusion_step=int(cfg.get("diffusion_step", 50)),
         srs_fn=srs_fn,
+        enable_generate=enable_generate,
+        video_generator=video_generator,
+        generate_delta_min=generate_delta_min,
+        generate_delta_max=generate_delta_max,
+        generate_motion_max=generate_motion_max,
+        allow_ground_truth_reference=allow_ground_truth_reference,
+        conditioning_mode=conditioning_mode,
     )
     result = pipeline.run(frames)
 
     temporal_metrics = evaluate_sequence(result["records"])
     temporal_metrics.update(result["summary"])
+
+    # ── start_only vs bidirectional comparison (ETRI 4차 step 6; gated) ───────
+    # Runs the SAME frames through BOTH conditioning modes (2x compute) and
+    # writes a diff of PTC/SFR/SDI/n_generate/n_reused/n_recompute_*. This is a
+    # side artefact — it does not change the primary run's outputs above.
+    # Mock backends only; see pipelines/generation_mode_comparison.py's scope
+    # note before treating any diff as a quality/drift-reduction result.
+    comparison_enabled = enable_generate and bool(
+        OmegaConf.select(cfg, "video_generator.comparison_enabled", default=False)
+    )
+    if comparison_enabled:
+        from sgdjscc_lab.pipelines.generation_mode_comparison import run_comparison
+        from sgdjscc_lab.video.video_generator import build_generator as _build_generator_for_mode
+
+        def _pipeline_factory(mode):
+            # Each mode uses its own canonical mock backend (copy for
+            # start_only, bidirectional_interpolation for bidirectional),
+            # regardless of what video_generator.backend the PRIMARY run used
+            # — otherwise a primary run configured for one mode's backend
+            # (e.g. bidirectional_interpolation) would make the OTHER mode's
+            # comparison pipeline fail to build (backend/conditioning_mode
+            # mismatch). The comparison only needs each mode's default mock
+            # backend to prove the two pipelines are runnable and diffable.
+            default_backend = "copy" if mode == "start_only" else "bidirectional_interpolation"
+            mode_cfg = OmegaConf.merge(
+                cfg, {"video_generator": {"conditioning_mode": mode, "backend": default_backend}}
+            )
+            mode_generator = _build_generator_for_mode(mode_cfg)
+            return TemporalPipeline(
+                reconstruct_fn=reconstruct_fn, packet_fn=packet_fn,
+                keyframe_extractor=keyframe_extractor, delta=None, cfg=cfg,
+                reuse_threshold=reuse_threshold,
+                motion_threshold=(None if motion_threshold is None else float(motion_threshold)),
+                motion_weight=motion_weight, motion_grid=motion_grid,
+                diffusion_step=int(cfg.get("diffusion_step", 50)), srs_fn=srs_fn,
+                enable_generate=True, video_generator=mode_generator, conditioning_mode=mode,
+                generate_delta_min=generate_delta_min, generate_delta_max=generate_delta_max,
+                generate_motion_max=generate_motion_max,
+                allow_ground_truth_reference=allow_ground_truth_reference,
+            )
+
+        logger.info("Running start_only vs bidirectional comparison (2x compute)…")
+        run_comparison(
+            frames, _pipeline_factory,
+            output_json=OmegaConf.select(cfg, "video_generator.comparison_output", default=None),
+            start_only_csv=OmegaConf.select(cfg, "video_generator.comparison_start_only_csv", default=None),
+            bidirectional_csv=OmegaConf.select(cfg, "video_generator.comparison_bidirectional_csv", default=None),
+        )
 
     # ── Packet Verifier + controller (ETRI 2차 step 7; gated, default OFF) ────
     # Adds severity/controller_decision to frame_records and a verifier_summary
@@ -361,6 +443,18 @@ def main() -> None:
             tv_save_image(rec.recon.cpu().float().clamp(0, 1), str(fp))
             saved_frames.append(fp)
         logger.info("Reconstructed frames → %s (%d files)", recon_dir, len(saved_frames))
+
+    # ── Generated frames (ETRI 3차 step 5; only when the generate branch ran) ─
+    # Every rec.recon (reuse/recompute/generate alike) is already saved above
+    # under video_io.recon_frames_dir; this additionally saves ONLY the
+    # generate-decision frames under a separate folder so a "did generate run"
+    # sanity check doesn't require diffing the full recon folder.
+    if enable_generate and bool(OmegaConf.select(cfg, "video_generator.save_generated_frames", default=True)):
+        from sgdjscc_lab.video.video_generator import save_generated_frames
+        gen_dir = Path(OmegaConf.select(
+            cfg, "video_generator.generated_frames_dir", default="../outputs/generated_frames"))
+        saved_generated = save_generated_frames(result["records"], gen_dir)
+        logger.info("Generated frames → %s (%d files)", gen_dir, len(saved_generated))
 
     want_video = args.save_video or bool(
         OmegaConf.select(cfg, "video_io.save_recon_video", default=False))
