@@ -387,6 +387,62 @@ def main() -> None:
     if verifier_out is not None:
         logger.info("Packet verifier: %d frame(s) verified.", len(verifier_out["rows"]))
 
+    # ── Transmission accounting + rate/reliability report (ETRI 6차 step 11-12;
+    # gated, default OFF) ──────────────────────────────────────────────────────
+    # PoC bit/channel-symbol accounting — NOT a real bitstream/CBR
+    # implementation (see accounting/bit_accounting.py). Purely additive: reads
+    # already-computed FrameRecord decisions/packets and never mutates `result`
+    # or any output written above/below.
+    accounting_enabled = bool(OmegaConf.select(cfg, "accounting.enabled", default=False))
+    rate_reliability_enabled = bool(OmegaConf.select(cfg, "rate_reliability.enabled", default=False))
+    if accounting_enabled or rate_reliability_enabled:
+        from sgdjscc_lab.pipelines.transmission_accounting import account_transmission, write_accounting
+
+        accounting_result = account_transmission(
+            result,
+            baseline=str(OmegaConf.select(cfg, "accounting.baseline", default="naive_full_frame_packet")),
+            latent_symbols_per_frame=OmegaConf.select(cfg, "accounting.latent_symbols_per_frame", default=None),
+            edge_cr=float(OmegaConf.select(cfg, "accounting.edge_cr", default=0.078125)),
+            symbols_per_bit_proxy=float(OmegaConf.select(cfg, "accounting.symbols_per_bit_proxy", default=1.0)),
+        )
+        if accounting_enabled:
+            write_accounting(
+                accounting_result,
+                frame_json=OmegaConf.select(cfg, "accounting.frame_json", default=None),
+                frame_csv=OmegaConf.select(cfg, "accounting.frame_csv", default=None),
+                segment_json=OmegaConf.select(cfg, "accounting.segment_json", default=None),
+                segment_csv=OmegaConf.select(cfg, "accounting.segment_csv", default=None),
+                summary_json=OmegaConf.select(cfg, "accounting.summary_json", default=None),
+            )
+            logger.info(
+                "Transmission accounting: bit_reduction=%s symbol_reduction=%s (baseline=%s)",
+                accounting_result["summary"].get("bit_reduction"),
+                accounting_result["summary"].get("symbol_reduction"),
+                accounting_result["summary"].get("baseline"),
+            )
+
+        if rate_reliability_enabled:
+            from sgdjscc_lab.pipelines.rate_reliability_report import (
+                append_rate_reliability_row, build_rate_reliability_row, write_rate_reliability_summary,
+            )
+
+            mean_severity = None
+            if verifier_out is not None:
+                severities = [r.get("severity") for r in verifier_out["rows"] if r.get("severity") is not None]
+                if severities:
+                    mean_severity = float(sum(severities) / len(severities))
+
+            row = build_rate_reliability_row(
+                accounting_result["summary"], temporal_metrics, mean_severity=mean_severity,
+                label=OmegaConf.select(cfg, "rate_reliability.label", default=None),
+            )
+            rr_json = OmegaConf.select(cfg, "rate_reliability.output_json", default=None)
+            if rr_json:
+                write_rate_reliability_summary(row, rr_json)
+            rr_csv = OmegaConf.select(cfg, "rate_reliability.curve_csv", default=None)
+            if rr_csv:
+                append_rate_reliability_row(row, rr_csv)
+
     # ── Persist outputs ──────────────────────────────────────────────────────
     kf_json = Path(OmegaConf.select(cfg, "keyframe_json", default="../outputs/keyframes.json"))
     kf_json.parent.mkdir(parents=True, exist_ok=True)

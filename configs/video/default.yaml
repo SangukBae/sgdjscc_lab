@@ -191,3 +191,43 @@ temporal_srs_calibration:
   weights_output: "../outputs/temporal_srs_calibration_weights.json"
   # srs_weights: {}       # optional override of the initial w_img/w_txt/... guess
   # temporal_weights: {}  # optional override of the initial w_ptc/w_sfr/w_sdi guess
+
+# ── Transmission accounting (ETRI 6차 step 11-12) ─────────────────────────────
+# PoC bit / channel-symbol accounting per frame/segment
+# (accounting/bit_accounting.py, pipelines/transmission_accounting.py) — NOT a
+# real bitstream/CBR implementation. Separates semantic-unit savings (already
+# tracked by 1~4차's transmitted_units/naive_units/overhead_reduction) from
+# bit/channel-symbol savings, which is the genuinely new question this step
+# answers. Default OFF; enabling only adds report files — the temporal
+# pipeline's reconstruction/decisions/existing metrics are never changed.
+accounting:
+  enabled: false
+  output_dir: "../outputs/accounting"
+  frame_json: "${accounting.output_dir}/frame_accounting.json"
+  frame_csv: "${accounting.output_dir}/frame_accounting.csv"
+  segment_json: "${accounting.output_dir}/segment_accounting.json"
+  segment_csv: "${accounting.output_dir}/segment_accounting.csv"
+  summary_json: "${accounting.output_dir}/accounting_summary.json"
+  # naive_full_frame_packet: every frame assumed fully transmitted (upper-bound
+  # baseline). keyframe_only_lgvsc_style: only real keyframes fully
+  # transmitted, every inter-frame assumed side-info-only (generate-style).
+  baseline: naive_full_frame_packet   # naive_full_frame_packet | keyframe_only_lgvsc_style
+  latent_symbols_per_frame: null      # override; null = infer from frame shape + fixed VAE
+                                      # architecture constants (proxy — see bit_accounting.py)
+  edge_cr: 0.078125                   # proxy ratio: edge side-info symbols = edge_cr x visual
+                                      # latent symbols (default = Canny channel-encoder size2=320
+                                      # / 4096 latent elements per 128px patch)
+  symbols_per_bit_proxy: 1.0          # proxy: folds bit-based components (packet/caption/motion)
+                                      # into total_channel_symbols; 1.0 = no modulation gain assumed
+
+# ── Rate / semantic-reliability trade-off report (ETRI 6차 step 12) ──────────
+# Combines the accounting summary above with PTC/SFR/SDI (and, when the
+# packet verifier is enabled, mean_severity) into one comparable
+# rate/reliability point. See pipelines/rate_reliability_report.py — one run
+# = one point; multiple runs accumulate into curve_csv via its
+# append/merge helpers. Default OFF; requires accounting.enabled: true for
+# the bit/symbol numbers to be meaningful.
+rate_reliability:
+  enabled: false
+  output_json: "../outputs/accounting/rate_reliability_summary.json"
+  curve_csv: "../outputs/accounting/rate_reliability_curve.csv"

@@ -70,6 +70,16 @@ _NESTED_PATH_KEYS = (
     "heldout.output_json",
     "heldout.output_csv",
     "temporal_srs_calibration.weights_output",  # fitted SRS/temporal-SRS weights (ETRI 5차)
+    # accounting.output_dir MUST resolve before the accounting.*_json/_csv keys
+    # below (which interpolate ${accounting.output_dir}) — tuple order matters.
+    "accounting.output_dir",                   # transmission accounting outputs (ETRI 6차)
+    "accounting.frame_json",
+    "accounting.frame_csv",
+    "accounting.segment_json",
+    "accounting.segment_csv",
+    "accounting.summary_json",
+    "rate_reliability.output_json",            # rate/reliability trade-off report (ETRI 6차)
+    "rate_reliability.curve_csv",
     "train.controlnet.edge_jscc.checkpoint",   # trained edge codec for Stage 3
     "train.dataset.caption_path",              # manifest / coco_json / multi_manifest (train)
     "train.dataset.val_caption_path",          # manifest / coco_json / multi_manifest (val)
