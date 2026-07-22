@@ -149,3 +149,120 @@ class TestRegenerationPolicy:
         assert cfg.guidance_scale == 4.0
         assert out.guidance_scale == pytest.approx(6.0)
         assert out.use_text is True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# verifier_controller – error-type-aware decision + candidate-action logging
+# (ETRI 2차, step 7). Decisions are keyed off a PacketVerifier-style report
+# dict (missing/additional/relation/attribute/scene fields + severity).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _report(**overrides):
+    base = {
+        "missing_objects": [], "missing_object_count": 0,
+        "additional_objects": [], "additional_object_count": 0,
+        "relation_error_count": 0, "attribute_error_count": 0,
+        "scene_match": True, "severity": 0.0,
+    }
+    base.update(overrides)
+    return base
+
+
+class TestVerifierController:
+    def test_accept_when_no_errors(self):
+        from sgdjscc_lab.controllers.verifier_controller import VerifierController
+        d = VerifierController().decide(_report())
+        assert d.decision == "accept"
+        assert d.candidate_actions == []
+
+    def test_accept_when_severity_below_threshold(self):
+        from sgdjscc_lab.controllers.verifier_controller import (
+            VerifierController, VerifierControllerConfig,
+        )
+        ctrl = VerifierController(VerifierControllerConfig(accept_severity=0.2))
+        d = ctrl.decide(_report(missing_objects=["dog"], missing_object_count=1, severity=0.1))
+        assert d.decision == "accept"
+
+    def test_additional_dominant_suppresses_extra(self):
+        from sgdjscc_lab.controllers.verifier_controller import VerifierController
+        report = _report(
+            additional_objects=["dog", "cat"], additional_object_count=2, severity=0.3,
+        )
+        d = VerifierController().decide(report)
+        assert d.decision == "suppress_extra"
+        assert "additional_object" in d.triggered_modes
+        types = {a["type"] for a in d.candidate_actions}
+        assert types == {"negative_prompt_candidate"}
+        objs = {a["object"] for a in d.candidate_actions}
+        assert objs == {"dog", "cat"}
+
+    def test_missing_dominant_strengthens_missing(self):
+        from sgdjscc_lab.controllers.verifier_controller import VerifierController
+        report = _report(
+            missing_objects=["tree", "bus"], missing_object_count=2, severity=0.3,
+        )
+        d = VerifierController().decide(report)
+        assert d.decision == "strengthen_missing"
+        assert "missing_object" in d.triggered_modes
+        types = {a["type"] for a in d.candidate_actions}
+        assert types == {"prompt_emphasis_candidate"}
+        objs = {a["object"] for a in d.candidate_actions}
+        assert objs == {"tree", "bus"}
+
+    def test_structural_dominant_strengthens_structure_guidance(self):
+        from sgdjscc_lab.controllers.verifier_controller import VerifierController
+        report = _report(relation_error_count=2, attribute_error_count=1, severity=0.3)
+        d = VerifierController().decide(report)
+        assert d.decision == "strengthen_structure_guidance"
+        assert "structural" in d.triggered_modes
+
+    def test_scene_mismatch_counts_as_structural(self):
+        from sgdjscc_lab.controllers.verifier_controller import VerifierController
+        report = _report(scene_match=False, severity=0.3)
+        d = VerifierController().decide(report)
+        assert d.decision == "strengthen_structure_guidance"
+
+    def test_severe_mismatch_falls_back_to_recompute(self):
+        from sgdjscc_lab.controllers.verifier_controller import (
+            VerifierController, VerifierControllerConfig,
+        )
+        ctrl = VerifierController(VerifierControllerConfig(fallback_severity=0.6))
+        report = _report(
+            missing_objects=["a"], missing_object_count=1,
+            additional_objects=["b"], additional_object_count=1,
+            relation_error_count=1, severity=0.75,
+        )
+        d = ctrl.decide(report, is_interframe=False)
+        assert d.decision == "fallback_recompute"
+
+    def test_extreme_severity_interframe_falls_back_to_keyframe(self):
+        from sgdjscc_lab.controllers.verifier_controller import (
+            VerifierController, VerifierControllerConfig,
+        )
+        ctrl = VerifierController(
+            VerifierControllerConfig(fallback_severity=0.6, keyframe_fallback_severity=0.85)
+        )
+        report = _report(missing_object_count=3, severity=0.9)
+        d = ctrl.decide(report, is_interframe=True)
+        assert d.decision == "keyframe_fallback"
+
+    def test_extreme_severity_keyframe_item_does_not_fallback_to_keyframe(self):
+        # keyframe_fallback only makes sense for inter-frames; a keyframe itself
+        # falls back to fallback_recompute instead.
+        from sgdjscc_lab.controllers.verifier_controller import (
+            VerifierController, VerifierControllerConfig,
+        )
+        ctrl = VerifierController(
+            VerifierControllerConfig(fallback_severity=0.6, keyframe_fallback_severity=0.85)
+        )
+        report = _report(missing_object_count=3, severity=0.9)
+        d = ctrl.decide(report, is_interframe=False)
+        assert d.decision == "fallback_recompute"
+
+    def test_decision_to_dict_is_json_serialisable(self):
+        import json
+        from sgdjscc_lab.controllers.verifier_controller import VerifierController
+        report = _report(additional_objects=["dog"], additional_object_count=1, severity=0.3)
+        d = VerifierController().decide(report)
+        json.dumps(d.to_dict())  # must not raise
+        assert d.to_dict()["controller_decision"] == d.decision

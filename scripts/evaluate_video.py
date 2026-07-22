@@ -296,6 +296,15 @@ def main() -> None:
     temporal_metrics = evaluate_sequence(result["records"])
     temporal_metrics.update(result["summary"])
 
+    # ── Packet Verifier + controller (ETRI 2차 step 7; gated, default OFF) ────
+    # Adds severity/controller_decision to frame_records and a verifier_summary
+    # to segment_records IN PLACE when enabled; a no-op otherwise (see
+    # pipelines/packet_verification.py::maybe_run docstring for the exact contract).
+    from sgdjscc_lab.pipelines.packet_verification import maybe_run as _maybe_run_verifier
+    verifier_out = _maybe_run_verifier(result, cfg)
+    if verifier_out is not None:
+        logger.info("Packet verifier: %d frame(s) verified.", len(verifier_out["rows"]))
+
     # ── Persist outputs ──────────────────────────────────────────────────────
     kf_json = Path(OmegaConf.select(cfg, "keyframe_json", default="../outputs/keyframes.json"))
     kf_json.parent.mkdir(parents=True, exist_ok=True)

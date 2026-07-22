@@ -581,3 +581,152 @@ class TestSegmentRecords:
         import json
         res = self._run()
         json.dumps(res["segment_records"])   # must not raise
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Packet Verifier + controller wiring onto the temporal pipeline (ETRI 2차,
+# step 7). Gated by use_packet_verifier + verifier.enabled (default OFF);
+# scripts/evaluate_video.py calls pipelines.packet_verification.maybe_run on
+# the TemporalPipeline.run() result exactly as these tests do.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _hallucinating_packet_fn(frame, fid):
+    """Reconstructed-frame packets always hallucinate an extra 'dog' object,
+    so every frame in the run has a non-zero, uniform verifier severity."""
+    fid = str(fid)
+    if fid.startswith("recon_"):
+        return build_packet(objects=["car", "dog"], scene="street scene")
+    return build_packet(objects=["car"], scene="street scene")
+
+
+def _run_temporal_pipeline_with_hallucination():
+    from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+    from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+
+    frames = [torch.full((1, 3, 8, 8), 0.1 * (i + 1)) for i in range(3)]
+    kfx = KeyframeExtractor(_StubDetector([True, False, False]), max_gop=None)
+    pipe = TemporalPipeline(
+        reconstruct_fn=lambda frame, cfg: frame.clone(),
+        packet_fn=_hallucinating_packet_fn,
+        keyframe_extractor=kfx,
+        reuse_threshold=0.9,   # identical orig packets across frames → reuse
+    )
+    return pipe.run(frames)
+
+
+def _verifier_cfg(tmp_path, enabled=True, use_phase4=True, use_packet_verifier=True):
+    from omegaconf import OmegaConf
+    return OmegaConf.create({
+        "use_phase4": use_phase4,
+        "use_packet_verifier": use_packet_verifier,
+        "verifier": {
+            "enabled": enabled,
+            "severity_threshold": 0.6,
+            "accept_severity": 0.0,
+            "save_reports": True,
+            "report_json": str(tmp_path / "packet_match_report.json"),
+            "report_csv": str(tmp_path / "packet_match_report.csv"),
+            "decisions_json": str(tmp_path / "controller_decisions.json"),
+            "decisions_csv": str(tmp_path / "controller_decisions.csv"),
+        },
+    })
+
+
+class TestPacketVerifierWiring:
+    def test_gate_off_leaves_result_unchanged(self, tmp_path):
+        import json
+        from sgdjscc_lab.pipelines.packet_verification import maybe_run
+
+        res = _run_temporal_pipeline_with_hallucination()
+        before = json.loads(json.dumps(res["frame_records"]))  # deep copy via round-trip
+
+        out = maybe_run(res, _verifier_cfg(tmp_path, enabled=False))
+        assert out is None
+        assert res["frame_records"] == before
+        assert all("severity" not in f for f in res["frame_records"])
+        assert all("verifier_summary" not in s for s in res["segment_records"])
+        assert not (tmp_path / "packet_match_report.json").exists()
+
+    def test_gate_off_when_master_switch_disabled(self, tmp_path):
+        from sgdjscc_lab.pipelines.packet_verification import maybe_run
+
+        res = _run_temporal_pipeline_with_hallucination()
+        cfg = _verifier_cfg(tmp_path, enabled=True, use_phase4=False)
+        out = maybe_run(res, cfg)
+        assert out is None
+        assert all("severity" not in f for f in res["frame_records"])
+
+    def test_gate_on_adds_columns_and_writes_reports(self, tmp_path):
+        import json
+        from sgdjscc_lab.pipelines.packet_verification import maybe_run
+
+        res = _run_temporal_pipeline_with_hallucination()
+        out = maybe_run(res, _verifier_cfg(tmp_path))
+        assert out is not None
+        assert len(out["rows"]) == len(res["frame_records"]) == 3
+
+        for flog in res["frame_records"]:
+            assert "severity" in flog and flog["severity"] > 0.0
+            assert "controller_decision" in flog
+
+        for seg in res["segment_records"]:
+            summary = seg["verifier_summary"]
+            assert summary["mean_severity"] > 0.0
+            assert summary["max_severity"] > 0.0
+            assert summary["worst_decision"] is not None
+
+        report_json = tmp_path / "packet_match_report.json"
+        decisions_json = tmp_path / "controller_decisions.json"
+        assert report_json.exists() and decisions_json.exists()
+
+        rows = json.loads(report_json.read_text(encoding="utf-8"))
+        assert len(rows) == 3
+        for row in rows:
+            for k in ("frame_index", "object_match_rate", "missing_objects",
+                      "additional_objects", "relation_errors", "attribute_errors",
+                      "scene_match", "severity", "controller_decision", "candidate_actions"):
+                assert k in row
+            assert "dog" in row["additional_objects"]
+
+        decision_rows = json.loads(decisions_json.read_text(encoding="utf-8"))
+        assert len(decision_rows) == 3
+        assert all(d["controller_decision"] for d in decision_rows)
+
+    def test_gate_on_writes_readable_csv(self, tmp_path):
+        import csv as csv_mod
+        from sgdjscc_lab.pipelines.packet_verification import maybe_run
+
+        res = _run_temporal_pipeline_with_hallucination()
+        maybe_run(res, _verifier_cfg(tmp_path))
+
+        with open(tmp_path / "packet_match_report.csv", newline="", encoding="utf-8") as fh:
+            rows = list(csv_mod.DictReader(fh))
+        assert len(rows) == 3
+        assert "dog" in rows[0]["additional_objects"]   # JSON-encoded list cell
+
+        with open(tmp_path / "controller_decisions.csv", newline="", encoding="utf-8") as fh:
+            rows = list(csv_mod.DictReader(fh))
+        assert len(rows) == 3
+        assert all(r["controller_decision"] for r in rows)
+
+
+class TestPacketVerifierWiringRegression:
+    def test_severity_zero_for_perfect_reconstruction(self, tmp_path):
+        """Regression: the existing (non-hallucinating) fixtures used elsewhere
+        in this file must verify as zero severity / accept when the gate is on."""
+        from sgdjscc_lab.pipelines.packet_verification import maybe_run
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.scene_change_detector import SceneChangeDetector, SceneChangeConfig
+
+        pipe = TemporalPipeline(
+            reconstruct_fn=lambda frame, cfg: frame.clone(),
+            packet_fn=_packet_fn,
+            scene_detector=SceneChangeDetector(SceneChangeConfig(threshold=0.35)),
+            reuse_threshold=0.2,
+        )
+        res = pipe.run(_two_scene_frames(3))
+        out = maybe_run(res, _verifier_cfg(tmp_path))
+        assert out is not None
+        for row in out["rows"]:
+            assert row["severity"] == pytest.approx(0.0, abs=1e-9)
+            assert row["controller_decision"] == "accept"

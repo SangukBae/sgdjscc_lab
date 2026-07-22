@@ -53,3 +53,32 @@ temporal_csv: "../outputs/temporal_metrics.csv"   # per-sequence temporal metric
                                                   # incl. provisional PTC/SFR/SDI
 frame_log_csv: "../outputs/temporal_frames.csv"   # per-frame log incl. gate
                                                   # decision + motion score
+
+# ── Packet Verifier + regeneration controller (ETRI 2차 step 7) ───────────────
+# Rx-legal packet verifier: compares each frame's original/transmitted packet
+# against its reconstructed-frame packet (evaluators/packet_verifier.py) and
+# derives a rule-based controller decision (controllers/verifier_controller.py).
+#
+# Default OFF (both use_packet_verifier and verifier.enabled must be true, on
+# top of the use_phase4 master switch — see phase_gates.py). Enabling this only
+# ADDS report files and two extra frame_log_csv columns / one segments.json key
+# ("severity", "controller_decision", "verifier_summary"); it never changes the
+# temporal pipeline's reconstruction or any existing metric.
+#
+# 2차 scope note: the controller only decides and logs. It does not inject
+# negative prompts / prompt emphasis into the sampler or trigger an actual
+# recompute — see controllers/verifier_controller.py's module docstring.
+use_packet_verifier: false             # phase4-gated master flag for this feature
+verifier:
+  enabled: false                       # second explicit switch (both must be true)
+  severity_threshold: 0.6              # severity >= this → fallback_recompute
+  keyframe_fallback_severity: 0.85     # severity >= this (inter-frame only) → keyframe_fallback
+  accept_severity: 0.15                # severity <= this (or no error mode) → accept
+  missing_object_threshold: 1          # >= this many missing objects → missing_object mode
+  additional_object_threshold: 1       # >= this many additional objects → additional_object mode
+  structural_error_threshold: 1        # >= this many relation+attribute errors → structural mode
+  save_reports: true                   # write packet_match_report / controller_decisions
+  report_json: "../outputs/packet_match_report.json"
+  report_csv: "../outputs/packet_match_report.csv"
+  decisions_json: "../outputs/controller_decisions.json"
+  decisions_csv: "../outputs/controller_decisions.csv"

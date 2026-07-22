@@ -55,6 +55,10 @@ _NESTED_PATH_KEYS = (
     "video_io.extracted_frames_dir",           # mp4 → extracted frame folders
     "video_io.recon_frames_dir",               # reconstructed frame folder
     "video_io.recon_video",                    # re-assembled reconstruction mp4
+    "verifier.report_json",                    # packet_match_report.json (ETRI 2차)
+    "verifier.report_csv",                     # packet_match_report.csv (ETRI 2차)
+    "verifier.decisions_json",                 # controller_decisions.json (ETRI 2차)
+    "verifier.decisions_csv",                  # controller_decisions.csv (ETRI 2차)
     "train.controlnet.edge_jscc.checkpoint",   # trained edge codec for Stage 3
     "train.dataset.caption_path",              # manifest / coco_json / multi_manifest (train)
     "train.dataset.val_caption_path",          # manifest / coco_json / multi_manifest (val)

@@ -107,6 +107,100 @@ class TestAttributeConsistency:
 # segmentation consistency
 # ─────────────────────────────────────────────────────────────────────────────
 
+class TestPacketVerifier:
+    """evaluators/packet_verifier.py – wrapper/service + severity score (ETRI 2차)."""
+
+    def test_report_separates_error_types(self):
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        orig = _orig()
+        recon = build_packet(
+            objects=["car", "tree"], scene="beach",
+            relations=[{"subject": "car", "predicate": "on", "object": "road"}],
+            attributes={"car": ["blue"]},
+        )
+        rep = PacketVerifier().verify(orig, recon, item_id=3)
+        assert rep["item_id"] == 3
+        assert "dog" in rep["missing_objects"]
+        assert "tree" in rep["additional_objects"]
+        assert rep["relation_error_count"] > 0
+        assert rep["attribute_error_count"] > 0
+        assert rep["scene_match"] is False
+        assert 0.0 <= rep["severity"] <= 1.0
+
+    def test_perfect_match_zero_severity(self):
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        rep = PacketVerifier().verify(_orig(), _orig())
+        assert rep["severity"] == pytest.approx(0.0, abs=1e-9)
+
+    def test_severity_increases_with_missing_objects(self):
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        orig = build_packet(objects=["car", "dog", "tree", "bus"], scene="street scene")
+        v = PacketVerifier()
+        sev_none_missing = v.verify(orig, build_packet(objects=["car", "dog", "tree", "bus"], scene="street scene"))["severity"]
+        sev_one_missing = v.verify(orig, build_packet(objects=["car", "dog", "tree"], scene="street scene"))["severity"]
+        sev_two_missing = v.verify(orig, build_packet(objects=["car", "dog"], scene="street scene"))["severity"]
+        assert sev_none_missing < sev_one_missing < sev_two_missing
+
+    def test_severity_increases_with_additional_objects(self):
+        # n_ref=3 gives the additional-object term room to grow before the
+        # min(1.0, ...) normalisation cap saturates it.
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        orig = build_packet(objects=["car", "dog", "tree"], scene="street scene")
+        v = PacketVerifier()
+        sev_0 = v.verify(orig, build_packet(objects=["car", "dog", "tree"], scene="street scene"))["severity"]
+        sev_1 = v.verify(orig, build_packet(objects=["car", "dog", "tree", "bus"], scene="street scene"))["severity"]
+        sev_2 = v.verify(orig, build_packet(objects=["car", "dog", "tree", "bus", "bike"], scene="street scene"))["severity"]
+        assert sev_0 < sev_1 < sev_2
+
+    def test_severity_increases_with_relation_and_attribute_errors(self):
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        orig = _orig()
+        v = PacketVerifier()
+        sev_good = v.verify(orig, _orig())["severity"]
+        recon_bad_attr = build_packet(
+            caption="a red car next to a black dog on a street",
+            objects=["car", "dog"], scene="street scene",
+            relations=[{"subject": "car", "predicate": "next to", "object": "dog"}],
+            attributes={"car": ["blue"], "dog": ["black"]},
+        )
+        sev_attr = v.verify(orig, recon_bad_attr)["severity"]
+        recon_bad_rel = build_packet(
+            caption="a red car next to a black dog on a street",
+            objects=["car", "dog"], scene="street scene",
+            relations=[{"subject": "dog", "predicate": "chases", "object": "car"}],
+            attributes={"car": ["red"], "dog": ["black"]},
+        )
+        sev_rel = v.verify(orig, recon_bad_rel)["severity"]
+        assert sev_good < sev_attr
+        assert sev_good < sev_rel
+
+    def test_severity_weight_override(self):
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        orig = build_packet(objects=["car", "dog"], scene="street scene")
+        recon = build_packet(objects=["car"], scene="street scene")
+        default_sev = PacketVerifier().verify(orig, recon)["severity"]
+        boosted_sev = PacketVerifier(severity_weights={"w_missing": 1.0}).verify(orig, recon)["severity"]
+        assert boosted_sev > default_sev
+
+    def test_severity_clamped_to_one_with_heavy_custom_weights(self):
+        # Custom weights are not required to sum to 1.0; a total-mismatch packet
+        # with weights summing well above 1.0 must still clamp to 1.0, not
+        # silently exceed the documented [0, 1] range.
+        from sgdjscc_lab.evaluators.packet_verifier import PacketVerifier
+        orig = _orig()
+        recon = build_packet(
+            objects=["tree", "bus"], scene="beach",
+            relations=[{"subject": "bus", "predicate": "near", "object": "tree"}],
+            attributes={"tree": ["green"]},
+        )
+        heavy_weights = {
+            "w_missing": 1.0, "w_additional": 1.0, "w_relation": 1.0,
+            "w_attribute": 1.0, "w_scene": 1.0,
+        }
+        rep = PacketVerifier(severity_weights=heavy_weights).verify(orig, recon)
+        assert rep["severity"] == pytest.approx(1.0)
+
+
 class TestSegmentationConsistency:
     def test_none_when_absent(self):
         from sgdjscc_lab.evaluators.semantic_packet_matcher import segmentation_consistency
