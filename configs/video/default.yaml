@@ -225,8 +225,9 @@ accounting:
 # packet verifier is enabled, mean_severity) into one comparable
 # rate/reliability point. See pipelines/rate_reliability_report.py — one run
 # = one point; multiple runs accumulate into curve_csv via its
-# append/merge helpers. Default OFF; requires accounting.enabled: true for
-# the bit/symbol numbers to be meaningful.
+# append/merge helpers. Default OFF. If this is enabled while
+# accounting.enabled is false, evaluate_video.py still computes accounting
+# in memory for the report but does not write frame/segment accounting files.
 rate_reliability:
   enabled: false
   output_json: "../outputs/accounting/rate_reliability_summary.json"
