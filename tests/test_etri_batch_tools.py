@@ -116,6 +116,30 @@ class TestBuildRunConfig:
         for frag in cfg["_defaults_"]:
             assert Path(f"{frag}.yaml").exists(), frag
 
+    def test_model_root_is_absolute_and_survives_nested_run_dir(self, tmp_path):
+        """Regression: model/sgdjscc.yaml's model_root ("../checkpoints/") is
+        relative to a config file living directly under configs/ — but this
+        driver writes config.yaml two levels below output_root
+        (<output_root>/<stage>/<video>/), where "../checkpoints" resolves to
+        <output_root>/<stage>/checkpoints (wrong) instead of the real
+        checkpoints/ dir. Only --no-models runs ever existed before this was
+        caught, since build_models() (the only reader of model_root) is
+        skipped entirely in that mode. build_run_config must override
+        model_root absolutely so a real-model run's config.yaml — written
+        anywhere under output_root — still finds the real checkpoints."""
+        cfg = self._cfg("baseline")
+        assert Path(cfg["model_root"]).is_absolute()
+        assert cfg["model_root"] == str((_REPO / "checkpoints").resolve())
+
+        # Simulate load_config()'s path resolution from a nested run dir and
+        # confirm it does NOT get corrupted back into a relative-looking join.
+        from sgdjscc_lab.config import load_config
+        run_dir = tmp_path / "real_all_frames_step10" / "01_person_walk"
+        run_dir.mkdir(parents=True)
+        runner._write_yaml(cfg, run_dir / "config.yaml")
+        loaded = load_config(run_dir / "config.yaml")
+        assert loaded.model_root == str((_REPO / "checkpoints").resolve())
+
     def test_motion_sweep_threshold(self):
         cfg = self._cfg("motion_sweep", motion_threshold=0.08)
         assert cfg["temporal"]["motion_threshold"] == 0.08
@@ -204,6 +228,129 @@ class TestBuildRunConfig:
         cmd_h = runner.build_command(_REPO, "heldout", Path("/o/c.yaml"), no_models=True)
         assert "remeasure_video_metrics.py" in cmd_h[1]
         assert "--save-video" not in cmd_h
+
+
+class TestRemapDeviceForCudaVisible:
+    """SGDJSCC's DiffusionGenerator.encode_text() hardcodes .cuda() (always the
+    process's default CUDA device) instead of honouring the requested device —
+    see remap_device_for_cuda_visible's docstring. This must be applied to
+    ANY cuda:N device (including cuda:0), and it must work whether or not a
+    base env dict is already available (parallel path passes a thread-limited
+    one; sequential path has none)."""
+
+    def test_noop_for_non_cuda_device(self):
+        env, dev = runner.remap_device_for_cuda_visible("cpu", {"X": "1"})
+        assert dev == "cpu"
+        assert env == {"X": "1"}
+
+    def test_noop_for_none_device(self):
+        env, dev = runner.remap_device_for_cuda_visible(None, None)
+        assert dev is None and env is None
+
+    def test_remaps_cuda_n_with_given_base_env(self):
+        env, dev = runner.remap_device_for_cuda_visible("cuda:2", {"BASE": "x"})
+        assert dev == "cuda:0"
+        assert env["CUDA_VISIBLE_DEVICES"] == "2"
+        assert env["BASE"] == "x"
+
+    def test_remaps_cuda_n_building_its_own_env_when_none_given(self):
+        """The sequential (--parallel 1) dispatch path has no pre-built env —
+        remap must still work by falling back to a fresh os.environ copy,
+        not silently skip the fix because env was None."""
+        env, dev = runner.remap_device_for_cuda_visible("cuda:1", None)
+        assert dev == "cuda:0"
+        assert env is not None
+        assert env["CUDA_VISIBLE_DEVICES"] == "1"
+        # A real os.environ snapshot, not an empty dict.
+        assert len(env) > 1
+
+    def test_remaps_cuda_zero_too(self):
+        """cuda:0 is remapped as well (harmless CUDA_VISIBLE_DEVICES=0), so
+        there is no special-cased "only non-zero indices are fixed" gap."""
+        env, dev = runner.remap_device_for_cuda_visible("cuda:0", None)
+        assert dev == "cuda:0"
+        assert env["CUDA_VISIBLE_DEVICES"] == "0"
+
+
+class TestSequentialDeviceRemapAppliedInMain:
+    """Regression: the CUDA_VISIBLE_DEVICES remap used to only be wired into
+    the --parallel > 1 dispatch branch, so `--parallel 1 --device cuda:1`
+    (the default, most common single-GPU invocation style) still hit
+    SGDJSCC's .cuda() hardcoding crash. main() must remap for every dispatch,
+    parallel or not."""
+
+    def _make_dataset(self, data_root: Path):
+        data_root.mkdir(parents=True)
+        (data_root / "processed").mkdir()
+        video = data_root / "processed" / "01_toy.mp4"
+        video.write_bytes(b"fake")
+        (data_root / "manifest.csv").write_text(
+            "id,name,raw_file,processed_file,frames_dir,width,height,fps,duration_sec,"
+            "n_frames,primary_objects,event\n"
+            "01,toy,raw/01_toy.mp4,processed/01_toy.mp4,frames/01_toy,64,64,10,1,10,x,x\n",
+            encoding="utf-8",
+        )
+
+    def test_sequential_run_with_cuda_device_gets_env_remap(self, tmp_path, monkeypatch):
+        data_root = tmp_path / "data"
+        self._make_dataset(data_root)
+        output_root = tmp_path / "out"
+        seen = {}
+
+        def fake_run(cmd, stdout, stderr, cwd, env=None):
+            seen["cmd"] = cmd
+            seen["env"] = env
+            (Path(cmd[cmd.index("--config") + 1]).parent / "temporal_metrics.csv").write_text("n_frames\n1\n")
+            stdout.write("ok\n")
+            class _P:
+                returncode = 0
+            return _P()
+
+        monkeypatch.setattr(runner.subprocess, "run", fake_run)
+        argv = ["run_etri_video_eval.py", "--data-root", str(data_root),
+               "--output-root", str(output_root), "--stages", "baseline",
+               "--device", "cuda:1", "--gpu-log-interval", "0"]
+        monkeypatch.setattr(sys, "argv", argv)
+        runner.main()
+
+        # The subprocess must have been launched with --device cuda:0 (the
+        # remapped, in-process value) and CUDA_VISIBLE_DEVICES=1 in its env —
+        # not the raw "--device cuda:1" that would crash inside SGDJSCC.
+        assert "--device" in seen["cmd"]
+        idx = seen["cmd"].index("--device")
+        assert seen["cmd"][idx + 1] == "cuda:0"
+        assert seen["env"] is not None
+        assert seen["env"]["CUDA_VISIBLE_DEVICES"] == "1"
+
+        # batch_status.json still records the PHYSICAL device for traceability.
+        status = json.loads((output_root / "batch_status.json").read_text())
+        assert status[0]["device"] == "cuda:1"
+
+    def test_sequential_run_without_cuda_device_env_stays_none(self, tmp_path, monkeypatch):
+        """No --device given (e.g. --no-models runs) → no remap needed, and
+        subprocess.run must be called exactly as before (no env kwarg) —
+        this is also what keeps the pre-existing --no-models test fixtures
+        (which use a stricter (cmd, stdout, stderr, cwd) fake signature) passing."""
+        data_root = tmp_path / "data"
+        self._make_dataset(data_root)
+        output_root = tmp_path / "out"
+        seen = {}
+
+        def fake_run(cmd, stdout, stderr, cwd):
+            seen["called_without_env_kwarg"] = True
+            (Path(cmd[cmd.index("--config") + 1]).parent / "temporal_metrics.csv").write_text("n_frames\n1\n")
+            stdout.write("ok\n")
+            class _P:
+                returncode = 0
+            return _P()
+
+        monkeypatch.setattr(runner.subprocess, "run", fake_run)
+        argv = ["run_etri_video_eval.py", "--data-root", str(data_root),
+               "--output-root", str(output_root), "--stages", "baseline",
+               "--no-models", "--gpu-log-interval", "0"]
+        monkeypatch.setattr(sys, "argv", argv)
+        runner.main()
+        assert seen.get("called_without_env_kwarg") is True
 
 
 class TestRunOneMetadata:

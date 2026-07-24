@@ -71,9 +71,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -196,6 +198,19 @@ def build_run_config(
         "use_phase4": True,
         "use_phase5": False,
         "use_packet_eval": True,
+        # Absolute override: model/sgdjscc.yaml's "model_root: ../checkpoints/"
+        # is written assuming the config file sits exactly one level below
+        # configs/ (as configs/etri_video_eval.yaml does). This driver's
+        # generated config.yaml instead sits under
+        # <output_root>/<stage>/<video>[/th_<t>]/ — TWO+ levels deep — so the
+        # relative path would resolve to a nonexistent
+        # <output_root>/<stage>/checkpoints/ and every real-model (non
+        # --no-models) run would fail at build_models() with a
+        # FileNotFoundError. This never surfaced before because only
+        # --no-models batches had been run (build_models is skipped
+        # entirely in that mode) — see scripts/run_speed_experiment.py's
+        # cfg for the same override, needed for the same reason.
+        "model_root": str((Path(repo_root) / "checkpoints").resolve()),
         "input_path": str(input_path),
         "keyframe_json": "keyframes.json",
         "segment_json": "segments.json",
@@ -285,8 +300,16 @@ def build_run_config(
 
 
 def build_command(repo_root: Path, stage: str, cfg_path: Path, captions=None,
-                  no_models: bool = False, save_video: bool = True, device=None) -> list:
-    """Assemble the subprocess argv for one run."""
+                  no_models: bool = False, save_video: bool = True, device=None,
+                  extra_args: list = None) -> list:
+    """Assemble the subprocess argv for one run.
+
+    ``extra_args`` (speed-experiment passthrough: --diffusion-step,
+    --force-interframe-reuse, --no-clip, --recon-caption-mode, --max-frames,
+    --packet-cache-dir, --profile-out) is only appended for evaluate_video.py
+    runs — remeasure_video_metrics.py (the heldout stage) has its own,
+    narrower CLI and does not accept these.
+    """
     scripts = Path(repo_root) / "scripts"
     if stage == "heldout":
         cmd = [sys.executable, str(scripts / "remeasure_video_metrics.py"), "--config", str(cfg_path)]
@@ -304,6 +327,8 @@ def build_command(repo_root: Path, stage: str, cfg_path: Path, captions=None,
         cmd = [sys.executable, str(scripts / "evaluate_video.py"), "--config", str(cfg_path)]
         if save_video:
             cmd.append("--save-video")
+        if extra_args:
+            cmd += list(extra_args)
     if captions is not None:
         cmd += ["--captions", str(captions)]
     if no_models:
@@ -311,6 +336,65 @@ def build_command(repo_root: Path, stage: str, cfg_path: Path, captions=None,
     if device is not None:
         cmd += ["--device", str(device)]
     return cmd
+
+
+def thread_limit_env(num_workers: int) -> dict:
+    """Env overrides capping OMP/MKL/PyTorch intra-op threads per worker.
+
+    With N worker processes sharing one machine's CPUs, each worker
+    defaulting to "use all cores" causes them to thrash each other on
+    preprocessing / data-loading / CPU-side tensor ops (item 4 in the task:
+    "CPU thread 과점으로 3개 worker 병렬 실행 시 병목"). Splits the visible
+    core count evenly instead; a floor of 1 avoids a 0-thread config when
+    num_workers exceeds the core count.
+    """
+    n = max(1, (os.cpu_count() or 1) // max(1, num_workers))
+    env = dict(os.environ)
+    env["OMP_NUM_THREADS"] = str(n)
+    env["MKL_NUM_THREADS"] = str(n)
+    env["TORCH_NUM_THREADS"] = str(n)
+    return env
+
+
+def remap_device_for_cuda_visible(device, env: dict = None):
+    """Work around a hardcoded ``.cuda()`` in the (read-only) SGDJSCC reference.
+
+    ``DiffusionGenerator.encode_text()`` in
+    ``SGDJSCC/models/test_advanced_network/diffusion_element_wise.py`` does
+    ``clip.tokenize(label, truncate=True).cuda()`` — always the process's
+    *default* CUDA device — instead of ``.to(self.device)``. Everything else
+    in the pipeline correctly honours ``--device``, so this is invisible on
+    ``cuda:0`` (default device == cuda:0 by coincidence) but crashes with a
+    cross-device RuntimeError inside ``encode_text`` on any other GPU index —
+    confirmed on this task's remote verification run (``--device cuda:1``
+    failed; identical run on ``cuda:0`` succeeded). CLAUDE.md forbids
+    modifying SGDJSCC/, so the fix lives here instead: set
+    ``CUDA_VISIBLE_DEVICES`` to the physical index and pass the process
+    ``cuda:0`` (the only GPU now visible to it) as ``--device``. The
+    process's default CUDA device then correctly IS the intended physical
+    GPU, so the hardcoded ``.cuda()`` call lands on the same device as
+    everything else.
+
+    Applies to ANY ``cuda:N`` device, including ``cuda:0`` (harmless no-op
+    remap there) — this must be called unconditionally for every real-model
+    GPU run, not just parallel/multi-worker ones: the underlying bug is a
+    property of the subprocess's requested ``--device`` string, not of how
+    many workers are running. ``env`` is the base environment to layer
+    ``CUDA_VISIBLE_DEVICES`` on top of (e.g. a thread-limited env from
+    ``thread_limit_env``); defaults to a fresh copy of ``os.environ`` when
+    None, so a plain sequential ``--device cuda:1`` run is covered too — see
+    the caller in ``main()._dispatch``. No-op for non-``cuda:N`` devices
+    (``cpu``, ``None``): returns ``env`` (possibly still None) unchanged, so
+    callers that only care about "did this change anything" can compare
+    identity/None-ness of the returned env.
+    """
+    if device is None or not str(device).startswith("cuda:"):
+        return env, device
+    idx = str(device).split(":", 1)[1]
+    base = env if env is not None else dict(os.environ)
+    new_env = dict(base)
+    new_env["CUDA_VISIBLE_DEVICES"] = idx
+    return new_env, "cuda:0"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -325,7 +409,8 @@ def _write_yaml(cfg: dict, path: Path) -> None:
 
 def run_one(repo_root: Path, stage: str, entry: dict, out_dir: Path, cfg: dict, *,
             no_models: bool, save_video: bool, device=None, snr=None,
-            skip_existing: bool = False, prior: dict = None) -> dict:
+            skip_existing: bool = False, prior: dict = None,
+            extra_args: list = None, env: dict = None, cli_device=None) -> dict:
     """Generate the config, run the stage subprocess, tee output to run.log.
 
     ``no_models``/``snr``/``device`` on the returned row always describe the
@@ -347,6 +432,14 @@ def run_one(repo_root: Path, stage: str, entry: dict, out_dir: Path, cfg: dict, 
     ATTEMPTED config, not a confirmed produced-by one — the row still carries
     them (better than nothing) but is flagged with a note rather than treated
     as equally trustworthy as an "ok" prior.
+
+    ``cli_device`` — if given, this is what's actually passed as the
+    subprocess's ``--device`` (falls back to ``device`` when None). Callers
+    doing the ``CUDA_VISIBLE_DEVICES`` remap (see
+    ``remap_device_for_cuda_visible``) pass the physical device (e.g.
+    "cuda:1") as ``device`` — so batch_status.json keeps recording which GPU
+    was actually used — but "cuda:0" as ``cli_device``, since that's the only
+    GPU visible inside the remapped subprocess.
     """
     out_dir = Path(out_dir)
     marker = out_dir / ("heldout/metric_delta.json" if stage == "heldout" else "temporal_metrics.csv")
@@ -387,7 +480,9 @@ def run_one(repo_root: Path, stage: str, entry: dict, out_dir: Path, cfg: dict, 
     _write_yaml(cfg, cfg_path)
 
     cmd = build_command(repo_root, stage, cfg_path, captions=entry.get("captions"),
-                        no_models=no_models, save_video=save_video, device=device)
+                        no_models=no_models, save_video=save_video,
+                        device=(cli_device if cli_device is not None else device),
+                        extra_args=extra_args)
     if stage == "heldout":
         cmd += ["--input", str(entry["processed"])]
         # Input-format bridge for the ETRI 5차 gt presence backend (see
@@ -401,10 +496,14 @@ def run_one(repo_root: Path, stage: str, entry: dict, out_dir: Path, cfg: dict, 
 
     log_path = out_dir / "run.log"
     t0 = time.time()
+    run_kwargs = {"stdout": None, "stderr": subprocess.STDOUT, "cwd": str(repo_root)}
+    if env is not None:
+        run_kwargs["env"] = env
     with open(log_path, "w", encoding="utf-8") as log:
         log.write(f"# stage={stage} video={entry['key']}\n# cmd: {' '.join(cmd)}\n\n")
         log.flush()
-        proc = subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=str(repo_root))
+        run_kwargs["stdout"] = log
+        proc = subprocess.run(cmd, **run_kwargs)
     return {"stage": stage, "video": entry["key"], "out_dir": str(out_dir),
             "status": "ok" if proc.returncode == 0 else "failed",
             "returncode": proc.returncode, "duration_sec": round(time.time() - t0, 2),
@@ -441,6 +540,34 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--generate-delta-min", type=float, default=0.0)
     p.add_argument("--generate-delta-max", type=float, default=1.0)
     p.add_argument("--generate-motion-max", type=float, default=1.0)
+    # ── Speed-experiment passthrough (evaluate_video.py flags; ignored for the
+    # heldout stage — see build_command's docstring) ─────────────────────────
+    p.add_argument("--diffusion-step", type=int, default=None)
+    p.add_argument("--force-interframe-reuse", action="store_true")
+    p.add_argument("--eval-no-clip", action="store_true",
+                   help="Forwarded as evaluate_video.py's --no-clip (renamed here to avoid "
+                        "confusion with any future --no-clip meaning on this driver itself).")
+    p.add_argument("--recon-caption-mode", default=None, choices=[None, "own", "skip"])
+    p.add_argument("--max-frames", type=int, default=None)
+    p.add_argument("--packet-cache-dir", default=None)
+    p.add_argument("--profile", action="store_true",
+                   help="Forwarded as evaluate_video.py's --profile: writes progress.json/"
+                        "profiling_summary.json and extra temporal_frames.csv columns per run "
+                        "(opt-in there too — default off, unchanged output file set otherwise).")
+    # ── Parallel dispatch across GPUs ─────────────────────────────────────────
+    p.add_argument("--parallel", type=int, default=1,
+                   help="Number of runs to launch concurrently (default 1 = current sequential "
+                        "behaviour, unchanged). Each run still writes to its own isolated "
+                        "stage/video[/th_<t>]/ directory, so this is safe purely because no run "
+                        "shares output paths with another (see module docstring).")
+    p.add_argument("--devices", default=None,
+                   help="Comma list of devices to round-robin across parallel workers, e.g. "
+                        "'cuda:0,cuda:1,cuda:2'. Overrides --device per-run when --parallel > 1; "
+                        "with --parallel == 1 --device is used as-is (unchanged behaviour).")
+    p.add_argument("--gpu-log-interval", type=float, default=10.0,
+                   help="nvidia-smi sampling interval (sec) written to <output-root>/gpu_util.csv "
+                        "for the duration of this invocation. Silently disabled if nvidia-smi is "
+                        "not on PATH.")
     return p.parse_args()
 
 
@@ -487,7 +614,25 @@ def main() -> None:
             existing = []
     existing_by_id = {_run_id(r): r for r in existing}
 
-    runs = []
+    extra_args = []
+    if args.diffusion_step is not None:
+        extra_args += ["--diffusion-step", str(args.diffusion_step)]
+    if args.force_interframe_reuse:
+        extra_args.append("--force-interframe-reuse")
+    if args.eval_no_clip:
+        extra_args.append("--no-clip")
+    if args.recon_caption_mode is not None:
+        extra_args += ["--recon-caption-mode", args.recon_caption_mode]
+    if args.max_frames is not None:
+        extra_args += ["--max-frames", str(args.max_frames)]
+    if args.packet_cache_dir is not None:
+        extra_args += ["--packet-cache-dir", str(args.packet_cache_dir)]
+    if args.profile:
+        extra_args.append("--profile")
+
+    devices = [d.strip() for d in args.devices.split(",") if d.strip()] if args.devices else None
+
+    jobs = []
     for stage in stages:
         for entry in entries:
             per_run_thresholds = thresholds if stage == "motion_sweep" else [None]
@@ -503,18 +648,66 @@ def main() -> None:
                     generate_stage_motion_threshold=args.generate_motion_threshold,
                     rate_reliability_label=entry["key"],
                 )
-                label = f"[{stage}{'' if th is None else f' th={th}'}] {entry['key']}"
-                print(f"→ {label}", flush=True)
-                status = run_one(
-                    _REPO_ROOT, stage, entry, out_dir, cfg,
-                    no_models=args.no_models, save_video=(save_video and stage != "heldout"),
-                    device=args.device, snr=args.snr, skip_existing=args.skip_existing,
-                    prior=existing_by_id.get((stage, entry["key"], th)),
+                jobs.append({"stage": stage, "entry": entry, "th": th, "out_dir": out_dir, "cfg": cfg})
+
+    gpu_logger = None
+    if args.gpu_log_interval and args.gpu_log_interval > 0:
+        from sgdjscc_lab.utils.gpu_logger import GPULogger
+        gpu_logger = GPULogger(output_root / "gpu_util.csv", interval_sec=args.gpu_log_interval)
+        gpu_logger.start()
+
+    def _dispatch(job, device_override=None, env=None):
+        stage, entry, th, out_dir, cfg = job["stage"], job["entry"], job["th"], job["out_dir"], job["cfg"]
+        label = f"[{stage}{'' if th is None else f' th={th}'}] {entry['key']}"
+        dev = device_override if device_override is not None else args.device
+        # Applied unconditionally (not just in the --parallel branch): the
+        # underlying SGDJSCC .cuda() bug bites any "cuda:N" device regardless
+        # of worker count, so a plain sequential "--device cuda:1" run must be
+        # covered too. No-op (env/dev returned unchanged) for cpu/None.
+        run_env, cli_dev = remap_device_for_cuda_visible(dev, env)
+        remap_note = ""
+        if cli_dev != dev:
+            cvd = run_env.get("CUDA_VISIBLE_DEVICES")
+            remap_note = f", CUDA_VISIBLE_DEVICES={cvd} → {cli_dev}"
+        print(f"→ {label} (device={dev}{remap_note})", flush=True)
+        status = run_one(
+            _REPO_ROOT, stage, entry, out_dir, cfg,
+            no_models=args.no_models, save_video=(save_video and stage != "heldout"),
+            device=dev, cli_device=cli_dev, snr=args.snr, skip_existing=args.skip_existing,
+            prior=existing_by_id.get((stage, entry["key"], th)),
+            extra_args=(extra_args if stage != "heldout" else None), env=run_env,
+        )
+        if stage == "motion_sweep":
+            status["motion_threshold"] = th
+        print(f"   {status['status']} ({status['duration_sec']}s) → {status['out_dir']}", flush=True)
+        return status
+
+    try:
+        if args.parallel <= 1:
+            # Unchanged sequential path (identical to the pre-parallel behaviour).
+            runs = [_dispatch(job) for job in jobs]
+        else:
+            if devices is None:
+                print(
+                    f"WARNING: --parallel {args.parallel} without --devices: every worker "
+                    f"shares the single --device {args.device} — CPU-side thread limiting "
+                    "still applies, but GPU memory/compute contends on one card. Pass "
+                    "--devices cuda:0,cuda:1,... to spread workers across GPUs.",
+                    flush=True,
                 )
-                if stage == "motion_sweep":
-                    status["motion_threshold"] = th
-                print(f"   {status['status']} ({status['duration_sec']}s) → {status['out_dir']}", flush=True)
-                runs.append(status)
+            env = thread_limit_env(args.parallel)
+            runs = [None] * len(jobs)
+            with ThreadPoolExecutor(max_workers=args.parallel) as pool:
+                futures = {}
+                for i, job in enumerate(jobs):
+                    dev = (devices[i % len(devices)] if devices else args.device)
+                    futures[pool.submit(_dispatch, job, dev, env)] = i
+                for fut in futures:
+                    i = futures[fut]
+                    runs[i] = fut.result()
+    finally:
+        if gpu_logger is not None:
+            gpu_logger.stop()
 
     # Keep prior entries for (stage, video, threshold) combos not re-run now.
     new_ids = {_run_id(r) for r in runs}
