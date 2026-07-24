@@ -3,7 +3,18 @@ checkpoints/
 *.pth
 # Local datasets live in the repo-root data/ folder. Anchor to the root so the
 # source package src/sgdjscc_lab/data/ (the loaders) is NOT ignored.
-/data/
+/data/*
+!/data/etri_video_eval/
+/data/etri_video_eval/*
+!/data/etri_video_eval/README.md
+!/data/etri_video_eval/manifest.csv
+!/data/etri_video_eval/captions/
+!/data/etri_video_eval/captions/*.txt
+!/data/etri_video_eval/gt/
+!/data/etri_video_eval/gt/*.json
+/data/etri_video_eval/raw/
+/data/etri_video_eval/processed/
+/data/etri_video_eval/frames/
 
 # Runtime artifacts
 outputs/
