@@ -294,11 +294,14 @@ def account_frame(
       keyframe (a fresh full JSCC forward pass runs), but attributed to
       ``recompute_frame_symbols`` instead of ``keyframe_visual_latent_symbols``
       so per-decision totals stay unambiguous.
-    - ``generate``: only caption + motion/side-info are modelled as sent (the
-      mock ``video_generator`` backends condition on the already-received
-      keyframe reconstruction + caption/side-info, per
-      ``TemporalPipeline._generate_frame()`` — no fresh visual latent is
-      transmitted in this PoC's accounting).
+    - ``generate``: semantic packet + motion/side-info are modelled as sent
+      (the mock ``video_generator`` backends condition on the
+      already-received keyframe reconstruction + caption/packet side-info,
+      per ``TemporalPipeline._generate_frame()`` — no fresh visual latent is
+      transmitted in this PoC's accounting). ``caption_bits`` is still
+      reported for visibility, but when a full packet is present its caption
+      field is already included in ``semantic_packet_bits`` and is not added a
+      second time to ``total_bits``.
 
     An unrecognised/``None`` decision leaves every component at zero.
     """
@@ -324,14 +327,15 @@ def account_frame(
     elif decision == "generate":
         components["generated_frame_symbols"] = Component(
             0.0, UNIT_SYMBOLS, True,
-            "generate branch conditions on the already-received keyframe recon + caption/side-info; "
+            "generate branch conditions on the already-received keyframe recon + semantic packet/side-info; "
             "no additional visual latent is modelled as transmitted (PoC assumption, see "
             "video/video_generator.py's Rx-legal boundary note)",
         )
+        components["semantic_packet_bits"] = semantic_packet_bits(packet)
         components["caption_bits"] = caption_bits(caption)
         components["motion_side_info_bits"] = motion_side_info_bits(motion, motion_bits_per_block)
 
-    total_bits = sum(c.value for c in components.values() if c.unit == UNIT_BITS)
+    total_bits = _total_bits_without_caption_double_count(components)
     total_symbols_direct = sum(c.value for c in components.values() if c.unit == UNIT_SYMBOLS)
     total_channel_symbols = total_symbols_direct + total_bits * float(symbols_per_bit)
     proxy_notes = [f"{k}: {v.note}" for k, v in components.items() if v.proxy and v.value]
@@ -346,6 +350,26 @@ def account_frame(
         total_semantic_units=float(transmitted_units or 0.0),
         proxy_notes=proxy_notes,
     )
+
+
+def _total_bits_without_caption_double_count(components: Dict[str, Component]) -> float:
+    """Sum bit-valued components without counting caption text twice.
+
+    ``semantic_packet_bits`` is the byte length of the whole packet JSON, and
+    that packet JSON already includes its ``caption`` field when present.
+    ``caption_bits`` is useful as an interpretable component column, but it is
+    a visibility field rather than an extra payload when the full packet is
+    transmitted.
+    """
+    semantic_packet_value = components.get("semantic_packet_bits", _ZERO_BITS).value
+    total = 0.0
+    for name, comp in components.items():
+        if comp.unit != UNIT_BITS:
+            continue
+        if name == "caption_bits" and semantic_packet_value > 0:
+            continue
+        total += comp.value
+    return total
 
 
 # ── Naive baselines (ETRI 6차, step 11 comparison protocol) ───────────────────
@@ -367,7 +391,7 @@ def account_frame_as_side_info_only(
     generated" cost — the per-inter-frame unit the
     ``keyframe_only_lgvsc_style`` baseline uses."""
     caption = (packet or {}).get("caption") if packet else None
-    return account_frame(frame_index, decision="generate", role=role, caption=caption, motion=motion, **kw)
+    return account_frame(frame_index, decision="generate", role=role, packet=packet, caption=caption, motion=motion, **kw)
 
 
 def compute_baseline_record(
