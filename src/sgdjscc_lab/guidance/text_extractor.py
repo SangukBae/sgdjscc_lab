@@ -72,6 +72,7 @@ class TextExtractor:
         """
         ensure_sgdjscc_on_path()
         from utils.utils import image_caption
+        from sgdjscc_lab.utils import profiling
 
         # Move to the target device AND re-normalise dtype: a fp16 model moved to
         # CPU would otherwise crash on the half conv kernel. CPU → float32,
@@ -79,6 +80,7 @@ class TextExtractor:
         _align_model_device_dtype(self._model, device)
         try:
             with torch.inference_mode():
+                profiling.record_blip2_call(n=int(img_tensor.shape[0]))
                 return image_caption(self._model, img_tensor, device)
         finally:
             if offload_after and offload_device is not None:

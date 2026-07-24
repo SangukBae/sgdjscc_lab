@@ -42,6 +42,16 @@ _CLIP_SIZE = 224
 # and one "Loaded CLIP model" log per (model, device) instead of one per wrapper.
 _CLIP_MODEL_CACHE: dict = {}
 
+# Process-level cache of encoded text features keyed by (model_name,
+# device_str, texts_tuple). CLIP text encoding is a pure function of the
+# (frozen) model + input strings, so memoizing it is numerically exact — it
+# only matters when the same text list is re-encoded many times, which is the
+# common case for fixed vocabularies re-probed every frame (e.g. the coarse
+# scene-label list in guidance/semantic_packet_extractor.py, or COCO-80 object
+# labels in guidance/object_extractor.py). Unbounded but tiny in practice
+# (each entry is a handful of short strings' worth of embeddings).
+_TEXT_EMBED_CACHE: dict = {}
+
 
 def _tensor_to_pil_list(tensor: torch.Tensor) -> List[Image.Image]:
     """Convert [N, 3, H, W] float [0,1] tensor to list of PIL images."""
@@ -107,6 +117,8 @@ class CLIPScoreEvaluator:
     def _encode_images(self, tensor: torch.Tensor) -> torch.Tensor:
         """Encode image tensor → L2-normalised CLIP features [N, D]."""
         self._load()
+        from sgdjscc_lab.utils import profiling
+        profiling.record_clip_call(kind="image", n=int(tensor.shape[0]))
         pil_list = _tensor_to_pil_list(tensor)
         images = torch.stack([self._preprocess(img) for img in pil_list]).to(self.device)
         with torch.no_grad():
@@ -115,13 +127,25 @@ class CLIPScoreEvaluator:
         return feats
 
     def _encode_texts(self, texts: List[str]) -> torch.Tensor:
-        """Encode text list → L2-normalised CLIP features [N, D]."""
+        """Encode text list → L2-normalised CLIP features [N, D].
+
+        Memoized per (model, device, exact text tuple) — see
+        ``_TEXT_EMBED_CACHE``. A cache hit returns a detached clone so callers
+        can never mutate the cached tensor in place.
+        """
         self._load()
+        from sgdjscc_lab.utils import profiling
+        key = (self.model_name, str(self.device), tuple(texts))
+        cached = _TEXT_EMBED_CACHE.get(key)
+        if cached is not None:
+            return cached.clone()
+        profiling.record_clip_call(kind="text", n=len(texts))
         import clip
         tokens = clip.tokenize(texts, truncate=True).to(self.device)
         with torch.no_grad():
             feats = self._model.encode_text(tokens).float()
         feats = F.normalize(feats, dim=-1)
+        _TEXT_EMBED_CACHE[key] = feats.clone()
         return feats
 
     def image_image_score(

@@ -185,6 +185,55 @@ class TestEvaluateVideoDryRun:
         recon = sorted((out / "recon_frames").glob("recon_*.png"))
         assert len(recon) == 6
 
+    def test_profiling_output_is_opt_in(self, tmp_path):
+        """Without --profile/--profile-out, a run's output file set must be
+        exactly what it was before the profiling feature existed: no
+        progress.json / profiling_summary.json, and temporal_frames.csv keeps
+        its original column set (no elapsed_sec/diffusion_calls/blip2_calls/
+        clip_calls). With --profile, both files appear and the columns are
+        added."""
+        _write_frames(tmp_path / "frames", n=4)
+        cfg = _write_cfg(tmp_path)
+        _run_script(cfg, tmp_path / "frames")
+        out = tmp_path / "out"
+
+        assert not (out / "progress.json").exists()
+        assert not (out / "profiling_summary.json").exists()
+        with open(out / "temporal_frames.csv", newline="", encoding="utf-8") as fh:
+            flog = list(csv.DictReader(fh))
+        for col in ("elapsed_sec", "diffusion_calls", "blip2_calls", "clip_calls"):
+            assert col not in flog[0]
+
+    def test_profile_flag_enables_progress_and_summary_and_csv_columns(self, tmp_path):
+        _write_frames(tmp_path / "frames", n=4)
+        cfg = _write_cfg(tmp_path)
+        _run_script(cfg, tmp_path / "frames", "--profile")
+        out = tmp_path / "out"
+
+        assert (out / "progress.json").exists()
+        summary = json.loads((out / "profiling_summary.json").read_text(encoding="utf-8"))
+        assert summary["frames_done"] == 4
+        assert len(summary["frame_records"]) == 4
+
+        with open(out / "temporal_frames.csv", newline="", encoding="utf-8") as fh:
+            flog = list(csv.DictReader(fh))
+        for col in ("elapsed_sec", "diffusion_calls", "blip2_calls", "clip_calls"):
+            assert col in flog[0]
+        # --no-models dry run never calls diffusion/BLIP2/CLIP.
+        assert all(row["diffusion_calls"] == "0" for row in flog)
+
+    def test_profile_out_implies_profile(self, tmp_path):
+        """--profile-out alone (without the bare --profile flag) must still
+        turn instrumentation on."""
+        _write_frames(tmp_path / "frames", n=3)
+        cfg = _write_cfg(tmp_path)
+        custom_progress = tmp_path / "custom_progress.json"
+        _run_script(cfg, tmp_path / "frames", "--profile-out", str(custom_progress))
+        assert custom_progress.exists()
+        # profiling_summary.json lands next to --profile-out's own directory
+        # (see evaluate_video.py: profile_dir = Path(args.profile_out).parent).
+        assert (tmp_path / "profiling_summary.json").exists()
+
     def test_stale_recon_frames_cleared_before_run(self, tmp_path):
         """recon_frames_dir may hold recon_*.png from an earlier (longer) run;
         after a dry run only the current input's frames must remain."""

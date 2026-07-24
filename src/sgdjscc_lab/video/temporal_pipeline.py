@@ -43,6 +43,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
+from sgdjscc_lab.utils import profiling
+
 logger = logging.getLogger(__name__)
 
 
@@ -274,6 +276,20 @@ class TemporalPipeline:
         The start-only / disabled path is completely unaffected and stays
         single-pass, so 1~3차 results are unchanged regardless of this flag's
         value when ``enable_generate`` is False.
+    force_interframe_reuse:
+        Speed/validation knob (default ``False`` = unchanged behaviour): when
+        True, every inter-frame unconditionally takes the *reuse* branch
+        (the keyframe reconstruction, no diffusion call) regardless of its
+        semantic delta / motion score. Delta and motion are still computed and
+        logged as usual (cheap, no model call) so the per-frame CSV keeps
+        showing what a normal recompute/generate decision *would* have been —
+        only the actual reconstruction/decision is forced to reuse. This is
+        what makes a "keyframe-only real-model" validation run possible: only
+        keyframes ever invoke the diffusion model, so wall-clock scales with
+        ``n_keyframes`` instead of ``n_frames``. It is a WEAKER validation
+        than the full per-frame pipeline — see docs/etri_strategy.md and the
+        speed-experiment report before treating its temporal metrics as
+        equivalent to a real_all_frames run.
     """
 
     def __init__(
@@ -297,6 +313,7 @@ class TemporalPipeline:
         generate_motion_max: Optional[float] = None,
         allow_ground_truth_reference: bool = False,
         conditioning_mode: str = "start_only",
+        force_interframe_reuse: bool = False,
     ) -> None:
         self.reconstruct_fn = reconstruct_fn
         self.packet_fn = packet_fn
@@ -329,6 +346,7 @@ class TemporalPipeline:
             self.generate_motion_max = self.motion_threshold  # may itself be None
         self.allow_ground_truth_reference = bool(allow_ground_truth_reference)
         self.conditioning_mode = str(conditioning_mode)
+        self.force_interframe_reuse = bool(force_interframe_reuse)
         if self.enable_generate and video_generator is None:
             from sgdjscc_lab.video.video_generator import CopyGenerator
             video_generator = CopyGenerator()
@@ -531,7 +549,17 @@ class TemporalPipeline:
         # interpolation reference path (Rx-legal: it's a real Rx-side artifact).
         prev_recon = None
 
+        # Optional per-frame profiling (utils/profiling.py). No-op unless a
+        # RunProfiler has been installed via profiling.set_active() — see
+        # scripts/evaluate_video.py. Manually driving the context manager's
+        # enter/exit (instead of a `with` block) avoids re-indenting the whole
+        # per-frame decision tree below.
+        _prof = profiling.get_active()
+
         for i in range(n):
+            _pctx = _prof.frame(i) if _prof is not None else None
+            if _pctx is not None:
+                _pctx.__enter__()
             frame = frames[i]
             curr_packet = self.packet_fn(frame, f"frame_{i:05d}")
             schedule = build_staged_schedule(curr_packet, self.diffusion_step)
@@ -569,7 +597,7 @@ class TemporalPipeline:
                 motion, motion_score = self._motion_vs_keyframe(keyframe_frame, frame)
                 semantic_ok = d["magnitude"] < self.reuse_threshold
                 motion_ok = motion_score is None or motion_score < self.motion_threshold
-                if semantic_ok and motion_ok:
+                if self.force_interframe_reuse or (semantic_ok and motion_ok):
                     # Reuse the keyframe reconstruction AND its packet — the pixel
                     # and packet references are the same keyframe, so reuse
                     # semantics stay consistent.  Only the delta is "transmitted".
@@ -645,6 +673,9 @@ class TemporalPipeline:
 
             records.append(rec)
             prev_recon = recon
+            if _pctx is not None:
+                _pctx.decision = rec.decision
+                _pctx.__exit__(None, None, None)
 
         summary = self._summarize(records)
 

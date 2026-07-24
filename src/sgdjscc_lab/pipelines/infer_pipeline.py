@@ -850,6 +850,9 @@ def _run_diffusion(
     replaced by :func:`_run_water_filling_diffusion` (real-DM adapter over
     ``pipe.pred_image``). Default off → the original path is unchanged.
     """
+    from sgdjscc_lab.utils import profiling
+    profiling.record_diffusion_call(steps=int(diffusion_step))
+
     negative_prompt = [
         "distorted, discontinuous, ugly, blurry, low resolution, "
         "deformed, bad quality, deformed"

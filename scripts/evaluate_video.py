@@ -19,6 +19,8 @@ Outputs
   reuse/recompute gate decision + motion score per frame
 - reconstructed frame folder           (cfg.video_io.recon_frames_dir)
 - optional reconstructed mp4           (--save-video / cfg.video_io.save_recon_video)
+- optional progress.json / profiling_summary.json (--profile / --profile-out; off
+  by default — see --profile's help)
 
 Usage
 -----
@@ -89,6 +91,71 @@ def _parse_args() -> argparse.Namespace:
         ".txt file (one caption per line, aligned to sorted frames) or a directory "
         "with a '<frame_stem>.txt' file per frame.",
     )
+    p.add_argument(
+        "--diffusion-step", type=int, default=None,
+        help="Override cfg.diffusion_step (denoising steps per patch). Lower values "
+        "(e.g. 10) trade reconstruction fidelity for speed; see docs speed-experiment "
+        "report before treating a non-50-step run as paper-comparable quality.",
+    )
+    p.add_argument(
+        "--max-frames", type=int, default=None,
+        help="Only process the first N loaded frames. For quick throughput estimation "
+        "(profiling.json avg_frame_sec) before committing to a full-length real-model run; "
+        "recon.mp4/temporal_metrics.csv from a truncated run describe a partial clip, not "
+        "the full video.",
+    )
+    p.add_argument(
+        "--no-clip", action="store_true",
+        help="Skip building the CLIP evaluator even with real models: no scene probing, "
+        "no CLIP-based object detection (falls back to caption nouns only), SRS/packet "
+        "fields relying on CLIP similarity go unavailable. Faster but weakens semantic "
+        "validation — see docs speed-experiment report.",
+    )
+    p.add_argument(
+        "--force-interframe-reuse", action="store_true",
+        help="Keyframe-only real-model validation: every inter-frame is forced to reuse "
+        "its GOP keyframe's reconstruction (no diffusion call), so only n_keyframes frames "
+        "ever invoke the diffusion model. Delta/motion are still computed and logged, only "
+        "the reconstruction decision is overridden. WEAKER validation than the full "
+        "per-frame pipeline (inter-frame drift/hallucination is not exercised) — see "
+        "video/temporal_pipeline.py's force_interframe_reuse docstring.",
+    )
+    p.add_argument(
+        "--recon-caption-mode", default="own", choices=["own", "skip"],
+        help="Caption source for RECONSTRUCTED-frame packets (real-model runs only; "
+        "orig-frame packets already use --captions when given). 'own' (default, "
+        "unchanged behaviour): BLIP2 captions the recon image itself, needed to detect "
+        "hallucination/drift honestly. 'skip': no BLIP2 call on the recon side (packet "
+        "caption stays empty; objects fall back to CLIP-only detection when --no-clip is "
+        "not also set). Speeds up runs with many recompute/generate frames at the cost of "
+        "losing caption-derived recon objects/relations/attributes — do not treat 'skip' "
+        "run hallucination/SRS numbers as equivalent to 'own'.",
+    )
+    p.add_argument(
+        "--packet-cache-dir", default=None,
+        help="Opt-in disk cache directory for ORIGINAL-frame packets (caption/objects/"
+        "scene/relations), reused across repeated runs on the same video. Keyed by video "
+        "path+mtime+size, frame index, caption source, CLIP model name and packet schema "
+        "version, so a cache built for one config is never silently reused by an "
+        "incompatible one (see guidance/packet_cache.py). Reconstructed-frame packets are "
+        "never cached across runs (they depend on the stochastic diffusion output).",
+    )
+    p.add_argument(
+        "--profile", action="store_true",
+        help="Enable frame-level diffusion/BLIP2/CLIP call-count + timing "
+        "instrumentation: writes progress.json (streamed during the run) and "
+        "profiling_summary.json, and adds elapsed_sec/diffusion_calls/blip2_calls/"
+        "clip_calls columns to temporal_frames.csv. Off by default — a default run's "
+        "output file set is unchanged from before this feature existed. "
+        "--profile-out implies --profile.",
+    )
+    p.add_argument(
+        "--profile-out", default=None,
+        help="Path for the streaming progress JSON + final profiling summary "
+        "(default: '<frame_log_csv dir>/progress.json' / 'profiling_summary.json'). "
+        "Tail the progress file during a long run to see frame index, decision, "
+        "diffusion/BLIP2/CLIP call counts and ETA. Implies --profile.",
+    )
     return p.parse_args()
 
 
@@ -145,6 +212,8 @@ def main() -> None:
     args = _parse_args()
     cfg = load_config(args.config)
     cfg = merge_cli_overrides(cfg, input_path=args.input, snr_db=args.snr, device=args.device)
+    if args.diffusion_step is not None:
+        cfg.diffusion_step = int(args.diffusion_step)
 
     # Phase 4-B requires the use_phase4 master switch.
     from sgdjscc_lab.phase_gates import phase4_enabled
@@ -165,6 +234,17 @@ def main() -> None:
     captions = _load_captions(args.captions, files)
     if captions is not None:
         logger.info("Loaded %d captions from %s", len(captions), args.captions)
+
+    if args.max_frames is not None and args.max_frames < len(frames):
+        logger.warning(
+            "--max-frames %d: truncating %d frames → recon.mp4/temporal_metrics.csv "
+            "describe a PARTIAL clip, not the full video (throughput-estimation use only).",
+            args.max_frames, len(frames),
+        )
+        files = files[: args.max_frames]
+        frames = frames[: args.max_frames]
+        if captions is not None:
+            captions = captions[: args.max_frames]
 
     # ── Scene detector / keyframe extractor ──────────────────────────────────
     from sgdjscc_lab.video.scene_change_detector import SceneChangeDetector, SceneChangeConfig
@@ -233,7 +313,13 @@ def main() -> None:
         models = build_models(cfg, device)
         if hasattr(models, "jscc_model"):
             models.jscc_model.snr = float(cfg.snr_db)
-        clip_eval = CLIPScoreEvaluator(model_name=str(cfg.get("clip_model_name", "ViT-B/32")), device=device)
+        if args.no_clip:
+            logger.warning(
+                "--no-clip: scene probing / CLIP object detection / CLIP-based SRS-packet "
+                "fields are disabled for this run — faster but weaker semantic validation."
+            )
+        else:
+            clip_eval = CLIPScoreEvaluator(model_name=str(cfg.get("clip_model_name", "ViT-B/32")), device=device)
 
     scene_detector = SceneChangeDetector(
         config=scene_cfg, clip_evaluator=clip_eval,
@@ -263,11 +349,17 @@ def main() -> None:
         Provided captions describe the *original* frames.  For reconstructed
         frames we only reuse the caption in the identity dry-run (recon == orig);
         with real models we return None so the recon's *own* semantics are
-        extracted (needed for hallucination / missing-object detection).
+        extracted (needed for hallucination / missing-object detection) —
+        unless --recon-caption-mode=skip explicitly opts out of that (see the
+        CLI help: faster, but the recon packet then carries no caption-derived
+        objects/relations/attributes, so hallucination/SRS numbers from a
+        'skip' run are not comparable to a default 'own' run).
         """
+        fid = str(frame_id)
+        if fid.startswith("recon_") and models is not None and args.recon_caption_mode == "skip":
+            return ""
         if captions is None:
             return None
-        fid = str(frame_id)
         if fid.startswith("recon_") and models is not None:
             return None
         try:
@@ -276,8 +368,30 @@ def main() -> None:
             return None
         return captions[idx] if 0 <= idx < len(captions) else None
 
+    # Opt-in disk cache for ORIGINAL-frame packets only (never recon — see
+    # guidance/packet_cache.py's module docstring for why).
+    packet_cache = None
+    if args.packet_cache_dir is not None:
+        from sgdjscc_lab.guidance.packet_cache import PacketCache, build_meta
+        caption_source = f"captions:{args.captions}" if args.captions else "blip2"
+        meta = build_meta(
+            cfg.input_path, caption_source=caption_source,
+            clip_model_name=(None if args.no_clip else str(cfg.get("clip_model_name", "ViT-B/32"))),
+            packet_caption_objects=bool(OmegaConf.select(cfg, "packet_caption_objects", default=True)),
+        )
+        packet_cache = PacketCache(args.packet_cache_dir, cfg.input_path, meta)
+
     def packet_fn(frame, frame_id):
-        return packet_extractor.extract(frame, frame_id=frame_id, caption=_caption_for(frame_id))
+        fid = str(frame_id)
+        is_orig = fid.startswith("frame_")
+        if packet_cache is not None and is_orig:
+            cached = packet_cache.get(fid)
+            if cached is not None:
+                return cached
+        pkt = packet_extractor.extract(frame, frame_id=frame_id, caption=_caption_for(frame_id))
+        if packet_cache is not None and is_orig:
+            packet_cache.put(fid, pkt)
+        return pkt
 
     if models is not None:
         from sgdjscc_lab.pipelines.eval_pipeline import _reconstruct_with_cfg
@@ -324,8 +438,40 @@ def main() -> None:
         generate_motion_max=generate_motion_max,
         allow_ground_truth_reference=allow_ground_truth_reference,
         conditioning_mode=conditioning_mode,
+        force_interframe_reuse=bool(args.force_interframe_reuse),
     )
-    result = pipeline.run(frames)
+
+    # ── Profiling / progress instrumentation (utils/profiling.py) ────────────
+    # Opt-in via --profile / --profile-out (default OFF): a default run's
+    # output file set (no progress.json / profiling_summary.json, no extra
+    # temporal_frames.csv columns) stays exactly what it was before this
+    # feature existed. When enabled, the progress file lets a long real-model
+    # run be tailed for frame index / decision / diffusion-BLIP2-CLIP call
+    # counts / ETA without waiting for completion.
+    profile_enabled = bool(args.profile or args.profile_out is not None)
+    run_profiler = None
+    progress_path = summary_path = None
+    if profile_enabled:
+        from sgdjscc_lab.utils import profiling
+        frame_csv_default = Path(OmegaConf.select(cfg, "frame_log_csv", default="../outputs/temporal_frames.csv"))
+        profile_dir = Path(args.profile_out).parent if args.profile_out else frame_csv_default.parent
+        progress_path = Path(args.profile_out) if args.profile_out else (profile_dir / "progress.json")
+        summary_path = profile_dir / "profiling_summary.json"
+        run_profiler = profiling.RunProfiler(
+            video=Path(cfg.input_path).stem, total_frames=len(frames), progress_path=str(progress_path),
+        )
+        profiling.set_active(run_profiler)
+    try:
+        result = pipeline.run(frames)
+    finally:
+        if profile_enabled:
+            from sgdjscc_lab.utils import profiling
+            profiling.set_active(None)
+            run_profiler.write_summary(summary_path)
+        if packet_cache is not None:
+            packet_cache.save()
+    if profile_enabled:
+        logger.info("Profiling summary → %s (progress → %s)", summary_path, progress_path)
 
     temporal_metrics = evaluate_sequence(result["records"])
     temporal_metrics.update(result["summary"])
@@ -455,6 +601,19 @@ def main() -> None:
     frame_csv = Path(OmegaConf.select(cfg, "frame_log_csv", default="../outputs/temporal_frames.csv"))
     frame_csv.parent.mkdir(parents=True, exist_ok=True)
     flogs = result["frame_records"]
+    if profile_enabled:
+        # Fold the profiler's per-frame timing/call-counts into the same CSV
+        # (indexed by frame "index", which both sides share) so bottleneck
+        # analysis doesn't require cross-referencing two files. Only done
+        # when --profile/--profile-out was given (see above) — a default run
+        # keeps exactly FrameRecord.to_log()'s original column set.
+        _prof_by_index = {r.index: r for r in run_profiler.frame_records}
+        for row in flogs:
+            pr = _prof_by_index.get(row.get("index"))
+            row["elapsed_sec"] = pr.elapsed_sec if pr is not None else None
+            row["diffusion_calls"] = pr.diffusion_calls if pr is not None else None
+            row["blip2_calls"] = pr.blip2_calls if pr is not None else None
+            row["clip_calls"] = pr.clip_calls if pr is not None else None
     if flogs:
         with open(frame_csv, "w", newline="", encoding="utf-8") as fh:
             w = csv.DictWriter(fh, fieldnames=list(flogs[0].keys()))
