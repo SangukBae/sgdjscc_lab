@@ -1,0 +1,22 @@
+# configs/composed_paper_like_multi.yaml
+#
+# Inference/evaluation config that uses the locally exported paper-like
+# multi-stage checkpoints instead of the public baseline checkpoints.
+#
+# This intentionally does not modify configs/composed.yaml: the default composed
+# config remains the public baseline path under ../checkpoints/.
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+
+# Exported from:
+#   outputs/checkpoints/paper_text_dm_multi/best.pth
+#   outputs/checkpoints/paper_controlnet_multi/best.pth
+# plus the unchanged JSCC/MuGE base checkpoints.
+model_root: "../checkpoints_custom/paper_like_multi/"
+
+# Learned blind CSI/SNR estimator from the csi_estimation stage.
+snr_estimator_checkpoint: "../outputs/checkpoints/csi_estimation/best.pth"

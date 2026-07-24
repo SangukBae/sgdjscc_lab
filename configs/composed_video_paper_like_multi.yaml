@@ -1,0 +1,21 @@
+# configs/composed_video_paper_like_multi.yaml
+#
+# Video evaluation config that uses the locally exported paper-like multi-stage
+# checkpoints.  The default composed_video.yaml remains the public baseline path.
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - video/default
+
+use_phase4: true
+use_phase5: false
+use_packet_eval: true
+
+# Exported custom inference weights.
+model_root: "../checkpoints_custom/paper_like_multi/"
+
+# Learned blind CSI/SNR estimator from the csi_estimation stage.
+snr_estimator_checkpoint: "../outputs/checkpoints/csi_estimation/best.pth"

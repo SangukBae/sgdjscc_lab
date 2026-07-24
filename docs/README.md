@@ -20,6 +20,7 @@
 | [paper_alignment.md](./paper_alignment.md) | 논문 정합성, `paper_mode`, 하이퍼파라미터 출처를 합친 정리 문서 |
 | [framework_file_roles.md](./framework_file_roles.md) | 파일별 실행 흐름과 역할 지도 |
 | [training_scaffold.md](./training_scaffold.md) | 학습 CLI: 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage + 데이터 준비 |
+| [checkpoint_usage.md](./checkpoint_usage.md) | baseline/custom checkpoint 경로, export 방법, 로컬·원격 가중치 사용 기준 |
 | [phase4.md](./phase4.md) | Phase 4: 패킷 인식 검증기 + 적응형 가이드(4-A), 키프레임/시간적 파이프라인(4-B) |
 | [phase5.md](./phase5.md) | Phase 5: 채널 조건화(5-A), 저지연/consistency(5-B), SRS-v2/regeneration search(5-C) |
 | [video_extension_lgvsc.md](./video_extension_lgvsc.md) | LGVSC 논문 매핑 비디오 전송·복원 확장 설계 (한계 3 장기 축, 미구현 설계안) |
