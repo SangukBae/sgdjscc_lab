@@ -180,18 +180,25 @@ class TestAccountFrame:
         b = account_frame(1, "recompute_motion", role="inter", frame=self._frame(), packet=packet)
         assert a.total_channel_symbols == b.total_channel_symbols
 
-    def test_generate_charges_only_caption_and_motion_no_visual_latent(self):
+    def test_generate_charges_packet_caption_visibility_and_motion_no_visual_latent(self):
         from sgdjscc_lab.accounting.bit_accounting import account_frame
 
+        packet = build_packet(objects=["car"], scene="s", caption="a red car")
         motion = {"block_map": [[0.1] * 4 for _ in range(4)]}
-        rec = account_frame(2, "generate", role="inter", caption="a red car", motion=motion)
+        rec = account_frame(2, "generate", role="inter", packet=packet, caption="a red car", motion=motion)
         assert rec.components["keyframe_visual_latent_symbols"]["value"] == 0
         assert rec.components["edge_side_info_symbols"]["value"] == 0
-        assert rec.components["semantic_packet_bits"]["value"] == 0
+        assert rec.components["semantic_packet_bits"]["value"] > 0
         assert rec.components["generated_frame_symbols"]["value"] == 0
         assert rec.components["caption_bits"]["value"] > 0
         assert rec.components["motion_side_info_bits"]["value"] > 0
         assert rec.total_bits > 0
+        # The packet JSON already includes the caption field; caption_bits is a
+        # visibility column and must not be added again to total_bits.
+        assert rec.total_bits == pytest.approx(
+            rec.components["semantic_packet_bits"]["value"]
+            + rec.components["motion_side_info_bits"]["value"]
+        )
 
     def test_unknown_decision_is_all_zero(self):
         from sgdjscc_lab.accounting.bit_accounting import account_frame
