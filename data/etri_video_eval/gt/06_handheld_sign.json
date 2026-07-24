@@ -1,0 +1,18 @@
+{
+  "video_id": "06_handheld_sign",
+  "source": "etri_video_eval/processed/06_handheld_sign.mp4",
+  "fps": 10,
+  "n_frames": 100,
+  "status": "manual_verified_sampled_frames",
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 99,
+      "scene": "street",
+      "objects": [
+        {"label": "traffic sign", "count": 1, "presence": "visible"}
+      ],
+      "events": ["mild handheld camera shake"]
+    }
+  ]
+}

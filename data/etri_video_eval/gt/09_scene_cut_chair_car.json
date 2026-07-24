@@ -1,0 +1,29 @@
+{
+  "video_id": "09_scene_cut_chair_car",
+  "source": "etri_video_eval/processed/09_scene_cut_chair_car.mp4",
+  "fps": 10,
+  "n_frames": 100,
+  "status": "manual_verified_sampled_frames",
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 29,
+      "scene": "indoor room",
+      "objects": [
+        {"label": "chair", "count": 1, "presence": "visible"},
+        {"label": "car", "count": 0, "presence": "absent"}
+      ],
+      "events": ["indoor scene"]
+    },
+    {
+      "start_frame": 30,
+      "end_frame": 99,
+      "scene": "outdoor street",
+      "objects": [
+        {"label": "chair", "count": 0, "presence": "absent"},
+        {"label": "car", "count": 1, "presence": "visible"}
+      ],
+      "events": ["scene cut", "outdoor car scene"]
+    }
+  ]
+}

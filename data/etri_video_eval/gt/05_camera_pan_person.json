@@ -1,0 +1,18 @@
+{
+  "video_id": "05_camera_pan_person",
+  "source": "etri_video_eval/processed/05_camera_pan_person.mp4",
+  "fps": 10,
+  "n_frames": 100,
+  "status": "manual_verified_sampled_frames",
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 99,
+      "scene": "park",
+      "objects": [
+        {"label": "person", "count": 1, "presence": "visible"}
+      ],
+      "events": ["camera pan", "person stationary or slowly moving"]
+    }
+  ]
+}

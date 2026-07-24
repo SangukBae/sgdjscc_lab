@@ -1,0 +1,27 @@
+{
+  "video_id": "02_car_pass",
+  "source": "etri_video_eval/processed/02_car_pass.mp4",
+  "fps": 10,
+  "n_frames": 100,
+  "status": "manual_verified_sampled_frames",
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 13,
+      "scene": "empty road",
+      "objects": [
+        {"label": "car", "count": 0, "presence": "absent"}
+      ],
+      "events": ["empty road before car enters"]
+    },
+    {
+      "start_frame": 14,
+      "end_frame": 99,
+      "scene": "road",
+      "objects": [
+        {"label": "car", "count": 1, "presence": "visible"}
+      ],
+      "events": ["car passing from left to right"]
+    }
+  ]
+}

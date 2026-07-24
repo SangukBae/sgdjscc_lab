@@ -1,0 +1,19 @@
+{
+  "video_id": "10_busy_sidewalk",
+  "source": "etri_video_eval/processed/10_busy_sidewalk.mp4",
+  "fps": 10,
+  "n_frames": 100,
+  "status": "manual_verified_sampled_frames",
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 99,
+      "scene": "busy city sidewalk",
+      "objects": [
+        {"label": "person", "count": 2, "presence": "visible", "count_note": "foreground count varies roughly 1-3 across frames; background pedestrians may appear"},
+        {"label": "bicycle", "count": 1, "presence": "visible"}
+      ],
+      "events": ["busy sidewalk", "multiple people walking", "parked bicycle"]
+    }
+  ]
+}

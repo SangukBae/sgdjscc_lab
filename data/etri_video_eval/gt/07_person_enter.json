@@ -1,0 +1,27 @@
+{
+  "video_id": "07_person_enter",
+  "source": "etri_video_eval/processed/07_person_enter.mp4",
+  "fps": 10,
+  "n_frames": 100,
+  "status": "manual_verified_sampled_frames",
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 20,
+      "scene": "sidewalk",
+      "objects": [
+        {"label": "person", "count": 0, "presence": "absent"}
+      ],
+      "events": ["empty scene"]
+    },
+    {
+      "start_frame": 21,
+      "end_frame": 99,
+      "scene": "sidewalk",
+      "objects": [
+        {"label": "person", "count": 1, "presence": "visible"}
+      ],
+      "events": ["person entering from right side and walking left"]
+    }
+  ]
+}

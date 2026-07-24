@@ -1,0 +1,11 @@
+id,name,raw_file,processed_file,frames_dir,width,height,fps,duration_sec,n_frames,primary_objects,event
+01,person_walk,raw/01_person_walk.mp4,processed/01_person_walk.mp4,frames/01_person_walk,512,256,10,10,100,person,one person walking
+02,car_pass,raw/02_car_pass.mp4,processed/02_car_pass.mp4,frames/02_car_pass,512,256,10,10,100,car,one car passing
+03,dog_walk,raw/03_dog_walk.mp4,processed/03_dog_walk.mp4,frames/03_dog_walk,512,256,10,10,100,dog,one dog moving
+04,person_car,raw/04_person_car.mp4,processed/04_person_car.mp4,frames/04_person_car,512,256,10,10,100,person;car,one person and one car visible
+05,camera_pan_person,raw/05_camera_pan_person.mp4,processed/05_camera_pan_person.mp4,frames/05_camera_pan_person,512,256,10,10,100,person,camera pan with person
+06,handheld_sign,raw/06_handle_sign.mp4,processed/06_handheld_sign.mp4,frames/06_handheld_sign,512,256,10,10,100,traffic sign,mild handheld shake
+07,person_enter,raw/07_person_enter.mp4,processed/07_person_enter.mp4,frames/07_person_enter,512,256,10,10,100,person,person enters scene
+08,car_exit,raw/08_car_exit.mp4,processed/08_car_exit.mp4,frames/08_car_exit,512,256,10,10,100,car,car exits scene
+09,scene_cut_chair_car,raw/09_scene_cut_chair_car.mp4,processed/09_scene_cut_chair_car.mp4,frames/09_scene_cut_chair_car,512,256,10,10,100,chair;car,indoor chair to outdoor car scene cut
+10,busy_sidewalk,raw/10_busy_sidewalk.mp4,processed/10_busy_sidewalk.mp4,frames/10_busy_sidewalk,512,256,10,10,100,person;bicycle,busy sidewalk with multiple objects

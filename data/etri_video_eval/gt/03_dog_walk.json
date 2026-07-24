@@ -1,0 +1,18 @@
+{
+  "video_id": "03_dog_walk",
+  "source": "etri_video_eval/processed/03_dog_walk.mp4",
+  "fps": 10,
+  "n_frames": 100,
+  "status": "manual_verified_sampled_frames",
+  "segments": [
+    {
+      "start_frame": 0,
+      "end_frame": 99,
+      "scene": "grassy area",
+      "objects": [
+        {"label": "dog", "count": 1, "presence": "visible"}
+      ],
+      "events": ["dog walking"]
+    }
+  ]
+}
