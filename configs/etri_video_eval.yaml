@@ -1,0 +1,91 @@
+# configs/etri_video_eval.yaml – ETRI 10-video 평가용 수동(단일 실행) 템플릿.
+#
+# scripts/run_etri_video_eval.py 배치 드라이버는 이 템플릿과 동일한 구성을
+# 각 run 디렉터리에 config.yaml로 자동 생성한다(출력 경로는 run 디렉터리
+# 기준으로 재배치). 이 파일은 배치 없이 한 영상을 직접 돌려볼 때 쓴다.
+#
+# 사용 예 (스모크):
+#   python scripts/evaluate_video.py --config configs/etri_video_eval.yaml \
+#       --input data/etri_video_eval/processed/01_person_walk.mp4 \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --no-models --save-video
+#
+# 실모델 실행은 --no-models를 빼고 --snr 5 --device cuda:0 등을 지정한다.
+#
+# 단계별 기능(verifier/generate/accounting/...)은 아래 주석 블록의 플래그를
+# 켜서 조합한다 — 기본값은 전부 OFF로 composed_video.yaml과 동일하게 동작한다.
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - video/default
+
+use_phase4: true
+use_phase5: false
+use_packet_eval: true
+
+# ── 출력 (수동 실행분은 outputs/etri_video_eval/manual/ 아래로 격리) ──────────
+keyframe_json: "../outputs/etri_video_eval/manual/keyframes.json"
+segment_json: "../outputs/etri_video_eval/manual/segments.json"
+temporal_csv: "../outputs/etri_video_eval/manual/temporal_metrics.csv"
+frame_log_csv: "../outputs/etri_video_eval/manual/temporal_frames.csv"
+video_io:
+  extracted_frames_dir: "../outputs/etri_video_eval/_extracted"
+  recon_frames_dir: "../outputs/etri_video_eval/manual/recon_frames"
+  save_recon_frames: true
+  save_recon_video: true
+  recon_video: "../outputs/etri_video_eval/manual/recon.mp4"
+
+# ── 선택 기능 (배치 드라이버의 stage와 동일한 토글) ──────────────────────────
+# motion gate sweep (1차 step 3):
+# temporal:
+#   motion_threshold: 0.05
+
+# Packet Verifier (2차 step 7):
+# use_packet_verifier: true
+# verifier:
+#   enabled: true
+#   report_json: "../outputs/etri_video_eval/manual/packet_match_report.json"
+#   report_csv: "../outputs/etri_video_eval/manual/packet_match_report.csv"
+#   decisions_json: "../outputs/etri_video_eval/manual/controller_decisions.json"
+#   decisions_csv: "../outputs/etri_video_eval/manual/controller_decisions.csv"
+
+# 3-way generate 분기 (3차 step 5, mock backend / PoC-exercise band):
+# use_video_gen: true
+# temporal:
+#   motion_threshold: 0.05
+# video_generator:
+#   enabled: true
+#   backend: auto
+#   conditioning_mode: start_only     # bidirectional(4차)로 바꾸면 아래 비교도 가능
+#   generate_delta_min: 0.0
+#   generate_delta_max: 1.0
+#   generate_motion_max: 1.0
+#   generated_frames_dir: "../outputs/etri_video_eval/manual/generated_frames"
+#   # 4차 비교:
+#   # bidirectional_missing_end_policy: fallback_start_only
+#   # comparison_enabled: true
+#   # comparison_output: "../outputs/etri_video_eval/manual/generation_mode_comparison.json"
+#   # comparison_start_only_csv: "../outputs/etri_video_eval/manual/temporal_metrics_start_only.csv"
+#   # comparison_bidirectional_csv: "../outputs/etri_video_eval/manual/temporal_metrics_bidirectional.csv"
+
+# 전송량 accounting + rate/reliability (6차 step 11-12, PoC):
+# accounting:
+#   enabled: true
+#   output_dir: "../outputs/etri_video_eval/manual/accounting"
+# rate_reliability:
+#   enabled: true
+#   output_json: "../outputs/etri_video_eval/manual/accounting/rate_reliability_summary.json"
+#   curve_csv: "../outputs/etri_video_eval/manual/accounting/rate_reliability_curve.csv"
+
+# held-out 재측정(5차 step 9)은 scripts/remeasure_video_metrics.py로 실행:
+# heldout:
+#   enabled: true
+#   clip_only_json: "../outputs/etri_video_eval/manual/heldout/clip_only_metrics.json"
+#   clip_only_csv: "../outputs/etri_video_eval/manual/heldout/clip_only_metrics.csv"
+#   calibrated_json: "../outputs/etri_video_eval/manual/heldout/calibrated_metrics.json"
+#   calibrated_csv: "../outputs/etri_video_eval/manual/heldout/calibrated_metrics.csv"
+#   output_json: "../outputs/etri_video_eval/manual/heldout/metric_delta.json"
+#   output_csv: "../outputs/etri_video_eval/manual/heldout/metric_delta.csv"
