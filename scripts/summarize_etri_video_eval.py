@@ -27,6 +27,13 @@ Reads the per-stage / per-video run directories produced by
 - ``rate_reliability_curve.csv``       every video's accounting-stage
                                        rate/reliability point merged into one
                                        curve (see merge_accounting_curve below)
+- ``model_mode_comparison_summary.csv/json/md`` no-models (identity-recon
+                                       smoke) vs real-model baseline, joined
+                                       from two separately-run sibling batch
+                                       dirs (default: ``<output-root>_nomodels``
+                                       / ``<output-root>_real_full_step50``,
+                                       overridable via --nomodels-root /
+                                       --real-model-root); baseline stage only
 
 Every summary is derived purely from files on disk — this script never re-runs
 any pipeline. Missing stages are skipped silently (their summary files are not
@@ -478,12 +485,107 @@ def summarize_accounting(root: Path) -> list:
     return rows
 
 
+_MODEL_MODE_METRIC_KEYS = (
+    "ptc", "sfr", "sdi", "temporal_srs", "n_reused",
+    "n_recompute_semantic", "n_recompute_motion", "n_generate", "overhead_reduction",
+)
+
+
+def _locate_temporal_metrics(root: Path, video: str, stage: str):
+    """Find <video>'s temporal_metrics.csv under *root*, supporting both the
+    stage-driver tree (root/<stage>/<video>/temporal_metrics.csv, as written
+    by run_etri_video_eval.py) and an older/ad-hoc flat tree
+    (root/<video>/temporal_metrics.csv, e.g. a single-stage manual batch that
+    never went through the stage driver). Returns None if neither exists."""
+    staged = Path(root) / stage / video / "temporal_metrics.csv"
+    if staged.exists():
+        return staged
+    flat = Path(root) / video / "temporal_metrics.csv"
+    if flat.exists():
+        return flat
+    return None
+
+
+def _model_mode_videos(root: Path, stage: str) -> set:
+    root = Path(root)
+    staged = root / stage
+    if staged.is_dir():
+        return {p.name for p in staged.iterdir() if p.is_dir()}
+    if not root.is_dir():
+        return set()
+    return {p.name for p in root.iterdir()
+            if p.is_dir() and (p / "temporal_metrics.csv").exists()}
+
+
+def summarize_model_mode_comparison(nomodels_root, real_model_root, stage: str = "baseline") -> list:
+    """Per-video comparison of a no-models (identity-recon smoke) batch
+    against a real-model (actual SGD-JSCC + diffusion checkpoints) batch —
+    e.g. ``outputs/etri_video_eval_nomodels`` vs
+    ``outputs/etri_video_eval_real_full_step50``. These are typically two
+    separately-run local batches with different output trees (not stages of
+    the same run), so ``summarize_videos``/``summarize_all`` above never join
+    them; this function is the one place that reads both roots together.
+
+    Only the *stage* named (``baseline`` by default) is compared, because a
+    real-model batch that only ran the baseline stage has no motion_sweep/
+    verifier/generate/bidirectional/heldout/accounting stage output to compare
+    against — comparing anything beyond baseline would silently overreach.
+
+    Either root may be ``None`` or a non-existent path (batch not run yet /
+    not provided); in that case its columns are left ``None`` per video
+    instead of the whole comparison being skipped, so a one-sided comparison
+    (e.g. only the no-models batch exists so far) still shows what's there.
+    Returns ``[]`` only when *neither* root is available at all.
+    """
+    nomodels_root = Path(nomodels_root) if nomodels_root else None
+    real_model_root = Path(real_model_root) if real_model_root else None
+    nomodels_ok = nomodels_root is not None and nomodels_root.is_dir()
+    real_model_ok = real_model_root is not None and real_model_root.is_dir()
+    if not nomodels_ok and not real_model_ok:
+        return []
+
+    videos = set()
+    if nomodels_ok:
+        videos |= _model_mode_videos(nomodels_root, stage)
+    if real_model_ok:
+        videos |= _model_mode_videos(real_model_root, stage)
+
+    rows = []
+    for video in sorted(videos):
+        nm_path = _locate_temporal_metrics(nomodels_root, video, stage) if nomodels_ok else None
+        rm_path = _locate_temporal_metrics(real_model_root, video, stage) if real_model_ok else None
+        nm = _read_single_row_csv(nm_path) if nm_path else None
+        rm = _read_single_row_csv(rm_path) if rm_path else None
+        row = {
+            "video": video,
+            "nomodels_available": nm is not None,
+            "real_model_available": rm is not None,
+        }
+        for key in _MODEL_MODE_METRIC_KEYS:
+            nv = _num(nm.get(key)) if nm else None
+            rv = _num(rm.get(key)) if rm else None
+            row[f"nomodels_{key}"] = nv
+            row[f"real_model_{key}"] = rv
+            row[f"{key}_diff_real_minus_nomodels"] = (
+                round(rv - nv, 4)
+                if isinstance(nv, (int, float)) and isinstance(rv, (int, float)) else None
+            )
+        rows.append(row)
+    return rows
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Entry point
 # ──────────────────────────────────────────────────────────────────────────────
 
-def summarize_all(output_root: Path) -> dict:
+def summarize_all(output_root: Path, nomodels_root=None, real_model_root=None) -> dict:
     """Run every stage summarizer against *output_root*; write summary files.
+
+    *nomodels_root*/*real_model_root* are optional sibling batch directories
+    (see ``summarize_model_mode_comparison``) — pass either or both to also
+    write ``model_mode_comparison_summary.csv/json/md`` under the same
+    ``output_root/summary/``. Neither is required; omitting both just skips
+    that one summary, same as any other missing stage.
 
     Returns {summary_name: row_count} for reporting/tests.
     """
@@ -506,6 +608,9 @@ def summarize_all(output_root: Path) -> dict:
          "Held-out remeasurement: clip_only vs calibrated", ""),
         ("accounting_summary_all", summarize_accounting(root),
          "Transmission accounting + rate/reliability (PoC)", ""),
+        ("model_mode_comparison_summary",
+         summarize_model_mode_comparison(nomodels_root, real_model_root),
+         "no-models (identity-recon smoke) vs real-model baseline comparison", ""),
     ]
     for name, rows, title, extra in specs:
         if not rows:
@@ -525,12 +630,28 @@ def summarize_all(output_root: Path) -> dict:
 def main() -> None:
     p = argparse.ArgumentParser(description="Summarize ETRI 10-video batch outputs")
     p.add_argument("--output-root", default=str(_REPO_ROOT / "outputs" / "etri_video_eval"))
+    p.add_argument("--nomodels-root", default=None,
+                   help="Sibling no-models batch dir to compare against real-model baseline "
+                        "(default: <output-root>_nomodels if it exists)")
+    p.add_argument("--real-model-root", default=None,
+                   help="Sibling real-model batch dir to compare against no-models baseline "
+                        "(default: <output-root>_real_full_step50 if it exists)")
     args = p.parse_args()
 
     root = Path(args.output_root)
     if not root.is_dir():
         sys.exit(f"Error: output root not found: {root}")
-    written = summarize_all(root)
+
+    nomodels_root = Path(args.nomodels_root) if args.nomodels_root else \
+        Path(f"{root}_nomodels")
+    real_model_root = Path(args.real_model_root) if args.real_model_root else \
+        Path(f"{root}_real_full_step50")
+    if not nomodels_root.is_dir():
+        nomodels_root = None
+    if not real_model_root.is_dir():
+        real_model_root = None
+
+    written = summarize_all(root, nomodels_root=nomodels_root, real_model_root=real_model_root)
     if not written:
         sys.exit(f"Error: no stage outputs found under {root} — run scripts/run_etri_video_eval.py first.")
     print(f"Summaries → {root / 'summary'}")

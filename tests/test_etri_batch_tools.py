@@ -803,6 +803,9 @@ class TestSummarizers:
         assert summarizer.merge_accounting_curve(tmp_path / "empty") == 0
 
     def test_summarize_all_writes_files(self, synthetic_root):
+        # No model-mode roots passed here — deliberately covered separately
+        # by TestModelModeComparison.test_summarize_all_writes_comparison_when_roots_given
+        # so this baseline assertion of the *default* written set stays stable.
         written = summarizer.summarize_all(synthetic_root)
         assert set(written) == {
             "videos_summary", "motion_sweep_summary", "verifier_summary",
@@ -823,9 +826,95 @@ class TestSummarizers:
         assert set(written) == {"videos_summary"}
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# no-models vs real-model batch comparison (two separate sibling output roots)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestModelModeComparison:
+    def test_both_roots_staged_layout(self, tmp_path):
+        """Both roots use the stage-driver tree (<root>/baseline/<video>/…) —
+        the common case when both batches were produced by
+        run_etri_video_eval.py against the same --stages baseline."""
+        nomodels = tmp_path / "nomodels"
+        real = tmp_path / "real"
+        _write_csv(nomodels / "baseline" / "01_toy" / "temporal_metrics.csv",
+                   _tm_row(ptc=1.0, sfr=0.0, sdi=0.0, n_reused=90))
+        _write_csv(real / "baseline" / "01_toy" / "temporal_metrics.csv",
+                   _tm_row(ptc=0.53, sfr=0.13, sdi=-0.0006, n_reused=74))
+
+        rows = summarizer.summarize_model_mode_comparison(nomodels, real)
+        assert len(rows) == 1
+        r = rows[0]
+        assert r["video"] == "01_toy"
+        assert r["nomodels_available"] is True and r["real_model_available"] is True
+        assert r["nomodels_ptc"] == pytest.approx(1.0)
+        assert r["real_model_ptc"] == pytest.approx(0.53)
+        assert r["ptc_diff_real_minus_nomodels"] == pytest.approx(0.53 - 1.0)
+        assert r["n_reused_diff_real_minus_nomodels"] == pytest.approx(74 - 90)
+
+    def test_flat_layout_supported(self, tmp_path):
+        """outputs/etri_video_eval_nomodels-style tree: <root>/<video>/temporal_metrics.csv
+        directly, no stage subdirectory — must still be found."""
+        nomodels = tmp_path / "nomodels_flat"
+        real = tmp_path / "real_staged"
+        _write_csv(nomodels / "01_toy" / "temporal_metrics.csv", _tm_row(ptc=1.0))
+        _write_csv(real / "baseline" / "01_toy" / "temporal_metrics.csv", _tm_row(ptc=0.5))
+
+        rows = summarizer.summarize_model_mode_comparison(nomodels, real)
+        assert len(rows) == 1
+        assert rows[0]["nomodels_ptc"] == pytest.approx(1.0)
+        assert rows[0]["real_model_ptc"] == pytest.approx(0.5)
+
+    def test_one_sided_video_gets_none_not_dropped(self, tmp_path):
+        """A video present in only one of the two batches must still appear
+        in the table (not silently excluded), with the other side's columns
+        left None."""
+        nomodels = tmp_path / "nomodels"
+        real = tmp_path / "real"
+        _write_csv(nomodels / "baseline" / "01_only_nomodels" / "temporal_metrics.csv", _tm_row())
+        _write_csv(real / "baseline" / "02_only_real" / "temporal_metrics.csv", _tm_row())
+
+        rows = summarizer.summarize_model_mode_comparison(nomodels, real)
+        by_video = {r["video"]: r for r in rows}
+        assert set(by_video) == {"01_only_nomodels", "02_only_real"}
+        assert by_video["01_only_nomodels"]["real_model_available"] is False
+        assert by_video["01_only_nomodels"]["real_model_ptc"] is None
+        assert by_video["01_only_nomodels"]["ptc_diff_real_minus_nomodels"] is None
+        assert by_video["02_only_real"]["nomodels_available"] is False
+
+    def test_missing_root_path_does_not_crash(self, tmp_path):
+        """A configured root that doesn't exist on disk (batch not run yet)
+        must degrade to a one-sided or empty comparison, never raise."""
+        real = tmp_path / "real"
+        _write_csv(real / "baseline" / "01_toy" / "temporal_metrics.csv", _tm_row())
+        rows = summarizer.summarize_model_mode_comparison(tmp_path / "does_not_exist", real)
+        assert len(rows) == 1
+        assert rows[0]["nomodels_available"] is False
+
+    def test_neither_root_available_returns_empty(self, tmp_path):
+        assert summarizer.summarize_model_mode_comparison(None, None) == []
+        assert summarizer.summarize_model_mode_comparison(
+            tmp_path / "gone1", tmp_path / "gone2") == []
+
+    def test_summarize_all_writes_comparison_when_roots_given(self, synthetic_root, tmp_path):
+        """summarize_all() only writes model_mode_comparison_summary when at
+        least one sibling root is explicitly passed — the default (no roots,
+        exercised by test_summarize_all_writes_files above) must not change."""
+        nomodels = tmp_path / "nm"
+        _write_csv(nomodels / "baseline" / "01_toy" / "temporal_metrics.csv", _tm_row())
+        written = summarizer.summarize_all(synthetic_root, nomodels_root=nomodels,
+                                           real_model_root=tmp_path / "no_real_batch_yet")
+        assert "model_mode_comparison_summary" in written
+        assert (synthetic_root / "summary" / "model_mode_comparison_summary.md").exists()
+
+
 class TestFinalReport:
-    def test_build_report(self, synthetic_root):
-        summarizer.summarize_all(synthetic_root)
+    def test_build_report(self, synthetic_root, tmp_path):
+        nomodels = tmp_path / "nm"
+        real = tmp_path / "rm"
+        _write_csv(nomodels / "baseline" / "01_toy" / "temporal_metrics.csv", _tm_row(ptc=1.0))
+        _write_csv(real / "baseline" / "01_toy" / "temporal_metrics.csv", _tm_row(ptc=0.5))
+        summarizer.summarize_all(synthetic_root, nomodels_root=nomodels, real_model_root=real)
         (synthetic_root / "batch_status.json").write_text(json.dumps([
             {"stage": "baseline", "video": "01_toy", "status": "ok",
              "out_dir": "x", "returncode": 0, "duration_sec": 1.0},
@@ -838,9 +927,22 @@ class TestFinalReport:
         assert "1~6차 ↔ 산출물 대응표" in report
         assert "OWLv2/VQA" in report
         assert "실패한 run" in report and "`y/run.log`" in report
-        # Every stage summary section present:
+        # Every stage summary section present (including the new #8 real-model
+        # vs no-models comparison, now that both sibling roots were supplied):
         for _, title in reporter.SUMMARIES:
             assert title in report
+        # The comparison section's scope caveat must be present and distinct
+        # from the run-overview's own no_models=True (different output roots):
+        assert "다른 두 개의 별도 로컬 배치" in report
+        assert "stage만 실행됐으므로" in report
+
+    def test_build_report_without_model_mode_roots_omits_section8(self, synthetic_root):
+        """When neither sibling root was supplied to summarize_all(), section
+        8 and its caveat must simply be absent — not an empty/crashed table."""
+        summarizer.summarize_all(synthetic_root)  # no nomodels_root/real_model_root
+        report = reporter.build_report(synthetic_root)
+        assert "실모델 baseline vs no-models 비교" not in report
+        assert "다른 두 개의 별도 로컬 배치" not in report
 
     def test_batch_overview_flags_uncertain_provenance_separately(self, synthetic_root):
         summarizer.summarize_all(synthetic_root)

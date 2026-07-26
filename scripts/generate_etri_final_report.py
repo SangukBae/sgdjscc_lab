@@ -38,6 +38,8 @@ SUMMARIES = (
     ("bidirectional_summary", "5. start_only vs bidirectional 비교 (4차 step 6, mock backend)"),
     ("heldout_summary", "6. Held-out 재측정 (5차 step 9, clip_only 기준)"),
     ("accounting_summary_all", "7. 전송량 accounting + rate/reliability (6차 step 11-12, PoC)"),
+    ("model_mode_comparison_summary",
+     "8. 실모델 baseline vs no-models 비교 (별도 배치, baseline stage만)"),
 )
 
 # 단계 ↔ 이 배치의 산출물 대응 (docs/etri_strategy.md "단계별 구현 묶음" 표 기준).
@@ -74,6 +76,9 @@ DONE_ITEMS = (
     "summary/rate_reliability_curve.csv로 post-hoc merge; 병렬 accounting 실행 시 공유 파일 append 경쟁 없음)",
     "batch_status.json에 stage/video/threshold별 no_models/snr/device 기록 (동일 출력 디렉터리를 만든 설정 추적 가능)",
     "GT segment JSON → presence backend 입력 포맷({item_id:{object:bool}}) 변환 (heldout/<video>/gt_presence.json)",
+    "no-models 배치와 실모델 baseline 배치(서로 다른 output-root)를 하나의 비교표로 통합 "
+    "(model_mode_comparison_summary, PTC/SFR/SDI/decision-count diff, baseline stage 한정) — "
+    "packet_match_report.csv-only 출력(JSON 미기록)도 verifier 요약에서 자동 인식",
 )
 
 EXTERNAL_ITEMS = (
@@ -89,6 +94,10 @@ EXTERNAL_ITEMS = (
     "엔트로피 코딩(CBR/표준 bitstream) 재현이 아님 (6차 🟡)",
     "실모델(SGD-JSCC checkpoint + diffusion) 기반 10개 영상 본평가 — 본 배치의 --no-models 실행은 "
     "identity 복원 스모크; 실모델 배치는 GPU 서버에서 동일 명령(--no-models 제거, --snr/--device 지정)으로 실행",
+    "실모델 배치의 motion_sweep/verifier/generate/bidirectional/heldout/accounting stage 비교 — "
+    "현재 실모델 배치(outputs/etri_video_eval_real_full_step50)는 baseline stage만 실행됨; "
+    "model_mode_comparison_summary(위 8절)도 그래서 baseline으로 한정됨. 나머지 stage를 실모델로 "
+    "돌려야 전 stage 실모델/no-models 비교가 완성됨",
 )
 
 
@@ -190,6 +199,18 @@ def build_report(output_root: Path) -> str:
             parts += ["전체 영상의 rate/reliability 곡선(1점=1영상)은 "
                      f"`{(summary_dir / 'rate_reliability_curve.csv').relative_to(root)}` 참조 "
                      "(accounting 단계별로 개별 저장된 파일을 summarize 단계가 병합; run 중 공유 파일 append 없음).", ""]
+        if name == "model_mode_comparison_summary":
+            parts += [
+                "> **범위 주의**: 이 섹션은 위 실행 개요/1~7절과는 **다른 두 개의 별도 로컬 배치**를 "
+                "비교한다 — no-models 배치(identity 복원 스모크)와 실모델(SGD-JSCC checkpoint + "
+                "diffusion) 배치. 위 실행 개요의 `no_models=True`는 **이 output-root 자신의 배치**를 "
+                "가리키는 것이고, 이 절의 두 배치는 서로 다른 output-root(기본: "
+                "`<output-root>_nomodels`, `<output-root>_real_full_step50`)에서 각각 실행된 결과다. "
+                "실모델 배치는 `baseline` stage만 실행됐으므로 이 비교도 baseline stage로 한정된다 "
+                "— motion_sweep/verifier/generate/bidirectional/heldout/accounting은 실모델 기준 "
+                "비교 대상이 아니다(아직 실모델로 실행되지 않았거나 별도 배치 필요).",
+                "",
+            ]
 
     parts += ["## etri_strategy.md 1~6차 ↔ 산출물 대응표", "",
               "| 단계 | 내용 | 이 배치의 산출물 위치 |", "|---|---|---|"]
