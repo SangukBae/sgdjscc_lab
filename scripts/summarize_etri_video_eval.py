@@ -17,7 +17,9 @@ Reads the per-stage / per-video run directories produced by
                                        are marked status=missing_artifact
                                        instead of being dropped)
 - ``generate_summary.csv/json/md``     3-way decision counts, generate ratio,
-                                       generated_frames/ file check
+                                       generated_frames/ file check, and
+                                       PTC/SFR/SDI delta vs the same video's
+                                       baseline (generate-off) stage
 - ``bidirectional_summary.csv/json/md`` start_only vs bidirectional metric diff
 - ``heldout_summary.csv/json/md``      clip_only vs calibrated + metric_delta
 - ``accounting_summary_all.csv/json/md`` bit/symbol/semantic-unit reductions +
@@ -296,9 +298,23 @@ def summarize_verifier(root: Path) -> list:
 
 
 def summarize_generate(root: Path) -> list:
-    """3-way decision counts + generated_frames/ artefact check."""
+    """3-way decision counts + generated_frames/ artefact check.
+
+    Also joins each video's ``baseline/`` stage (generate branch off) PTC/SFR/SDI
+    so the generate-branch run can be read as a delta against the same video's
+    reuse/recompute-only baseline, not just in isolation. If the baseline stage
+    wasn't run for a video, the ``baseline_*``/``*_delta_vs_baseline`` fields are
+    left ``None`` rather than the row being dropped.
+    """
+    root = Path(root)
+    baseline_by_video = {}
+    for vdir in _video_dirs(root / "baseline"):
+        tm = _read_single_row_csv(vdir / "temporal_metrics.csv")
+        if tm is not None:
+            baseline_by_video[vdir.name] = tm
+
     rows = []
-    for vdir in _video_dirs(Path(root) / "generate"):
+    for vdir in _video_dirs(root / "generate"):
         tm = _read_single_row_csv(vdir / "temporal_metrics.csv")
         if tm is None:
             continue
@@ -308,7 +324,7 @@ def summarize_generate(root: Path) -> list:
         n_gen = _num(tm.get("n_generate")) or 0
         segs = _read_json(vdir / "segments.json") or []
         segs_with_gen = sum(1 for s in segs if s.get("generation"))
-        rows.append({
+        row = {
             "video": vdir.name,
             "n_interframes": n_inter,
             "n_reused": _num(tm.get("n_reused")),
@@ -322,7 +338,17 @@ def summarize_generate(root: Path) -> list:
             "ptc": _num(tm.get("ptc")),
             "sfr": _num(tm.get("sfr")),
             "sdi": _num(tm.get("sdi")),
-        })
+        }
+        base_tm = baseline_by_video.get(vdir.name)
+        for key in ("ptc", "sfr", "sdi"):
+            base_val = _num(base_tm.get(key)) if base_tm else None
+            gen_val = row[key]
+            row[f"baseline_{key}"] = base_val
+            row[f"{key}_delta_vs_baseline"] = (
+                round(gen_val - base_val, 4)
+                if gen_val is not None and base_val is not None else None
+            )
+        rows.append(row)
     return rows
 
 

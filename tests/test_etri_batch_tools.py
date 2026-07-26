@@ -707,6 +707,40 @@ class TestSummarizers:
         assert r["n_generate"] == 3 and r["generated_frames_saved"] == 3
         assert r["saved_matches_decisions"] is True
         assert r["segments_with_generation"] == 1
+        # synthetic_root's generate-stage temporal_metrics reuses the same
+        # ptc/sfr/sdi defaults as its baseline-stage temporal_metrics, so the
+        # delta-vs-baseline join should land on zero, not None/missing.
+        assert r["baseline_ptc"] == pytest.approx(0.9)
+        assert r["ptc_delta_vs_baseline"] == pytest.approx(0.0)
+
+    def test_generate_summary_baseline_delta(self, tmp_path):
+        """baseline 대비 metric delta: generate-stage PTC/SFR/SDI must be
+        compared against the same video's baseline (generate-off) stage, and
+        a video with no baseline run must get None deltas rather than being
+        dropped or raising."""
+        root = tmp_path / "out"
+        _write_csv(root / "baseline" / "01_toy" / "temporal_metrics.csv",
+                   _tm_row(ptc=0.90, sfr=0.10, sdi=0.05))
+        _write_csv(root / "generate" / "01_toy" / "temporal_metrics.csv",
+                   _tm_row(ptc=0.80, sfr=0.20, sdi=0.09, n_generate=3, n_reused=4))
+        # 02_no_baseline: generate ran, baseline stage never did.
+        _write_csv(root / "generate" / "02_no_baseline" / "temporal_metrics.csv",
+                   _tm_row(ptc=0.70, sfr=0.30, sdi=0.15, n_generate=5, n_reused=2))
+
+        rows = summarizer.summarize_generate(root)
+        by_video = {r["video"]: r for r in rows}
+
+        r1 = by_video["01_toy"]
+        assert r1["baseline_ptc"] == pytest.approx(0.90)
+        assert r1["ptc_delta_vs_baseline"] == pytest.approx(0.80 - 0.90)
+        assert r1["sfr_delta_vs_baseline"] == pytest.approx(0.20 - 0.10)
+        assert r1["sdi_delta_vs_baseline"] == pytest.approx(0.09 - 0.05)
+
+        r2 = by_video["02_no_baseline"]
+        assert r2["baseline_ptc"] is None
+        assert r2["ptc_delta_vs_baseline"] is None
+        assert r2["sfr_delta_vs_baseline"] is None
+        assert r2["sdi_delta_vs_baseline"] is None
 
     def test_bidirectional_summary(self, synthetic_root):
         rows = summarizer.summarize_bidirectional(synthetic_root)
