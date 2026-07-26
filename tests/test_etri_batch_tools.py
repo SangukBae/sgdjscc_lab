@@ -656,11 +656,50 @@ class TestSummarizers:
     def test_verifier_summary(self, synthetic_root):
         rows = summarizer.summarize_verifier(synthetic_root)
         r = rows[0]
+        assert r["status"] == "ok"
         assert r["missing_objects_total"] == 1
         assert r["additional_objects_total"] == 2
         assert r["structural_errors_total"] == 1
         assert r["decision_accept"] == 1 and r["decision_fallback_recompute"] == 1
         assert r["mean_severity"] == pytest.approx(0.4)
+
+    def test_verifier_missing_artifact_does_not_crash(self, tmp_path):
+        """A video subdirectory exists under verifier/ (the stage was attempted
+        for it) but packet_match_report.json is absent (failed/never written).
+        This must surface as an explicit missing_artifact row — not a crash,
+        not a silently-dropped video — while a sibling video with a real
+        report still summarizes normally in the same call."""
+        root = tmp_path / "out"
+        (root / "verifier" / "01_ok").mkdir(parents=True)
+        (root / "verifier" / "01_ok" / "packet_match_report.json").write_text(json.dumps([
+            {"frame_index": 0, "severity": 0.1, "controller_decision": "accept",
+             "missing_object_count": 0, "additional_object_count": 0,
+             "relation_error_count": 0, "attribute_error_count": 0},
+        ]))
+        (root / "verifier" / "02_missing_report").mkdir(parents=True)
+        # no packet_match_report.json written for 02_missing_report
+
+        rows = summarizer.summarize_verifier(root)
+        by_video = {r["video"]: r for r in rows}
+        assert set(by_video) == {"01_ok", "02_missing_report"}
+
+        ok_row = by_video["01_ok"]
+        assert ok_row["status"] == "ok"
+        assert ok_row["n_frames_verified"] == 1
+
+        missing_row = by_video["02_missing_report"]
+        assert missing_row["status"] == "missing_artifact"
+        for field in summarizer._VERIFIER_MISSING_ROW_FIELDS:
+            assert missing_row[field] is None
+
+        # Every row must share the same field set (write_summary derives the
+        # CSV header from rows[0]) so mixed ok/missing rows still write a
+        # single well-formed CSV/JSON/MD.
+        assert set(ok_row) == set(missing_row)
+        summarizer.write_summary(rows, root / "summary" / "verifier_summary", "t")
+        with open((root / "summary" / "verifier_summary.csv"), newline="", encoding="utf-8") as fh:
+            csv_rows = list(csv.DictReader(fh))
+        assert {r["video"] for r in csv_rows} == {"01_ok", "02_missing_report"}
 
     def test_generate_summary(self, synthetic_root):
         rows = summarizer.summarize_generate(synthetic_root)

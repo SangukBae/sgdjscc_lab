@@ -13,6 +13,9 @@ Reads the per-stage / per-video run directories produced by
                                        05_camera_pan_person / 06_handheld_sign
 - ``verifier_summary.csv/json/md``     per video missing/additional/structural
                                        error counts + controller decision mix
+                                       (rows with no packet_match_report.json
+                                       are marked status=missing_artifact
+                                       instead of being dropped)
 - ``generate_summary.csv/json/md``     3-way decision counts, generate ratio,
                                        generated_frames/ file check
 - ``bidirectional_summary.csv/json/md`` start_only vs bidirectional metric diff
@@ -235,12 +238,35 @@ def motion_sweep_focus_md(rows: list) -> str:
     return "\n".join(lines)
 
 
+_VERIFIER_MISSING_ROW_FIELDS = (
+    "n_frames_verified", "missing_objects_total", "additional_objects_total",
+    "structural_errors_total", "mean_severity", "max_severity",
+    "decision_accept", "decision_suppress_extra", "decision_strengthen_missing",
+    "decision_strengthen_structure", "decision_fallback_recompute",
+    "decision_keyframe_fallback", "accept_ratio",
+)
+
+
 def summarize_verifier(root: Path) -> list:
-    """Per-video packet-verifier error counts + controller decision mix."""
+    """Per-video packet-verifier error counts + controller decision mix.
+
+    A video subdirectory under ``verifier/`` with no
+    ``packet_match_report.json`` (verifier stage attempted but failed, or the
+    report was never written) gets a ``status: missing_artifact`` row with
+    every metric field left ``None`` rather than being dropped silently — the
+    whole ``verifier/`` stage being absent still yields an empty list (no
+    summary file at all, i.e. "not run"), but a per-video gap within a stage
+    that did run is reported explicitly.
+    """
     rows = []
     for vdir in _video_dirs(Path(root) / "verifier"):
         report = _read_json(vdir / "packet_match_report.json")
         if report is None:
+            rows.append({
+                "video": vdir.name,
+                "status": "missing_artifact",
+                **{f: None for f in _VERIFIER_MISSING_ROW_FIELDS},
+            })
             continue
         n = len(report)
         severities = [r.get("severity") for r in report if r.get("severity") is not None]
@@ -251,6 +277,7 @@ def summarize_verifier(root: Path) -> list:
                          + int(r.get("attribute_error_count") or 0) for r in report)
         rows.append({
             "video": vdir.name,
+            "status": "ok",
             "n_frames_verified": n,
             "missing_objects_total": missing,
             "additional_objects_total": additional,
