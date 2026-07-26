@@ -436,6 +436,31 @@ def summarize_heldout(root: Path) -> list:
     return rows
 
 
+def _import_merge_rate_reliability_curves():
+    """Load pipelines/rate_reliability_report.py's
+    ``merge_rate_reliability_curves`` directly by file path rather than
+    ``from sgdjscc_lab.pipelines.rate_reliability_report import ...``.
+
+    The package-style import executes ``sgdjscc_lab/pipelines/__init__.py``
+    (to make ``sgdjscc_lab.pipelines`` importable at all), which does
+    ``from .infer_pipeline import run_batch, run_single_image`` — and
+    infer_pipeline.py imports torch at module scope. This whole script is a
+    read-only "parse CSV/JSON on disk, write a summary" report tool with no
+    GPU/model dependency of its own, so it must not require torch to be
+    installed. rate_reliability_report.py itself only imports
+    csv/json/logging/pathlib/typing, so loading it standalone via importlib
+    (bypassing the parent package's __init__.py entirely) sidesteps the torch
+    import without needing any change to the pipelines package itself.
+    """
+    import importlib.util
+    mod_path = _SRC / "sgdjscc_lab" / "pipelines" / "rate_reliability_report.py"
+    spec = importlib.util.spec_from_file_location(
+        "_sgdjscc_lab_rate_reliability_report_standalone", mod_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.merge_rate_reliability_curves
+
+
 def merge_accounting_curve(root: Path):
     """Merge every video's per-run rate/reliability curve CSV into one shared
     ``summary/rate_reliability_curve.csv``.
@@ -446,11 +471,10 @@ def merge_accounting_curve(root: Path):
     themselves were parallelized. Returns the number of merged rows, or 0 if
     no per-video curve CSVs exist yet.
     """
-    from sgdjscc_lab.pipelines.rate_reliability_report import merge_rate_reliability_curves
-
     curves = sorted((Path(root) / "accounting").glob("*/accounting/rate_reliability_curve.csv"))
     if not curves:
         return 0
+    merge_rate_reliability_curves = _import_merge_rate_reliability_curves()
     out_path = Path(root) / "summary" / "rate_reliability_curve.csv"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     return merge_rate_reliability_curves([str(p) for p in curves], str(out_path))

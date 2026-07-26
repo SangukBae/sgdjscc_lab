@@ -802,6 +802,49 @@ class TestSummarizers:
     def test_merge_accounting_curve_no_accounting_stage(self, tmp_path):
         assert summarizer.merge_accounting_curve(tmp_path / "empty") == 0
 
+    def test_merge_accounting_curve_does_not_require_torch(self, tmp_path, monkeypatch):
+        """Regression: merge_accounting_curve used to do
+        `from sgdjscc_lab.pipelines.rate_reliability_report import ...`, which
+        executes sgdjscc_lab/pipelines/__init__.py (`from .infer_pipeline
+        import run_batch, run_single_image`) — and infer_pipeline.py imports
+        torch at module scope. This whole script is a read-only "parse CSV/
+        JSON, write a summary" tool with no model/GPU dependency, so it must
+        keep working without torch installed.
+
+        The ptest conda env always has torch, so a plain call here would
+        never have caught the original bug (it was only found by running
+        this script under /usr/bin/python3, which has no torch). To make the
+        regression actually testable in ptest too, this simulates a
+        torch-free interpreter from inside the test process: evict any
+        already-cached sgdjscc_lab.pipelines[.*] modules, then poison `torch`
+        in sys.modules with None (the standard technique — an `import name`
+        with sys.modules[name] is None raises ImportError) so any code path
+        that still does `import sgdjscc_lab.pipelines...` fails exactly as it
+        would on a real torch-free machine.
+        """
+        for name in list(sys.modules):
+            if name == "torch" or name.startswith("sgdjscc_lab.pipelines"):
+                monkeypatch.delitem(sys.modules, name, raising=False)
+        monkeypatch.setitem(sys.modules, "torch", None)
+
+        # Sanity check the simulation is actually effective — i.e. this test
+        # would fail (not vacuously pass) against the old package-style
+        # import that merge_accounting_curve used to use.
+        with pytest.raises(ImportError):
+            import sgdjscc_lab.pipelines  # noqa: F401
+
+        root = tmp_path / "out"
+        _write_csv(root / "accounting" / "01_toy" / "accounting" / "rate_reliability_curve.csv", {
+            "label": "01_toy", "bits_per_frame": 1.0, "symbols_per_frame": 1.0,
+            "bit_reduction": 0.1, "symbol_reduction": 0.1, "semantic_unit_reduction": 0.1,
+            "ptc": 0.9, "sfr": 0.1, "sdi": 0.05, "mean_severity": 0.0,
+            "n_generate": 0, "n_reused": 1, "n_recompute": 0,
+            "baseline": "naive_full_frame_packet", "proxy_fraction": 0.5,
+        })
+        n = summarizer.merge_accounting_curve(root)
+        assert n == 1
+        assert (root / "summary" / "rate_reliability_curve.csv").exists()
+
     def test_summarize_all_writes_files(self, synthetic_root):
         # No model-mode roots passed here — deliberately covered separately
         # by TestModelModeComparison.test_summarize_all_writes_comparison_when_roots_given
