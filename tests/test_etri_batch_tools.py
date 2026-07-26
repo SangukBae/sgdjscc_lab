@@ -701,6 +701,35 @@ class TestSummarizers:
             csv_rows = list(csv.DictReader(fh))
         assert {r["video"] for r in csv_rows} == {"01_ok", "02_missing_report"}
 
+    def test_verifier_summary_csv_fallback(self, tmp_path):
+        """A run that only wrote packet_match_report.csv (no .json) must still
+        be summarized as status=ok, not treated as a missing artifact."""
+        root = tmp_path / "out"
+        vdir = root / "verifier" / "01_csv_only"
+        vdir.mkdir(parents=True)
+        with open(vdir / "packet_match_report.csv", "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=[
+                "frame_index", "severity", "controller_decision",
+                "missing_object_count", "additional_object_count",
+                "relation_error_count", "attribute_error_count"])
+            w.writeheader()
+            w.writerow({"frame_index": 0, "severity": "0.0", "controller_decision": "accept",
+                       "missing_object_count": "0", "additional_object_count": "0",
+                       "relation_error_count": "0", "attribute_error_count": "0"})
+            w.writerow({"frame_index": 1, "severity": "0.6", "controller_decision": "strengthen_missing",
+                       "missing_object_count": "1", "additional_object_count": "0",
+                       "relation_error_count": "0", "attribute_error_count": "1"})
+
+        rows = summarizer.summarize_verifier(root)
+        assert len(rows) == 1
+        r = rows[0]
+        assert r["status"] == "ok"
+        assert r["n_frames_verified"] == 2
+        assert r["missing_objects_total"] == 1
+        assert r["structural_errors_total"] == 1
+        assert r["mean_severity"] == pytest.approx(0.3)
+        assert r["decision_accept"] == 1 and r["decision_strengthen_missing"] == 1
+
     def test_generate_summary(self, synthetic_root):
         rows = summarizer.summarize_generate(synthetic_root)
         r = rows[0]

@@ -85,6 +85,16 @@ def _read_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _read_multi_row_csv(path: Path):
+    """Read a multi-row CSV (e.g. packet_match_report.csv) into a list of
+    dicts, or None if the file doesn't exist."""
+    path = Path(path)
+    if not path.exists():
+        return None
+    with open(path, newline="", encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
 def _num(v):
     """Best-effort str→float conversion for CSV-loaded values ('' → None)."""
     if v is None or v == "":
@@ -249,20 +259,45 @@ _VERIFIER_MISSING_ROW_FIELDS = (
 )
 
 
+def _load_packet_match_report(vdir: Path):
+    """Read packet_match_report.json, falling back to packet_match_report.csv
+    when only the CSV was written for this run. Returns a list of dicts with
+    severity/error-count fields coerced to numbers (CSV values are strings
+    otherwise), or None if neither file exists."""
+    report = _read_json(vdir / "packet_match_report.json")
+    if report is not None:
+        return report
+    rows = _read_multi_row_csv(vdir / "packet_match_report.csv")
+    if rows is None:
+        return None
+    numeric_fields = ("severity", "missing_object_count", "additional_object_count",
+                      "relation_error_count", "attribute_error_count")
+    normalized = []
+    for r in rows:
+        nr = dict(r)
+        for key in numeric_fields:
+            if key in nr:
+                nr[key] = _num(nr[key])
+        normalized.append(nr)
+    return normalized
+
+
 def summarize_verifier(root: Path) -> list:
     """Per-video packet-verifier error counts + controller decision mix.
 
-    A video subdirectory under ``verifier/`` with no
-    ``packet_match_report.json`` (verifier stage attempted but failed, or the
-    report was never written) gets a ``status: missing_artifact`` row with
-    every metric field left ``None`` rather than being dropped silently — the
-    whole ``verifier/`` stage being absent still yields an empty list (no
-    summary file at all, i.e. "not run"), but a per-video gap within a stage
-    that did run is reported explicitly.
+    Accepts either ``packet_match_report.json`` or, if only that was written,
+    ``packet_match_report.csv`` (see ``_load_packet_match_report``). A video
+    subdirectory under ``verifier/`` with neither file (verifier stage
+    attempted but failed, or the report was never written) gets a
+    ``status: missing_artifact`` row with every metric field left ``None``
+    rather than being dropped silently — the whole ``verifier/`` stage being
+    absent still yields an empty list (no summary file at all, i.e. "not
+    run"), but a per-video gap within a stage that did run is reported
+    explicitly.
     """
     rows = []
     for vdir in _video_dirs(Path(root) / "verifier"):
-        report = _read_json(vdir / "packet_match_report.json")
+        report = _load_packet_match_report(vdir)
         if report is None:
             rows.append({
                 "video": vdir.name,
