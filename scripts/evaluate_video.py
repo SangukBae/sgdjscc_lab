@@ -248,7 +248,7 @@ def main() -> None:
 
     # ── Scene detector / keyframe extractor ──────────────────────────────────
     from sgdjscc_lab.video.scene_change_detector import SceneChangeDetector, SceneChangeConfig
-    from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+    from sgdjscc_lab.video.keyframe_extractor import build_keyframe_extractor, build_caption_fn
 
     sc = OmegaConf.to_container(OmegaConf.select(cfg, "scene_change", default={}) or {}, resolve=True)
     scene_cfg = SceneChangeConfig(
@@ -325,7 +325,22 @@ def main() -> None:
         config=scene_cfg, clip_evaluator=clip_eval,
         use_lpips=bool(sc.get("use_lpips", False)),
     )
-    keyframe_extractor = KeyframeExtractor(scene_detector, max_gop=max_gop)
+
+    # keyframe.selector (default "fixed" — the scene-change/max_gop extractor
+    # above, unchanged): "psss" swaps in the PSSS-driven SKEM selector
+    # (video/skem_selector.py). See docs/lgvsc_psss_skem_readiness.md.
+    selector_name = str(OmegaConf.select(cfg, "keyframe.selector", default="fixed"))
+    psss_caption_fn = None
+    if selector_name == "psss":
+        caption_source = str(OmegaConf.select(cfg, "keyframe.psss.caption_source", default="captions_file"))
+        psss_caption_fn = build_caption_fn(
+            caption_source, captions=captions,
+            text_extractor=(getattr(models, "text_extractor", None) if models else None),
+            device=(models.device if models and hasattr(models, "device") else None),
+        )
+    keyframe_extractor = build_keyframe_extractor(
+        cfg, scene_detector=scene_detector, caption_fn=psss_caption_fn,
+    )
 
     # Packet extractor
     from sgdjscc_lab.guidance.semantic_packet_extractor import SemanticPacketExtractor

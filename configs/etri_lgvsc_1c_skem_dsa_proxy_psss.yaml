@@ -1,0 +1,77 @@
+# configs/etri_lgvsc_1c_skem_dsa_proxy_psss.yaml – 1C diagnostic mode
+# (mode: skem_dsa_proxy_psss) — same as skem_dsa_mock_psss.yaml, except the
+# PSSS score comes from `keyframe.psss.backend: proxy`
+# (`ClipTextProxyPsssBackend` in src/sgdjscc_lab/video/psss.py): this repo's
+# EXISTING CLIP text encoder, comparing two captions' text-embedding cosine
+# similarity — a genuinely "already usable model" stand-in, but still **NOT**
+# the paper's mechanism (no yes/no prompt, no token probability at all).
+# `backend_kind="proxy"`/`proxy_of="clip_text_similarity"` is stamped onto
+# every score so this is never confused with `backend: real`'s output.
+#
+# `keyframe.psss.caption_source: mock` (frame-statistics placeholder text, not
+# real captioning) is used here too, since this is a diagnostic/structural
+# config, not a claim about real semantic quality. Combined with
+# `backend: proxy` this exercises "a real, already-loaded model computes a
+# genuine (if approximate) semantic score" — a meaningfully different code
+# path from `backend: mock`'s pure string heuristic, still without needing
+# GPU generation weights (CLIP is comparatively small; expect one CLIP
+# download on first run, no Wan/SVD weights).
+#
+# Decoder stays mock (same as skem_dsa_mock_psss.yaml / mock_baseline.yaml)
+# so this config's only distinguishing dimension vs skem_dsa_mock_psss.yaml
+# is the PSSS backend (proxy vs mock) — see docs/lgvsc_psss_skem_readiness.md.
+#
+# Usage (manual, single video, smoke — CPU-viable; CLIP weights download on
+# first use):
+#   python scripts/evaluate_video.py --config configs/etri_lgvsc_1c_skem_dsa_proxy_psss.yaml \
+#       --input data/etri_video_eval/processed/01_person_walk.mp4 \
+#       --no-models --max-frames 14 --save-video
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - video/default
+
+use_phase4: true
+use_phase5: false
+
+temporal:
+  reuse_threshold: 0.0
+
+keyframe:
+  selector: psss
+  psss:
+    backend: proxy
+    threshold: 0.35
+    semantic_focus: "the main subject and action"
+    min_segment_length: 2
+    max_segment_length: 12
+    caption_source: mock                # frame-statistics placeholder — NOT real captions
+    proxy:
+      model_name: ViT-B/32
+
+keyframe_json: "../outputs/etri_video_eval/manual_lgvsc_1c_skem_dsa_proxy_psss/keyframes.json"
+segment_json: "../outputs/etri_video_eval/manual_lgvsc_1c_skem_dsa_proxy_psss/segments.json"
+temporal_csv: "../outputs/etri_video_eval/manual_lgvsc_1c_skem_dsa_proxy_psss/temporal_metrics.csv"
+frame_log_csv: "../outputs/etri_video_eval/manual_lgvsc_1c_skem_dsa_proxy_psss/temporal_frames.csv"
+video_io:
+  extracted_frames_dir: "../outputs/etri_video_eval/manual_lgvsc_1c_skem_dsa_proxy_psss/_extracted"
+  recon_frames_dir: "../outputs/etri_video_eval/manual_lgvsc_1c_skem_dsa_proxy_psss/recon_frames"
+  save_recon_frames: true
+  save_recon_video: true
+  recon_video: "../outputs/etri_video_eval/manual_lgvsc_1c_skem_dsa_proxy_psss/recon.mp4"
+
+# ── Generate branch: mock backend, bidirectional (interpolation, not a
+#    learned model) — identical to mock_baseline.yaml's generate-branch block.
+use_video_gen: true
+video_generator:
+  enabled: true
+  backend: auto                        # -> bidirectional_interpolation (mock)
+  conditioning_mode: bidirectional
+  bidirectional_missing_end_policy: fallback_start_only
+  generate_delta_min: 0.0
+  generate_delta_max: 1.0
+  save_generated_frames: true
+  generated_frames_dir: "../outputs/etri_video_eval/manual_lgvsc_1c_skem_dsa_proxy_psss/generated_frames"

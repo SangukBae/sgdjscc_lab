@@ -18,6 +18,7 @@
 | [etri_strategy.md](./etri_strategy.md) | 핵심 한계 3가지, 개발 순서, 현재 구현 상태를 합친 전략 문서 |
 | [etri_stage1_validation.md](./etri_stage1_validation.md) | 1차 구현(순서 0~4) 검증 리포트 — 기준 커밋, 테스트/실행 결과, 산출물, 후속 항목 |
 | [etri_video_speed_optimization.md](./etri_video_speed_optimization.md) | 10-영상 실모델 검증 속도 병목 분석 + 가속화 옵션(keyframe-only, step sweep, 캐싱, 병렬) + 원격 GPU 검증 결과 |
+| [etri_owlv2_vqa_readiness.md](./etri_owlv2_vqa_readiness.md) | 실제 OWLv2/VQA presence calibration 준비 및 완료 결과 — config 배선 점검, 예시 config 3종, `--from-recon-frames`, 10개 영상 × 5개 모드 batch 재측정 summary |
 | [paper_alignment.md](./paper_alignment.md) | 논문 정합성, `paper_mode`, 하이퍼파라미터 출처를 합친 정리 문서 |
 | [framework_file_roles.md](./framework_file_roles.md) | 파일별 실행 흐름과 역할 지도 |
 | [training_scaffold.md](./training_scaffold.md) | 학습 CLI: 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage + 데이터 준비 |
@@ -25,6 +26,9 @@
 | [phase4.md](./phase4.md) | Phase 4: 패킷 인식 검증기 + 적응형 가이드(4-A), 키프레임/시간적 파이프라인(4-B) |
 | [phase5.md](./phase5.md) | Phase 5: 채널 조건화(5-A), 저지연/consistency(5-B), SRS-v2/regeneration search(5-C) |
 | [video_extension_lgvsc.md](./video_extension_lgvsc.md) | LGVSC 논문 매핑 비디오 전송·복원 확장 설계 (한계 3 장기 축, 미구현 설계안) |
+| [lgvsc_1b_worker_readiness.md](./lgvsc_1b_worker_readiness.md) | 1B 외부 segment 생성 worker 준비/검증 상태 — conda 환경 분리, HF 인증/VRAM 주의사항, fake-worker 검증 결과, 실제 GPU 최종 검증 명령어 |
+| [lgvsc_1c_reproduction_readiness.md](./lgvsc_1c_reproduction_readiness.md) | 1C LGVSC 재현선 검증 준비 — 4개 재현 baseline 모드 정의, config↔소스 대응, batch driver 사용법, 결과 해석 시 주의사항(faithful reproduction 아님) |
+| [lgvsc_psss_skem_readiness.md](./lgvsc_psss_skem_readiness.md) | PSSS(다음-토큰 확률 기반 semantic similarity) + SKEM variable-length keyframe selector 준비/검증 — mock/proxy/real PSSS backend 구분, SKIM(fixed)-vs-SKEM(psss) 비교 config 4종 + batch summary 확장, CPU/실GPU 직접 검증 결과 |
 | [dataset_status.md](./dataset_status.md) | 데이터셋 역할·stage 매핑·변환 워크플로 |
 
 ## 보조 문서

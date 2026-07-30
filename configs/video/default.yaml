@@ -20,6 +20,67 @@ scene_change:
 keyframe:
   max_gop: 12                          # force a refresh keyframe every N frames
 
+  # ── Keyframe SELECTOR (PSSS/SKEM readiness step) ─────────────────────────
+  # "fixed" (default) = the scene_change/max_gop extractor above, completely
+  # unchanged — a config that never sets this stays numerically identical to
+  # before this feature existed. NOTE: despite the name, "fixed" still reacts
+  # to scene-change distance (not a literal fixed interval) — see
+  # docs/lgvsc_1c_reproduction_readiness.md's "nearest reproducible" caveat.
+  # "fixed_interval" is the LITERAL paper-SKIM selector
+  # (src/sgdjscc_lab/video/keyframe_extractor.py::FixedIntervalKeyframeSelector)
+  # — zero scene-change signal, pure equal-length segments. "fixed_count"
+  # creates exactly K near-equally-spaced keyframes and is used for matched
+  # SKIM-vs-SKEM comparisons. "psss" swaps in
+  # the PSSS-driven SKEM selector (src/sgdjscc_lab/video/skem_selector.py),
+  # an autoregressive keyframe inserter that thresholds a semantic-similarity
+  # score (PSSS) instead of a fixed frame interval / pixel scene-change
+  # signal — see docs/lgvsc_psss_skem_readiness.md before treating any
+  # "psss" run as a faithful LGVSC SKEM reproduction (mock/proxy backends
+  # below are explicitly NOT that; only backend: real with a genuine MLLM is).
+  selector: fixed                      # "fixed" | "fixed_interval" | "fixed_count" | "psss"
+  fixed_interval:
+    interval: 12                       # segment length in frames; null = keyframe.max_gop
+  fixed_count:
+    count: null                        # required when selector: fixed_count
+  psss:
+    backend: mock                      # "mock" (deterministic, test-only — NOT a real
+                                       # PSSS score) | "proxy" (this repo's existing CLIP
+                                       # text encoder, an approximation — NOT the paper's
+                                       # yes/no token-probability mechanism) | "real"
+                                       # (an actual MLLM/causal-LM's P(Yes)/P(No) next-
+                                       # token probabilities — see psss.py's module
+                                       # docstring). Only "real" is genuine PSSS.
+    threshold: 0.35                    # eta_th (paper's SKEM+DSA experimental value) —
+                                       # new keyframe when S_rel > threshold
+    semantic_focus: "the main subject and action"   # PSSS prompt's <Semantic Focus>
+    min_segment_length: 1              # ETRI addition (not in the paper): frames within
+                                       # this many positions of the latest keyframe are
+                                       # never evaluated / never a new keyframe
+    max_segment_length: 12             # ETRI addition (not in the paper): force a
+                                       # keyframe once a segment reaches this length,
+                                       # regardless of PSSS score (CBR/latency safety net,
+                                       # mirrors max_gop's role for the fixed extractor)
+    seed: null                         # provenance only (backends here are deterministic
+                                       # given their inputs; kept for future stochastic
+                                       # sampling-based backends)
+    caption_source: captions_file      # how per-frame Info A/B text is obtained (only
+                                       # consulted by scripts/evaluate_video.py's wiring):
+                                       # "captions_file" (reuse --captions, the same list
+                                       # packets already use) | "model" (call the real
+                                       # BLIP2/Qwen text_extractor per frame — real cost,
+                                       # requires running without --no-models) | "mock"
+                                       # (deterministic frame-statistics placeholder, no
+                                       # real captioning at all — structural tests only)
+    mock: {}                           # MockPsssBackend has no extra kwargs
+    proxy:
+      model_name: ViT-B/32             # ClipTextProxyPsssBackend's CLIP model
+    real:
+      model_id: null                   # REQUIRED for backend: real — an HF causal-LM/VLM
+                                       # id whose tokenizer/model can be loaded via
+                                       # transformers.AutoModelForCausalLM/AutoTokenizer
+      device: cpu
+      dtype: fp32
+
 # ── Temporal pipeline ─────────────────────────────────────────────────────────
 temporal:
   reuse_threshold: 0.2                 # delta magnitude below which a frame reuses
@@ -101,6 +162,25 @@ verifier:
                                        # their one matching backend, ensemble modes use all
   presence_backend_weights: {}         # optional per-backend weight for ensemble_weighted
                                        # (default 1.0 for any backend not listed)
+  # Per-backend construction kwargs, read by build_presence_backend() as
+  # presence_backend_cfg.<backend_name>.<key> (evaluators/presence_backends.py).
+  # Empty/absent here = every backend's own hardcoded default. Fill in only
+  # the backend(s) actually listed in presence_backends above. See
+  # docs/etri_owlv2_vqa_readiness.md and configs/etri_video_eval_owlv2.yaml /
+  # _vqa.yaml / _ensemble.yaml for filled-in, ready-to-run examples.
+  presence_backend_cfg: {}
+    # clip:
+    #   threshold: 0.25                            # ClipPresenceBackend
+    # owlv2:
+    #   model_id: google/owlv2-base-patch16-ensemble  # Owlv2PresenceBackend (lazy transformers load)
+    #   score_threshold: 0.1
+    # vqa:
+    #   vqa_backend:                                # → evaluators/vqa_backend.py::build_vqa_backend
+    #     type: blip2                                # mock | blip2 | llava | mplug | none
+    #     model_id: Salesforce/blip2-opt-2.7b-coco
+    #     device: cuda:0                              # null/omitted = cuda if available else cpu
+    # gt:
+    #   metadata: {}                                # {object_name: bool} default annotation map
   # metric_role tags every packet_match_report row so a loop-internal
   # (regeneration-driving) score is never confused with a held-out
   # (final-report) one — see evaluators/packet_verifier.py.
@@ -128,9 +208,12 @@ video_generator:
   backend: auto                        # "auto" chooses copy for start_only and
                                        # bidirectional_interpolation for bidirectional.
                                        # Explicit values: "copy" | "interpolation" (start_only),
-                                       # "bidirectional_interpolation" (bidirectional).
-                                       # Mock backends only — unknown/real-backend names
-                                       # raise NotImplementedError.
+                                       # "bidirectional_interpolation" (bidirectional) — mock
+                                       # backends only. "external_segment_worker" (ETRI 1B)
+                                       # delegates to a real model in a SEPARATE process/conda
+                                       # env — see the `worker:` block below and
+                                       # docs/lgvsc_1b_worker_readiness.md. Any other name
+                                       # raises NotImplementedError.
   conditioning_mode: start_only         # "start_only" (3차, default) | "bidirectional" (4차)
   interpolation_alpha: 0.5              # blend weight when backend: interpolation (start_only only)
   allow_ground_truth_reference: false   # TEST/MOCK ONLY — never enable for real evaluation
@@ -162,6 +245,48 @@ video_generator:
   comparison_output: "../outputs/generation_mode_comparison.json"
   comparison_start_only_csv: "../outputs/temporal_metrics_start_only.csv"
   comparison_bidirectional_csv: "../outputs/temporal_metrics_bidirectional.csv"
+
+  # ── External segment-generation worker (ETRI 후속 1단계 step 1B) ─────────────
+  # Only consulted when `backend: external_segment_worker` above. Runs
+  # scripts/lgvsc_generate_worker.py as a SUBPROCESS in python_bin's
+  # environment — never this process's own interpreter — so real model deps
+  # (diffusers/Open-Sora/Wan) never need to be installed where `ptest` runs.
+  # See src/sgdjscc_lab/video/video_generator.py::ExternalSegmentWorkerGenerator
+  # and docs/lgvsc_1b_worker_readiness.md. Completely inert unless
+  # `backend: external_segment_worker` is set above (which itself requires
+  # use_video_gen + video_generator.enabled — the same dual-flag gate every
+  # other block in this file uses), so this section changes nothing about the
+  # default pipeline on its own.
+  worker:
+    # REQUIRED when backend: external_segment_worker. Path to the OTHER
+    # environment's python interpreter — e.g. a separate `lgvsc_gen` (or this
+    # machine's existing `semantic-diffusers`) conda env with diffusers/
+    # Open-Sora/Wan installed. Must NOT be the interpreter running this config.
+    python_bin: null
+    worker_script: null           # null = ship-in-repo scripts/lgvsc_generate_worker.py
+    backend: mock                 # "mock" (dependency-free, what ptest exercises) |
+                                  # "svd" (diffusers StableVideoDiffusionPipeline —
+                                  # image-only conditioning) | "wan" (diffusers
+                                  # WanImageToVideoPipeline — image+last_image+prompt,
+                                  # closer to the LGVSC segment-decoder contract; see
+                                  # readiness doc) | "callable" (dynamic import of
+                                  # your own adapter function, e.g. for Open-Sora)
+    backend_entrypoint: null      # "module.path:function_name" — required for backend: callable
+    model_id: null                # HF model id / local path (backend-specific)
+    device: cpu                   # e.g. "cuda:0" for a real GPU backend
+    dtype: fp32                   # fp32 | fp16 | bf16
+    seed: null
+    height: null                  # null = infer from the keyframe reconstruction's own size
+    width: null
+    num_inference_steps: null     # backend-specific (e.g. svd)
+    decode_chunk_size: null       # backend-specific VRAM knob (e.g. svd)
+    extra_json: null              # JSON object string of extra backend-specific kwargs
+    timeout_sec: null             # null = no timeout (a real model can take minutes/segment)
+    work_dir: null                # null = system temp dir; each call gets its own subdirectory
+    cleanup_on_success: true      # delete the per-call work dir after a successful round-trip
+                                  # (always kept on failure regardless, for debugging)
+    extra_env: null               # optional env vars for the worker subprocess, e.g.
+                                  # {PYTHONNOUSERSITE: "1"} to ignore ~/.local packages
 
 # ── Held-out re-measurement pipeline (ETRI 5차 step 9) ────────────────────────
 # Re-reads TemporalPipeline records (or saved packets) and recomputes

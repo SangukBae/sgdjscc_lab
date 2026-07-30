@@ -58,13 +58,23 @@ class SegmentRecord:
     # stays disabled (default), so 1~3차 output is unaffected. Covers both
     # start-only (3차) and bidirectional (4차) conditioning modes.
     generation: Optional[Dict] = None
+    # Keyframe-selection provenance (PSSS/SKEM readiness step): which selector
+    # picked this segment's keyframe, and — for the PSSS selector only — the
+    # score/threshold/reason behind that decision. None for every segment when
+    # the keyframe extractor in use is the pre-existing fixed/scene-change one
+    # (KeyframeExtractor never emits the psss_scores/keyframe_reasons keys
+    # build_segments() reads below). to_dict() OMITS this key entirely when
+    # None (see below) so a fixed-selector run's segments.json has the exact
+    # same key set as before this field existed — genuinely byte-identical,
+    # not just "the same values plus a null".
+    keyframe_selection: Optional[Dict] = None
 
     @property
     def frame_indices(self) -> List[int]:
         return [self.keyframe_index] + list(self.inter_frame_indices)
 
     def to_dict(self) -> Dict:
-        return {
+        d = {
             "segment_id": self.segment_id,
             "keyframe_index": self.keyframe_index,
             "inter_frame_indices": list(self.inter_frame_indices),
@@ -75,6 +85,9 @@ class SegmentRecord:
             "temporal_metrics": dict(self.temporal_metrics),
             "generation": self.generation,
         }
+        if self.keyframe_selection is not None:
+            d["keyframe_selection"] = self.keyframe_selection
+        return d
 
 
 def _delta_summary(records) -> Dict:
@@ -115,6 +128,38 @@ def _generation_summary(records) -> Optional[Dict]:
         "end_keyframe_index": gen_records[0].generation.get("end_keyframe_index"),
         "mock": any(bool(r.generation.get("mock")) for r in gen_records),
         "frames": [dict(r.generation) for r in gen_records],
+    }
+
+
+def _keyframe_selection_summary(keyframe_index: int, segment_length: int, structure: Dict) -> Optional[Dict]:
+    """Build one segment's ``keyframe_selection`` provenance from the keyframe
+    extractor's own ``structure`` dict (see ``video/skem_selector.py::
+    PsssKeyframeSelector.extract``). Returns ``None`` when *structure* was not
+    produced by the PSSS selector (no ``selector`` key) — the pre-existing
+    fixed/scene-change ``KeyframeExtractor`` never sets it, so every one of
+    its segments keeps ``keyframe_selection=None`` exactly as before this
+    field existed.
+    """
+    if "selector" not in structure:
+        return None
+    reasons = structure.get("keyframe_reasons") or {}
+    # The PSSS score that TRIGGERED this keyframe's insertion (absent for the
+    # very first keyframe, and for a max_segment_length-forced keyframe —
+    # both are non-PSSS decisions; see PsssKeyframeSelector.extract).
+    triggering_score = next(
+        (s for s in (structure.get("psss_scores") or [])
+         if s.get("index") == keyframe_index and s.get("decision") == "new_keyframe"),
+        None,
+    )
+    return {
+        "selector": structure.get("selector"),
+        "backend": structure.get("psss_backend"),
+        "backend_kind": structure.get("psss_backend_kind"),
+        "model_id": structure.get("psss_model_id"),
+        "threshold": structure.get("psss_threshold"),
+        "segment_length": segment_length,
+        "psss_score": triggering_score,
+        "reason": reasons.get(str(keyframe_index)),
     }
 
 
@@ -178,5 +223,6 @@ def build_segments(records, structure: Dict) -> List[SegmentRecord]:
             motion=_motion_summary(seg_records),
             temporal_metrics=evaluate_sequence(seg_records),
             generation=_generation_summary(seg_records),
+            keyframe_selection=_keyframe_selection_summary(key_idx, len(seg_records), structure),
         ))
     return segments
