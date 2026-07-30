@@ -284,7 +284,20 @@ class VqaPresenceBackend(PresenceBackend):
         if image is None:
             raise PresenceBackendUnavailableError("VqaPresenceBackend.check() needs an image tensor.")
         question = self.question_template.format(obj=object_name)
-        answer = self.vqa_fn(image, question)
+        try:
+            answer = self.vqa_fn(image, question)
+        except Exception as exc:  # noqa: BLE001 – lazy weight load/inference failure
+            # vqa_backend.py's real backends (Blip2/Llava/Mplug) lazy-load their
+            # weights on first call — a download/OOM/dependency-version failure
+            # surfaces here as an arbitrary exception, not
+            # PresenceBackendUnavailableError. Without this conversion, an
+            # ensemble mode's "skip whatever backend can't answer" policy
+            # (PresenceCalibrator.calibrate()) would not apply to VQA — one
+            # bad backend would crash the whole calibration instead of being
+            # skipped like a missing/unavailable backend.
+            raise PresenceBackendUnavailableError(
+                f"VQA backend call failed for object_name={object_name!r} ({exc})."
+            ) from exc
         present = str(answer).strip().lower().startswith(("y", "true", "1"))
         return PresenceResult(
             object_name=object_name, present=present, confidence=(1.0 if present else 0.0),

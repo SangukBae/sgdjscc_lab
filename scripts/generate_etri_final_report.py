@@ -79,15 +79,15 @@ DONE_ITEMS = (
     "no-models 배치와 실모델 baseline 배치(서로 다른 output-root)를 하나의 비교표로 통합 "
     "(model_mode_comparison_summary, PTC/SFR/SDI/decision-count diff, baseline stage 한정) — "
     "packet_match_report.csv-only 출력(JSON 미기록)도 verifier 요약에서 자동 인식",
+    "OWLv2/VQA 실제 weight 기반 10개 영상 held-out 재측정 완료 — "
+    "scripts/batch_remeasure_owlv2_vqa_10videos.py로 5개 모드(owlv2/vqa/ensemble_nofilter/"
+    "ensemble_gt_filter/ensemble_openworld_filter) × 10개 영상 = 50 job 성공, "
+    "outputs/etri_video_eval/remeasure_10videos/summary_metrics.csv/md 생성",
 )
 
 EXTERNAL_ITEMS = (
-    "OWLv2/VQA 실제 weight 기반 presence 판정 성능 검증 — 인터페이스(evaluators/presence_backends.py)만 연결됨; "
-    "실 모델로 오탐/미탐 감소를 확인한 결과는 없음 (5차 🟡)",
     "GT/VLM 기반 Temporal SRS Calibration — least-squares fitting 스캐폴드와 GT 입력 포맷 변환까지만; "
     "실제 GT 주석/VLM judge 호출 및 가중치 보정 결과 없음 (5차 🟡)",
-    "calibrated ≠ clip_only인 held-out 재측정 — 실 presence backend 연결 전에는 calibrated == clip_only가 "
-    "의도된 sanity-check 동작",
     "generate/bidirectional 분기의 실제 생성 품질·drift/flicker 감소 주장 — mock backend 결과는 구조 검증일 뿐, "
     "SVD/Open-Sora 등 실제 생성 모델 통합 후 판단 (3~4차 scope note)",
     "bit/symbol 절감률의 실제 무선 채널 검증 — accounting은 명시적 proxy 기반 PoC이며 실제 변조·부호화·"

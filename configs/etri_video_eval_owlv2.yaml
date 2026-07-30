@@ -1,0 +1,76 @@
+# configs/etri_video_eval_owlv2.yaml – OWLv2-only presence-calibration sanity config.
+#
+# Single-video config for verifying the OWLv2 presence backend against REAL
+# weights (lazy-loaded on first use — needs `transformers` with OWLv2 support
+# and network/cache access the first time). Not run by this preparation task;
+# meant for the operator to execute the actual verification themselves. See
+# docs/etri_owlv2_vqa_readiness.md for the full readiness writeup.
+#
+# Usage (verifier stage — checks OWLv2 wiring against a --no-models identity
+# recon, cheap sanity check that config keys route correctly):
+#   python scripts/evaluate_video.py --config configs/etri_video_eval_owlv2.yaml \
+#       --input data/etri_video_eval/processed/01_person_walk.mp4 \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --no-models --save-video
+#
+# Usage (held-out remeasurement against an already-completed real-model run's
+# saved frames — no reconstruction re-run, see items_from_recon_frame_dirs()):
+#   python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_owlv2.yaml \
+#       --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --device cuda:0
+#
+# Real verification run (actual OWLv2 weights, GPU, real reconstruction):
+#   python scripts/evaluate_video.py --config configs/etri_video_eval_owlv2.yaml \
+#       --input data/etri_video_eval/processed/01_person_walk.mp4 \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --snr 5 --device cuda:0 --save-video
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - video/default
+
+use_phase4: true
+use_phase5: false
+use_packet_eval: true
+
+keyframe_json: "../outputs/etri_video_eval/manual_owlv2/keyframes.json"
+segment_json: "../outputs/etri_video_eval/manual_owlv2/segments.json"
+temporal_csv: "../outputs/etri_video_eval/manual_owlv2/temporal_metrics.csv"
+frame_log_csv: "../outputs/etri_video_eval/manual_owlv2/temporal_frames.csv"
+video_io:
+  extracted_frames_dir: "../outputs/etri_video_eval/manual_owlv2/_extracted"
+  recon_frames_dir: "../outputs/etri_video_eval/manual_owlv2/recon_frames"
+  save_recon_frames: true
+  save_recon_video: true
+  recon_video: "../outputs/etri_video_eval/manual_owlv2/recon.mp4"
+
+# ── Packet Verifier + OWLv2-only presence calibration ────────────────────────
+use_packet_verifier: true
+verifier:
+  enabled: true
+  report_json: "../outputs/etri_video_eval/manual_owlv2/packet_match_report.json"
+  report_csv: "../outputs/etri_video_eval/manual_owlv2/packet_match_report.csv"
+  decisions_json: "../outputs/etri_video_eval/manual_owlv2/controller_decisions.json"
+  decisions_csv: "../outputs/etri_video_eval/manual_owlv2/controller_decisions.csv"
+
+  use_presence_calibration: true
+  presence_mode: owlv2_only
+  presence_backends: ["owlv2"]
+  presence_backend_cfg:
+    owlv2:
+      model_id: google/owlv2-base-patch16-ensemble  # zero-shot open-vocab detector
+      score_threshold: 0.1
+
+# ── Held-out remeasurement output (5차 step 9) ────────────────────────────────
+heldout:
+  enabled: true
+  clip_only_json: "../outputs/etri_video_eval/manual_owlv2/heldout/clip_only_metrics.json"
+  clip_only_csv: "../outputs/etri_video_eval/manual_owlv2/heldout/clip_only_metrics.csv"
+  calibrated_json: "../outputs/etri_video_eval/manual_owlv2/heldout/calibrated_metrics.json"
+  calibrated_csv: "../outputs/etri_video_eval/manual_owlv2/heldout/calibrated_metrics.csv"
+  output_json: "../outputs/etri_video_eval/manual_owlv2/heldout/metric_delta.json"
+  output_csv: "../outputs/etri_video_eval/manual_owlv2/heldout/metric_delta.csv"

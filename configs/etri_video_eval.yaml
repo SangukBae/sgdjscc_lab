@@ -52,6 +52,14 @@ video_io:
 #   decisions_json: "../outputs/etri_video_eval/manual/controller_decisions.json"
 #   decisions_csv: "../outputs/etri_video_eval/manual/controller_decisions.csv"
 
+# OWLv2/VQA presence calibration (5차 step 8, 실제 weight 검증용):
+# 이 파일에 직접 verifier.presence_backend_cfg를 채우는 대신, 바로 실행
+# 가능한 예시 3개를 별도 config로 준비해뒀다 — 각 config의 usage 주석과
+# docs/etri_owlv2_vqa_readiness.md 참조:
+#   configs/etri_video_eval_owlv2.yaml     (presence_mode: owlv2_only)
+#   configs/etri_video_eval_vqa.yaml       (presence_mode: vqa_only)
+#   configs/etri_video_eval_ensemble.yaml  (presence_mode: ensemble_weighted)
+
 # 3-way generate 분기 (3차 step 5, mock backend / PoC-exercise band):
 # use_video_gen: true
 # temporal:

@@ -1,0 +1,92 @@
+# configs/etri_video_eval_ensemble.yaml – clip + owlv2 + vqa ensemble-weighted
+# presence-calibration sanity config.
+#
+# Combines all three image-based backends (CLIP, OWLv2, VQA/BLIP-2) via
+# ensemble_weighted — each backend that can actually answer for a given object
+# contributes confidence*weight; unavailable backends (e.g. missing weights)
+# are simply skipped, never crash the calibration. See
+# evaluators/presence_calibration.py::PresenceCalibrator._combine() and
+# docs/etri_owlv2_vqa_readiness.md for the full readiness writeup.
+#
+# Usage (held-out remeasurement against an already-completed real-model run's
+# saved frames — no reconstruction re-run, see items_from_recon_frame_dirs()):
+#   python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_ensemble.yaml \
+#       --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --device cuda:0
+#
+# Real verification run (actual OWLv2 + VQA weights, GPU, real reconstruction):
+#   python scripts/evaluate_video.py --config configs/etri_video_eval_ensemble.yaml \
+#       --input data/etri_video_eval/processed/01_person_walk.mp4 \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --snr 5 --device cuda:0 --save-video
+
+_defaults_:
+  - channel/awgn
+  - model/sgdjscc
+  - infer/awgn
+  - eval/default
+  - video/default
+
+use_phase4: true
+use_phase5: false
+use_packet_eval: true
+
+keyframe_json: "../outputs/etri_video_eval/manual_ensemble/keyframes.json"
+segment_json: "../outputs/etri_video_eval/manual_ensemble/segments.json"
+temporal_csv: "../outputs/etri_video_eval/manual_ensemble/temporal_metrics.csv"
+frame_log_csv: "../outputs/etri_video_eval/manual_ensemble/temporal_frames.csv"
+video_io:
+  extracted_frames_dir: "../outputs/etri_video_eval/manual_ensemble/_extracted"
+  recon_frames_dir: "../outputs/etri_video_eval/manual_ensemble/recon_frames"
+  save_recon_frames: true
+  save_recon_video: true
+  recon_video: "../outputs/etri_video_eval/manual_ensemble/recon.mp4"
+
+# ── Packet Verifier + ensemble-weighted presence calibration ──────────────────
+use_packet_verifier: true
+verifier:
+  enabled: true
+  report_json: "../outputs/etri_video_eval/manual_ensemble/packet_match_report.json"
+  report_csv: "../outputs/etri_video_eval/manual_ensemble/packet_match_report.csv"
+  decisions_json: "../outputs/etri_video_eval/manual_ensemble/controller_decisions.json"
+  decisions_csv: "../outputs/etri_video_eval/manual_ensemble/controller_decisions.csv"
+
+  use_presence_calibration: true
+  presence_mode: ensemble_weighted
+  presence_backends: ["clip", "owlv2", "vqa"]
+  presence_backend_weights:
+    clip: 1.0
+    owlv2: 1.5     # grounded detector — weighted higher than the CLIP global probe
+    vqa: 1.5
+  presence_backend_cfg:
+    clip:
+      threshold: 0.25
+    owlv2:
+      model_id: google/owlv2-base-patch16-ensemble
+      score_threshold: 0.1
+    vqa:
+      vqa_backend:
+        type: blip2
+        model_id: Salesforce/blip2-opt-2.7b-coco
+        device: cuda:0
+
+  # Object vocabulary filter — strips caption-noun contamination (count words
+  # like "one", action/event words like "walking", scene words like
+  # "sidewalk") out of the object metric before either clip_only or
+  # calibrated sees it, so ensemble mean_severity/PTC/SFR gains aren't
+  # inflated by non-object tokens. See evaluators/object_vocabulary_filter.py.
+  # Disabled by default elsewhere; enabled here for the ensemble remeasurement.
+  object_vocabulary_filter:
+    enabled: true
+    use_gt_vocabulary: true
+
+# ── Held-out remeasurement output (5차 step 9) ────────────────────────────────
+heldout:
+  enabled: true
+  clip_only_json: "../outputs/etri_video_eval/manual_ensemble/heldout/clip_only_metrics.json"
+  clip_only_csv: "../outputs/etri_video_eval/manual_ensemble/heldout/clip_only_metrics.csv"
+  calibrated_json: "../outputs/etri_video_eval/manual_ensemble/heldout/calibrated_metrics.json"
+  calibrated_csv: "../outputs/etri_video_eval/manual_ensemble/heldout/calibrated_metrics.csv"
+  output_json: "../outputs/etri_video_eval/manual_ensemble/heldout/metric_delta.json"
+  output_csv: "../outputs/etri_video_eval/manual_ensemble/heldout/metric_delta.csv"

@@ -81,6 +81,12 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+# Re-exported from pipelines/heldout_remeasurement.py (single source of
+# truth, also used by scripts/remeasure_video_metrics.py's --gt-metadata
+# auto-conversion) — kept importable here as `convert_gt_to_presence` for
+# backward compatibility with this module's own callers/tests.
+from sgdjscc_lab.pipelines.heldout_remeasurement import convert_gt_to_presence  # noqa: E402
+
 STAGES = (
     "baseline", "motion_sweep", "verifier", "generate",
     "bidirectional", "heldout", "accounting",
@@ -120,33 +126,6 @@ def read_manifest(data_root: Path) -> list:
                 "row": dict(row),
             })
     return entries
-
-
-def convert_gt_to_presence(gt: dict) -> dict:
-    """Convert a data/etri_video_eval/gt/<video>.json segment-level GT file
-    into the per-item ``{item_id: {object_name: bool}}`` mapping the ETRI 5차
-    ``gt`` presence backend expects (``remeasure_video_metrics.py
-    --gt-metadata``, ``--from-packets`` mode).
-
-    Item ids follow the still-image packet stem convention ``frame_{i:05d}``.
-    This is an input-format bridge only — actual GT-backed calibration runs
-    are a follow-up once packet dumps exist for these videos.
-    """
-    n_frames = int(gt.get("n_frames", 0))
-    labels = set()
-    for seg in gt.get("segments", []):
-        for obj in seg.get("objects", []):
-            labels.add(str(obj.get("label")))
-    presence = {}
-    for i in range(n_frames):
-        frame_presence = {label: False for label in sorted(labels)}
-        for seg in gt.get("segments", []):
-            if int(seg.get("start_frame", 0)) <= i <= int(seg.get("end_frame", -1)):
-                for obj in seg.get("objects", []):
-                    if str(obj.get("presence", "visible")) == "visible":
-                        frame_presence[str(obj.get("label"))] = True
-        presence[f"frame_{i:05d}"] = frame_presence
-    return presence
 
 
 # ──────────────────────────────────────────────────────────────────────────────
