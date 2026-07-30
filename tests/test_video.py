@@ -1111,6 +1111,372 @@ class TestGenerationModeComparison:
         assert set(data.keys()) == {"start_only", "bidirectional", "comparison"}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# ETRI 후속 1단계 step 1A — TemporalPipeline batches generate-decision frames
+# into ONE video_generator.generate_segment() call per GOP instead of one
+# video_generator.generate() call per frame. Covers: single-call-per-segment,
+# mixed reuse/recompute/generate within one segment, zero-generate-target
+# segments never calling the backend, FrameRecord/SegmentRecord projection,
+# last-GOP missing-end-keyframe policy via the segment contract, explicit
+# errors on a malformed backend result, and the Rx-legal boundary (no
+# un-transmitted original frame reaches the backend request).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _CountingSegmentGenerator:
+    """Wraps a VideoGenerator, recording every generate_segment() call
+    (request objects, in call order) without altering its behaviour."""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.backend_name = inner.backend_name
+        self.calls = []
+
+    def generate(self, request):
+        return self.inner.generate(request)
+
+    def generate_segment(self, request):
+        self.calls.append(request)
+        return self.inner.generate_segment(request)
+
+
+def _mixed_segment_packet_fn(frame, fid):
+    fid = str(fid)
+    idx = int(fid.split("_")[1]) if fid.startswith(("frame_", "recon_")) else 0
+    base = dict(
+        objects=["car", "tree", "bus"], scene="street scene",
+        relations=[{"subject": "car", "predicate": "near", "object": "tree"}],
+        attributes={"car": ["red"]},
+    )
+    moderate = dict(
+        objects=base["objects"] + ["dog", "cat"], scene=base["scene"],
+        relations=base["relations"], attributes=base["attributes"],
+    )
+    huge = dict(objects=[], scene="an entirely different scene", relations=[], attributes={})
+    # Single GOP (6 frames, one keyframe at 0): idx1/3/5 are moderate-delta
+    # generate candidates, idx2 reuses (identical packet to the keyframe),
+    # idx4 is a large-delta recompute — reuse/recompute/generate all mixed
+    # into the same segment.
+    mapping = {0: base, 1: moderate, 2: base, 3: moderate, 4: huge, 5: moderate}
+    return build_packet(**mapping.get(idx, base))
+
+
+def _run_mixed_segment_pipeline(video_generator=None, **kw):
+    from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+    from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+
+    frames = [torch.full((1, 3, 8, 8), 0.1 * (i + 1)) for i in range(6)]
+
+    def recon_fn(frame, cfg):
+        return frame * 10.0
+
+    kfx = KeyframeExtractor(_StubDetector([True, False, False, False, False, False]), max_gop=None)
+    pipe = TemporalPipeline(
+        reconstruct_fn=recon_fn, packet_fn=_mixed_segment_packet_fn,
+        keyframe_extractor=kfx, reuse_threshold=0.2,
+        enable_generate=True, video_generator=video_generator, **kw,
+    )
+    return pipe.run(frames)
+
+
+class TestSegmentGenerateBranch:
+    def test_one_generate_segment_call_for_the_whole_gop(self):
+        from sgdjscc_lab.video.video_generator import CopyGenerator
+        spy = _CountingSegmentGenerator(CopyGenerator())
+        res = _run_generate_branch_pipeline(enable_generate=True, video_generator=spy)
+        decisions = {r["index"]: r["decision"] for r in res["frame_records"]}
+        assert decisions[1] == "generate"
+        assert len(spy.calls) == 1
+        assert spy.calls[0].target_indices == [1]
+        assert spy.calls[0].segment_id == 0
+
+    def test_mixed_reuse_recompute_generate_in_one_segment_single_call(self):
+        from sgdjscc_lab.video.video_generator import CopyGenerator
+        spy = _CountingSegmentGenerator(CopyGenerator())
+        res = _run_mixed_segment_pipeline(video_generator=spy)
+        decisions = {r["index"]: r["decision"] for r in res["frame_records"]}
+        assert decisions[1] == "generate"
+        assert decisions[2] == "reuse"
+        assert decisions[3] == "generate"
+        assert decisions[4] in ("recompute_semantic", "recompute_motion")
+        assert decisions[5] == "generate"
+        assert res["summary"]["n_generate"] == 3
+        # Exactly ONE backend call for the whole segment, batching all three
+        # non-contiguous generate targets together.
+        assert len(spy.calls) == 1
+        assert spy.calls[0].target_indices == [1, 3, 5]
+
+    def test_no_generate_targets_never_calls_backend(self):
+        from sgdjscc_lab.video.video_generator import CopyGenerator
+        spy = _CountingSegmentGenerator(CopyGenerator())
+        res = _run_generate_branch_pipeline(
+            enable_generate=True, video_generator=spy,
+            generate_delta_min=2.0, generate_delta_max=3.0,   # impossible band → never a candidate
+        )
+        assert spy.calls == []
+        assert res["summary"]["n_generate"] == 0
+
+    def test_generate_disabled_never_touches_video_generator(self):
+        from sgdjscc_lab.video.video_generator import CopyGenerator
+        spy = _CountingSegmentGenerator(CopyGenerator())
+        res = _run_generate_branch_pipeline(enable_generate=False, video_generator=spy)
+        assert spy.calls == []
+        assert res["summary"]["n_generate"] == 0
+        assert all(seg["generation"] is None for seg in res["segment_records"])
+
+    def test_frame_count_index_order_and_shape_preserved(self):
+        res = _run_mixed_segment_pipeline()
+        assert [r.index for r in res["records"]] == list(range(6))
+        for r in res["records"]:
+            assert r.recon is not None
+            assert r.recon.shape == torch.Size([1, 3, 8, 8])
+
+    def test_generated_frames_projected_onto_frame_records_in_order(self):
+        res = _run_mixed_segment_pipeline()
+        recs = {r.index: r for r in res["records"]}
+        for idx in (1, 3, 5):
+            assert recs[idx].decision == "generate"
+            assert recs[idx].generation is not None
+            assert recs[idx].generation["target_indices"] == [idx]
+            assert recs[idx].recon_packet is not None
+
+    def test_segment_record_generation_lists_all_generated_targets(self):
+        res = _run_mixed_segment_pipeline()
+        seg = res["segment_records"][0]
+        assert seg["generation"]["n_generated"] == 3
+        assert seg["generation"]["target_indices"] == [1, 3, 5]
+
+    def test_non_contiguous_generate_target_references_true_immediate_predecessor(self):
+        """Regression: a generate target whose immediately-preceding frame was
+        resolved OUTSIDE this segment call's own chain (a recompute here, but
+        the same applies to a reuse/keyframe) must reference THAT frame's
+        actual reconstruction, not some earlier generate target's output.
+
+        Fixture (from _run_mixed_segment_pipeline): idx1=generate, idx2=reuse,
+        idx3=generate, idx4=recompute (recon=5.0), idx5=generate. Frame 5's
+        immediate predecessor (frame 4) is a recompute resolved independently
+        of the generate batch, so frame 5 must reference recon=5.0 — not
+        frame 3's generated output (the bug this test guards against: the
+        segment fallback used to snapshot only the FIRST generate target's
+        prev_recon and chain every later target to the previous target's own
+        result, even across an intervening non-generate frame).
+        """
+        from sgdjscc_lab.video.video_generator import InterpolationGenerator
+
+        res = _run_mixed_segment_pipeline(video_generator=InterpolationGenerator(alpha=0.5))
+        recs = {r.index: r for r in res["records"]}
+        assert recs[4].decision in ("recompute_semantic", "recompute_motion")
+        assert recs[4].recon.flatten()[0].item() == pytest.approx(5.0)
+        # keyframe recon = 1.0 (frame 0 = 0.1 → recon = 0.1*10). Frame 5 must
+        # blend it 50/50 with frame 4's ACTUAL recon (5.0), not frame 3's
+        # generated output — expected (1.0 + 5.0) / 2 = 3.0.
+        assert recs[5].decision == "generate"
+        assert recs[5].recon.flatten()[0].item() == pytest.approx(3.0)
+
+    def test_bidirectional_segment_calls_carry_correct_end_keyframe_per_gop(self):
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+        from sgdjscc_lab.video.video_generator import BidirectionalInterpolationGenerator
+
+        frames, packet_fn = _bidirectional_fixture_frames_and_packet_fn()
+        spy = _CountingSegmentGenerator(
+            BidirectionalInterpolationGenerator(missing_end_policy="fallback_start_only")
+        )
+        kfx = KeyframeExtractor(_StubDetector(_BIDI_BOUNDARIES), max_gop=None)
+        pipe = TemporalPipeline(
+            reconstruct_fn=lambda f, c: f * 10.0, packet_fn=packet_fn,
+            keyframe_extractor=kfx, reuse_threshold=0.2,
+            enable_generate=True, conditioning_mode="bidirectional", video_generator=spy,
+        )
+        res = pipe.run(frames)
+
+        assert len(spy.calls) == 2   # one GOP each (keyframes 0 and 4)
+        first_gop = next(r for r in spy.calls if r.start_frame_index == 0)
+        last_gop = next(r for r in spy.calls if r.start_frame_index == 4)
+        assert first_gop.end_keyframe_index == 4
+        assert first_gop.end_keyframe_recon is not None
+        # Last GOP has no following keyframe — the segment contract carries
+        # that through as None, same as the frame-level contract did.
+        assert last_gop.end_keyframe_index is None
+        assert last_gop.end_keyframe_recon is None
+        rec5 = next(r for r in res["records"] if r.index == 5)
+        assert rec5.generation["conditioning_mode"] == "start_only"   # fallback recorded
+
+    def test_backend_returning_wrong_frame_count_raises(self):
+        from sgdjscc_lab.video.video_generator import VideoGenerator, SegmentGenerationResult, GenerationMetadata
+
+        class _TooFewFramesGenerator(VideoGenerator):
+            backend_name = "broken_count"
+
+            def generate(self, request):
+                raise NotImplementedError
+
+            def generate_segment(self, request):
+                targets = list(request.target_indices)[:-1]   # drop the last one
+                return SegmentGenerationResult(
+                    segment_id=request.segment_id,
+                    target_indices=targets,
+                    frames=[torch.zeros_like(request.start_keyframe_recon) for _ in targets],
+                    metadata=[
+                        GenerationMetadata(
+                            backend="broken_count", conditioning_mode="start_only",
+                            source_keyframe_index=request.start_keyframe_index,
+                            target_indices=[i], used_caption=False, used_side_info=False, mock=True,
+                        )
+                        for i in targets
+                    ],
+                )
+
+        with pytest.raises(ValueError):
+            _run_generate_branch_pipeline(enable_generate=True, video_generator=_TooFewFramesGenerator())
+
+    def test_backend_returning_wrong_shape_raises(self):
+        from sgdjscc_lab.video.video_generator import VideoGenerator, SegmentGenerationResult, GenerationMetadata
+
+        class _WrongShapeGenerator(VideoGenerator):
+            backend_name = "broken_shape"
+
+            def generate(self, request):
+                raise NotImplementedError
+
+            def generate_segment(self, request):
+                targets = list(request.target_indices)
+                return SegmentGenerationResult(
+                    segment_id=request.segment_id,
+                    target_indices=targets,
+                    frames=[torch.zeros(1, 3, 999, 999) for _ in targets],
+                    metadata=[
+                        GenerationMetadata(
+                            backend="broken_shape", conditioning_mode="start_only",
+                            source_keyframe_index=request.start_keyframe_index,
+                            target_indices=[i], used_caption=False, used_side_info=False, mock=True,
+                        )
+                        for i in targets
+                    ],
+                )
+
+        with pytest.raises(ValueError):
+            _run_generate_branch_pipeline(enable_generate=True, video_generator=_WrongShapeGenerator())
+
+    def test_backend_returning_wrong_indices_raises(self):
+        from sgdjscc_lab.video.video_generator import VideoGenerator, SegmentGenerationResult, GenerationMetadata
+
+        class _WrongIndexGenerator(VideoGenerator):
+            backend_name = "broken_index"
+
+            def generate(self, request):
+                raise NotImplementedError
+
+            def generate_segment(self, request):
+                bogus = [i + 100 for i in request.target_indices]
+                return SegmentGenerationResult(
+                    segment_id=request.segment_id,
+                    target_indices=bogus,
+                    frames=[torch.zeros_like(request.start_keyframe_recon) for _ in bogus],
+                    metadata=[
+                        GenerationMetadata(
+                            backend="broken_index", conditioning_mode="start_only",
+                            source_keyframe_index=request.start_keyframe_index,
+                            target_indices=[i], used_caption=False, used_side_info=False, mock=True,
+                        )
+                        for i in bogus
+                    ],
+                )
+
+        with pytest.raises(ValueError):
+            _run_generate_branch_pipeline(enable_generate=True, video_generator=_WrongIndexGenerator())
+
+    def test_rx_legal_segment_request_has_no_original_frame_field_or_leak(self):
+        from sgdjscc_lab.video.video_generator import CopyGenerator
+        spy = _CountingSegmentGenerator(CopyGenerator())
+        _run_generate_branch_pipeline(enable_generate=True, video_generator=spy)
+        assert len(spy.calls) == 1
+        request = spy.calls[0]
+
+        # Structural: the object flowing through the real pipeline has no
+        # ground-truth/original-frame field to leak through at all.
+        assert not hasattr(request, "reference_target_frame")
+
+        # Behavioural: the tensors actually attached to the request are Rx-legal
+        # reconstructions (start_keyframe_recon = keyframe recon), never the
+        # untransmitted original pixels of a generate-decision target frame.
+        original_targets = [torch.full((1, 3, 8, 8), 0.1 * (idx + 1)) for idx in request.target_indices]
+        for orig in original_targets:
+            assert not torch.equal(request.start_keyframe_recon, orig)
+            if request.reference_prev_recon is not None:
+                assert not torch.equal(request.reference_prev_recon, orig)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ETRI 후속 1단계 step 1B — the same GOP-batched generate branch (1A) routed
+# through a REAL out-of-process backend (ExternalSegmentWorkerGenerator, mock
+# worker subprocess) instead of an in-process mock. Proves FrameRecord/
+# SegmentRecord projection and the 1A batching contract are backend-agnostic,
+# not something that only happens to work with in-process CopyGenerator-style
+# mocks. No GPU/diffusers/Open-Sora/Wan — the worker's `mock` backend only
+# needs torch/torchvision/PIL, already ptest dependencies.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSegmentGenerateBranchExternalWorker:
+    def test_mixed_segment_through_external_worker_projects_correctly(self):
+        import json
+        from sgdjscc_lab.video.video_generator import ExternalSegmentWorkerGenerator
+        gen = ExternalSegmentWorkerGenerator(python_bin=sys.executable, backend="mock", device="cpu")
+        res = _run_mixed_segment_pipeline(video_generator=gen)
+        decisions = {r.index: r.decision for r in res["records"]}
+        assert decisions[1] == "generate"
+        assert decisions[2] == "reuse"
+        assert decisions[3] == "generate"
+        assert decisions[4] in ("recompute_semantic", "recompute_motion")
+        assert decisions[5] == "generate"
+        assert res["summary"]["n_generate"] == 3
+
+        for idx in (1, 3, 5):
+            rec = next(r for r in res["records"] if r.index == idx)
+            assert rec.recon is not None
+            assert rec.recon.shape == torch.Size([1, 3, 8, 8])
+            assert rec.generation["backend"] == "external_segment_worker:mock"
+            assert rec.recon_packet is not None
+
+        seg = res["segment_records"][0]
+        assert seg["generation"]["n_generated"] == 3
+        assert seg["generation"]["target_indices"] == [1, 3, 5]
+        assert json.dumps(seg["generation"])  # stays JSON-serialisable
+
+    def test_bidirectional_through_external_worker(self):
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+        from sgdjscc_lab.video.video_generator import ExternalSegmentWorkerGenerator
+
+        frames, packet_fn = _bidirectional_fixture_frames_and_packet_fn()
+        gen = ExternalSegmentWorkerGenerator(python_bin=sys.executable, backend="mock", device="cpu")
+        kfx = KeyframeExtractor(_StubDetector(_BIDI_BOUNDARIES), max_gop=None)
+        pipe = TemporalPipeline(
+            reconstruct_fn=lambda f, c: f * 10.0, packet_fn=packet_fn,
+            keyframe_extractor=kfx, reuse_threshold=0.2,
+            enable_generate=True, conditioning_mode="bidirectional", video_generator=gen,
+        )
+        res = pipe.run(frames)
+        rec1 = next(r for r in res["records"] if r.index == 1)
+        assert rec1.decision == "generate"
+        assert rec1.generation["conditioning_mode"] == "bidirectional"
+        assert rec1.generation["end_keyframe_index"] == 4
+        assert rec1.generation["relative_position"] == pytest.approx(0.25)
+
+    def test_no_generate_targets_never_calls_worker_subprocess(self):
+        """A GOP with zero generate decisions must never even build/run the
+        worker subprocess — confirms 1B's real-process backend inherits 1A's
+        'no-op when nothing to generate' guarantee, not just mocks."""
+        from sgdjscc_lab.video.video_generator import ExternalSegmentWorkerGenerator
+        gen = ExternalSegmentWorkerGenerator(
+            python_bin="/no/such/interpreter", backend="mock",  # would fail loudly if ever invoked
+        )
+        res = _run_generate_branch_pipeline(
+            enable_generate=True, video_generator=gen,
+            generate_delta_min=2.0, generate_delta_max=3.0,  # impossible band → never a candidate
+        )
+        assert res["summary"]["n_generate"] == 0
+
+
 class TestPacketVerifierWiringRegression:
     def test_severity_zero_for_perfect_reconstruction(self, tmp_path):
         """Regression: the existing (non-hallucinating) fixtures used elsewhere

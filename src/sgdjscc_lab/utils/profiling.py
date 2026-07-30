@@ -151,6 +151,33 @@ class RunProfiler:
     def frame(self, index: int) -> "RunProfiler._FrameCtx":
         return RunProfiler._FrameCtx(self, index)
 
+    def record_frame(
+        self, index: int, decision: Optional[str], elapsed_sec: float,
+        diffusion_calls: int = 0, blip2_calls: int = 0, clip_calls: int = 0,
+    ) -> None:
+        """Directly append a per-frame timing record, bypassing the
+        enter/exit timer in :meth:`frame` (ETRI 1A).
+
+        ``TemporalPipeline``'s generate branch now resolves several
+        generate-decision frames with ONE ``video_generator.generate_segment()``
+        call instead of one call per frame (see ``video/temporal_pipeline.py``).
+        A single ``frame(i)`` context can no longer time that call correctly —
+        the real wall-clock cost has to be measured once (around the whole
+        segment call) and then attributed explicitly to each frame the call
+        covered, rather than either being lost (deferred frames whose
+        placeholder context exits before the real work happens) or wrongly
+        blamed on whatever frame happens to run next (see
+        ``TemporalPipeline._flush_pending_generate``). *elapsed_sec* is
+        whatever share of that measured cost the caller has already computed
+        for *this* frame — this method does no timing itself.
+        """
+        rec = FrameRecordLite(
+            index=index, decision=decision, elapsed_sec=round(float(elapsed_sec), 4),
+            diffusion_calls=diffusion_calls, blip2_calls=blip2_calls, clip_calls=clip_calls,
+        )
+        self.frame_records.append(rec)
+        self._maybe_flush()
+
     def _maybe_flush(self) -> None:
         if self.progress_path is None:
             return

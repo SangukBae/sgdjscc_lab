@@ -63,6 +63,9 @@ _NESTED_PATH_KEYS = (
     "video_generator.comparison_output",              # generation_mode_comparison.json (ETRI 4차)
     "video_generator.comparison_start_only_csv",      # start_only temporal metrics (ETRI 4차)
     "video_generator.comparison_bidirectional_csv",   # bidirectional temporal metrics (ETRI 4차)
+    "video_generator.worker.python_bin",       # external worker's OTHER-env interpreter (ETRI 1B)
+    "video_generator.worker.worker_script",    # lgvsc_generate_worker.py path override (ETRI 1B)
+    "video_generator.worker.work_dir",         # per-call temp work dir base (ETRI 1B)
     "heldout.clip_only_json",                  # held-out remeasurement outputs (ETRI 5차)
     "heldout.clip_only_csv",
     "heldout.calibrated_json",

@@ -249,6 +249,294 @@ class TestForceInterframeReuse:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# ETRI 1A follow-up: generate_segment() wall-clock cost must be attributed to
+# the generate-decision frames it covers (video/temporal_pipeline.py's
+# _flush_pending_generate + utils/profiling.py's RunProfiler.record_frame()),
+# not lost (a deferred frame's placeholder timer never actually ran the
+# backend) or misattributed to whichever keyframe is processed next (the
+# flush for a middle GOP runs before that keyframe's own timer starts).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSegmentGenerationProfilingAttribution:
+    def _run(self, total_frames, boundaries, obj_map, sleep_sec):
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+        from sgdjscc_lab.video.video_generator import (
+            VideoGenerator, SegmentGenerationResult, GenerationMetadata,
+        )
+
+        class _SlowSegmentGenerator(VideoGenerator):
+            """Mock backend whose generate_segment() takes real wall-clock
+            time (via time.sleep) — stands in for a slow real (1B) backend so
+            the profiler's attribution can be checked against a known cost."""
+
+            backend_name = "slow_mock"
+
+            def generate(self, request):
+                raise NotImplementedError("only generate_segment is exercised here")
+
+            def generate_segment(self, request):
+                time.sleep(sleep_sec)
+                frames = [request.start_keyframe_recon.clone() for _ in request.target_indices]
+                metadata = [
+                    GenerationMetadata(
+                        backend=self.backend_name, conditioning_mode="start_only",
+                        source_keyframe_index=request.start_keyframe_index,
+                        target_indices=[i], used_caption=False, used_side_info=False, mock=True,
+                    )
+                    for i in request.target_indices
+                ]
+                return SegmentGenerationResult(
+                    segment_id=request.segment_id, target_indices=list(request.target_indices),
+                    frames=frames, metadata=metadata,
+                )
+
+        frames = [torch.full((1, 3, 4, 4), 0.1 * (i + 1)) for i in range(total_frames)]
+
+        def packet_fn(frame, fid):
+            fid = str(fid)
+            idx = int(fid.split("_")[1]) if fid.startswith(("frame_", "recon_")) else 0
+            return build_packet(objects=obj_map.get(idx, ["car"]), scene="s")
+
+        def recon_fn(frame, cfg):
+            return frame * 10.0
+
+        kfx = KeyframeExtractor(_StubDetector(boundaries), max_gop=None)
+        pipe = TemporalPipeline(
+            reconstruct_fn=recon_fn, packet_fn=packet_fn, keyframe_extractor=kfx,
+            reuse_threshold=0.2, enable_generate=True, video_generator=_SlowSegmentGenerator(),
+        )
+        prof = profiling.RunProfiler(video="v", total_frames=total_frames)
+        profiling.set_active(prof)
+        try:
+            res = pipe.run(frames)
+        finally:
+            profiling.set_active(None)
+        return res, prof
+
+    def test_middle_gop_generation_time_attributed_to_generate_frame_not_next_keyframe(self):
+        # 2 GOPs: keyframe 0 / inter 1 (generate) / keyframe 2 / inter 3 (reuse).
+        obj_map = {0: ["car"], 1: ["car", "dog"], 2: ["boat"], 3: ["boat"]}
+        res, prof = self._run(
+            total_frames=4, boundaries=[True, False, True, False], obj_map=obj_map, sleep_sec=0.05,
+        )
+        assert res["records"][1].decision == "generate"
+        by_index = {r.index: r for r in prof.frame_records}
+        assert 1 in by_index
+        # The ~50ms backend cost must land on frame 1 (the generate frame
+        # whose call it actually was) — not on keyframe 2, which is processed
+        # immediately afterward and used to swallow this time before the fix.
+        assert by_index[1].elapsed_sec >= 0.03
+        assert by_index[2].elapsed_sec < 0.03
+
+    def test_last_gop_generation_time_is_not_lost(self):
+        # Single GOP: keyframe 0 / inter 1 (generate) is the LAST frame in the
+        # sequence — its generate_segment() call only flushes after the main
+        # loop ends, with no next-keyframe iteration to (mis)attribute it to.
+        obj_map = {0: ["car"], 1: ["car", "dog"]}
+        res, prof = self._run(
+            total_frames=2, boundaries=[True, False], obj_map=obj_map, sleep_sec=0.05,
+        )
+        assert res["records"][1].decision == "generate"
+        by_index = {r.index: r for r in prof.frame_records}
+        assert 1 in by_index
+        assert by_index[1].elapsed_sec >= 0.03
+
+    def test_multiple_generate_frames_in_one_segment_share_the_total_elapsed(self):
+        # Single GOP: keyframe 0 / inter 1 (generate) / inter 2 (reuse) /
+        # inter 3 (generate) — ONE generate_segment() call covers frames 1
+        # and 3; its cost should be split between them, not doubled or lost.
+        obj_map = {0: ["car"], 1: ["car", "dog"], 2: ["car"], 3: ["car", "dog"]}
+        res, prof = self._run(
+            total_frames=4, boundaries=[True, False, False, False], obj_map=obj_map, sleep_sec=0.06,
+        )
+        decisions = {r.index: r.decision for r in res["records"]}
+        assert decisions[1] == "generate"
+        assert decisions[2] == "reuse"
+        assert decisions[3] == "generate"
+        by_index = {r.index: r for r in prof.frame_records}
+        assert 1 in by_index and 3 in by_index
+        # ~60ms split evenly across 2 frames ≈ 30ms each — well above zero
+        # (not lost) and well below the full 60ms (not double-counted).
+        assert 0.01 < by_index[1].elapsed_sec < 0.05
+        assert 0.01 < by_index[3].elapsed_sec < 0.05
+
+    def test_generate_segment_call_counts_are_distributed_across_covered_frames(self):
+        """A real (1B+) backend that calls profiling.record_diffusion_call()/
+        record_blip2_call()/record_clip_call() inside generate_segment() must
+        have those counts show up on the generate frames it covered, not just
+        in the run-wide totals — otherwise a per-frame call-count breakdown
+        (not just elapsed time) would silently read 0 for every generate
+        frame forever, regardless of what the backend actually did."""
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+        from sgdjscc_lab.video.video_generator import (
+            VideoGenerator, SegmentGenerationResult, GenerationMetadata,
+        )
+
+        class _InstrumentedSegmentGenerator(VideoGenerator):
+            """Mock backend that stands in for a real 1B backend which
+            instruments its own model calls via the profiling module."""
+
+            backend_name = "instrumented_mock"
+
+            def generate(self, request):
+                raise NotImplementedError("only generate_segment is exercised here")
+
+            def generate_segment(self, request):
+                # Simulates one diffusion call per target frame + one shared
+                # BLIP2/CLIP call for the whole segment — a plausible real
+                # backend shape, deliberately uneven so the distribution is
+                # exercised (not just a trivial 1-per-frame case).
+                for _ in request.target_indices:
+                    profiling.record_diffusion_call(steps=10)
+                profiling.record_blip2_call()
+                profiling.record_clip_call(kind="image", n=1)
+                frames = [request.start_keyframe_recon.clone() for _ in request.target_indices]
+                metadata = [
+                    GenerationMetadata(
+                        backend=self.backend_name, conditioning_mode="start_only",
+                        source_keyframe_index=request.start_keyframe_index,
+                        target_indices=[i], used_caption=False, used_side_info=False, mock=True,
+                    )
+                    for i in request.target_indices
+                ]
+                return SegmentGenerationResult(
+                    segment_id=request.segment_id, target_indices=list(request.target_indices),
+                    frames=frames, metadata=metadata,
+                )
+
+        # Single GOP: keyframe 0 / inter 1 (generate) / inter 2 (reuse) /
+        # inter 3 (generate) — same shape as the elapsed-time sharing test
+        # above, so ONE generate_segment() call covers frames 1 and 3.
+        obj_map = {0: ["car"], 1: ["car", "dog"], 2: ["car"], 3: ["car", "dog"]}
+        frames = [torch.full((1, 3, 4, 4), 0.1 * (i + 1)) for i in range(4)]
+
+        def packet_fn(frame, fid):
+            fid = str(fid)
+            idx = int(fid.split("_")[1]) if fid.startswith(("frame_", "recon_")) else 0
+            return build_packet(objects=obj_map.get(idx, ["car"]), scene="s")
+
+        def recon_fn(frame, cfg):
+            return frame * 10.0
+
+        kfx = KeyframeExtractor(_StubDetector([True, False, False, False]), max_gop=None)
+        pipe = TemporalPipeline(
+            reconstruct_fn=recon_fn, packet_fn=packet_fn, keyframe_extractor=kfx,
+            reuse_threshold=0.2, enable_generate=True,
+            video_generator=_InstrumentedSegmentGenerator(),
+        )
+        prof = profiling.RunProfiler(video="v", total_frames=4)
+        profiling.set_active(prof)
+        try:
+            res = pipe.run(frames)
+        finally:
+            profiling.set_active(None)
+
+        decisions = {r.index: r.decision for r in res["records"]}
+        assert decisions[1] == "generate"
+        assert decisions[3] == "generate"
+
+        # Run-wide totals reflect the backend's real call counts regardless
+        # (this part already worked before the fix).
+        assert prof.counters["diffusion_calls"] == 2
+        assert prof.counters["blip2_calls"] == 1
+        assert prof.counters["clip_image_calls"] == 1
+
+        by_index = {r.index: r for r in prof.frame_records}
+        assert 1 in by_index and 3 in by_index
+        # 2 diffusion_calls split across 2 frames → 1 each. 1 blip2_call and
+        # 1 clip_call split across 2 frames → 1 to the first frame, 0 to the
+        # second (deterministic remainder tie-break) — the key regression
+        # check is that these are NOT all zero.
+        assert by_index[1].diffusion_calls + by_index[3].diffusion_calls == 2
+        assert by_index[1].diffusion_calls == 1 and by_index[3].diffusion_calls == 1
+        assert by_index[1].blip2_calls + by_index[3].blip2_calls == 1
+        assert by_index[1].clip_calls + by_index[3].clip_calls == 1
+        # Not every covered frame is silently left at 0 for every counter.
+        assert any(
+            (r.diffusion_calls, r.blip2_calls, r.clip_calls) != (0, 0, 0)
+            for r in (by_index[1], by_index[3])
+        )
+
+    def test_no_active_profiler_generate_segment_call_still_works(self):
+        """Sanity: with no profiler installed, the generate branch must not
+        break just because it now snapshots/distributes call-count deltas."""
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+        from sgdjscc_lab.video.video_generator import CopyGenerator
+
+        frames = [torch.full((1, 3, 4, 4), 0.1 * (i + 1)) for i in range(2)]
+
+        def packet_fn(frame, fid):
+            fid = str(fid)
+            idx = int(fid.split("_")[1]) if fid.startswith(("frame_", "recon_")) else 0
+            objs = {0: ["car"], 1: ["car", "dog"]}.get(idx, ["car"])
+            return build_packet(objects=objs, scene="s")
+
+        kfx = KeyframeExtractor(_StubDetector([True, False]), max_gop=None)
+        pipe = TemporalPipeline(
+            reconstruct_fn=lambda f, c: f * 10.0, packet_fn=packet_fn,
+            keyframe_extractor=kfx, reuse_threshold=0.2,
+            enable_generate=True, video_generator=CopyGenerator(),
+        )
+        assert profiling.get_active() is None
+        out = pipe.run(frames)   # must not raise despite no active profiler
+        assert out["records"][1].decision == "generate"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ETRI 1B regression: the profiler elapsed/call-count attribution 1A's
+# segment batching added (see TestSegmentGenerationProfilingAttribution
+# above) must hold for a REAL out-of-process backend
+# (ExternalSegmentWorkerGenerator, mock worker subprocess), not just
+# in-process mocks — a real subprocess call has genuine, non-negligible
+# wall-clock cost that a broken attribution could just as easily lose or
+# misattribute to the wrong frame.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSegmentGenerationProfilingAttributionExternalWorker:
+    def test_external_worker_generation_time_attributed_to_generate_frame(self):
+        from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
+        from sgdjscc_lab.video.keyframe_extractor import KeyframeExtractor
+        from sgdjscc_lab.video.video_generator import ExternalSegmentWorkerGenerator
+
+        # 2 GOPs: keyframe 0 / inter 1 (generate) / keyframe 2 / inter 3 (reuse) —
+        # same shape as the mock-backend regression test above.
+        obj_map = {0: ["car"], 1: ["car", "dog"], 2: ["boat"], 3: ["boat"]}
+        frames = [torch.full((1, 3, 8, 8), 0.1 * (i + 1)) for i in range(4)]
+
+        def packet_fn(frame, fid):
+            fid = str(fid)
+            idx = int(fid.split("_")[1]) if fid.startswith(("frame_", "recon_")) else 0
+            return build_packet(objects=obj_map.get(idx, ["car"]), scene="s")
+
+        kfx = KeyframeExtractor(_StubDetector([True, False, True, False]), max_gop=None)
+        gen = ExternalSegmentWorkerGenerator(python_bin=sys.executable, backend="mock", device="cpu")
+        pipe = TemporalPipeline(
+            reconstruct_fn=lambda f, c: f * 10.0, packet_fn=packet_fn,
+            keyframe_extractor=kfx, reuse_threshold=0.2,
+            enable_generate=True, video_generator=gen,
+        )
+        prof = profiling.RunProfiler(video="v", total_frames=4)
+        profiling.set_active(prof)
+        try:
+            res = pipe.run(frames)
+        finally:
+            profiling.set_active(None)
+
+        assert res["records"][1].decision == "generate"
+        by_index = {r.index: r for r in prof.frame_records}
+        assert 1 in by_index
+        # Launching a real python subprocess takes measurable time (interpreter
+        # startup alone is several ms) — it must land on frame 1's record, not
+        # be zero, and must not be swallowed by keyframe 2 (processed right
+        # after in the main loop — see _flush_pending_generate's docstring).
+        assert by_index[1].elapsed_sec > 0.0
+        assert by_index[2].elapsed_sec < by_index[1].elapsed_sec
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # guidance/packet_cache.py
 # ─────────────────────────────────────────────────────────────────────────────
 

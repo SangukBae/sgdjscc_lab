@@ -297,7 +297,7 @@ def account_frame(
     - ``generate``: semantic packet + motion/side-info are modelled as sent
       (the mock ``video_generator`` backends condition on the
       already-received keyframe reconstruction + caption/packet side-info,
-      per ``TemporalPipeline._generate_frame()`` — no fresh visual latent is
+      per ``TemporalPipeline._flush_pending_generate()`` — no fresh visual latent is
       transmitted in this PoC's accounting). ``caption_bits`` is still
       reported for visibility, but when a full packet is present its caption
       field is already included in ``semantic_packet_bits`` and is not added a
