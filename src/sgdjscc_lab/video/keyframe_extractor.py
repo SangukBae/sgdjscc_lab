@@ -139,7 +139,7 @@ class FixedIntervalKeyframeSelector:
     never does (SKIM has no visual-difference signal at all, only a frame
     count). For a comparison line that is honestly "SKIM, not an
     approximation of it", use this class instead (``keyframe.selector:
-    fixed_interval`` — see ``configs/etri_lgvsc_1c_skim_sfa_fixed.yaml``).
+    fixed_interval`` — see ``configs/experiments/lgvsc_1c/etri_lgvsc_1c_skim_sfa_fixed.yaml``).
 
     Parameters
     ----------

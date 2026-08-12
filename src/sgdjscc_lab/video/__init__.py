@@ -10,4 +10,5 @@ temporal_pipeline     – keyframe/inter-frame orchestration + staged denoising
                         (semantic delta + motion dual reuse gate).
 segment               – GOP/segment records aggregating frame results
                         (generate-branch attachment point, 1차 scope).
+generation            – generation contracts, backends, external worker, factory.
 """
