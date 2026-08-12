@@ -1,4 +1,4 @@
-# configs/etri_lgvsc_1c_mock_baseline.yaml – 1C LGVSC-reproduction baseline
+# configs/experiments/lgvsc_1c/etri_lgvsc_1c_mock_baseline.yaml – 1C LGVSC-reproduction baseline
 # (mode: mock_baseline).
 #
 # Part of the ETRI 후속 1단계 step 1C reproduction-baseline set (see
@@ -24,7 +24,7 @@
 # standalone for a single manual video (see Usage below).
 #
 # Usage (manual, single video, smoke):
-#   python scripts/evaluate_video.py --config configs/etri_lgvsc_1c_mock_baseline.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/lgvsc_1c/etri_lgvsc_1c_mock_baseline.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --no-models --max-frames 14 --save-video
@@ -50,6 +50,20 @@ _defaults_:
 
 use_phase4: true
 use_phase5: false
+
+# use_text: false — the shared SGD-JSCC main pipeline (loaded for every one of
+# the four etri_lgvsc_1c_*.yaml modes, regardless of generate backend) always
+# builds BLIP2 alongside the diffusion backbone/ControlNet/CLIP. On a single
+# 16GB card that alone already uses ~11-12GB, which starved the external
+# generate worker in svd_start_only/wan_* (see docs/lgvsc_1c_reproduction_readiness.md
+# real-GPU run notes). Set the same here purely so all four modes share
+# identical settings — mock_baseline has no external worker to starve, but
+# the four-way comparison is only fair if every mode uses the same main-model
+# footprint. batch_lgvsc_1c_reproduce.py detects this and forwards
+# --recon-caption-mode skip accordingly (recon packets carry no BLIP2-derived
+# caption; hallucination/SRS numbers are the 'skip' variant, not 'own' —
+# see evaluate_video.py's --recon-caption-mode help).
+use_text: false
 
 temporal:
   reuse_threshold: 0.0

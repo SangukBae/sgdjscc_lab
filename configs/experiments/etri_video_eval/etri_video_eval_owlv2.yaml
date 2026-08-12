@@ -1,4 +1,4 @@
-# configs/etri_video_eval_owlv2.yaml – OWLv2-only presence-calibration sanity config.
+# configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml – OWLv2-only presence-calibration sanity config.
 #
 # Single-video config for verifying the OWLv2 presence backend against REAL
 # weights (lazy-loaded on first use — needs `transformers` with OWLv2 support
@@ -8,20 +8,20 @@
 #
 # Usage (verifier stage — checks OWLv2 wiring against a --no-models identity
 # recon, cheap sanity check that config keys route correctly):
-#   python scripts/evaluate_video.py --config configs/etri_video_eval_owlv2.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --no-models --save-video
 #
 # Usage (held-out remeasurement against an already-completed real-model run's
 # saved frames — no reconstruction re-run, see items_from_recon_frame_dirs()):
-#   python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_owlv2.yaml \
+#   python scripts/remeasure_video_metrics.py --config configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml \
 #       --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --device cuda:0
 #
 # Real verification run (actual OWLv2 weights, GPU, real reconstruction):
-#   python scripts/evaluate_video.py --config configs/etri_video_eval_owlv2.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --snr 5 --device cuda:0 --save-video

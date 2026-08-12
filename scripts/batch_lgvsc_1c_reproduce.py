@@ -84,7 +84,7 @@ accepted by the manifest but not folded into Wan/SVD conditioning by any mode
 (see scripts/lgvsc_generate_worker.py::run_wan_backend's docstring) — a
 documented gap, not a silent omission.
 
-Each mode's config (``configs/etri_lgvsc_1c_<mode>.yaml``) is copied from an
+Each mode's config (``configs/experiments/lgvsc_1c/etri_lgvsc_1c_<mode>.yaml``) is copied from an
 already real-GPU-verified 1B config — ``wan_skim_sfa`` from
 ``configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml``, ``wan_skem_dsa``
 from ``configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`` —
@@ -411,7 +411,7 @@ def resolve_cbr_match(
 
 
 def build_run_config(mode: str, out_dir: Path, cbr_match: dict = None) -> dict:
-    """Load ``configs/etri_lgvsc_1c_<mode>.yaml`` and rewrite it into a
+    """Load ``configs/experiments/lgvsc_1c/etri_lgvsc_1c_<mode>.yaml`` and rewrite it into a
     per-video-ready config dict.
 
     Only three kinds of fields are rewritten:
@@ -495,11 +495,18 @@ def _write_yaml(cfg: dict, path: Path) -> None:
 
 def build_command(cfg_path: Path, input_path: Path, captions_path=None, *,
                    device: str = None, max_frames: int = None,
-                   no_models: bool = False, save_video: bool = True) -> list:
+                   no_models: bool = False, save_video: bool = True,
+                   recon_caption_mode: str = "own") -> list:
     """Assemble the evaluate_video.py subprocess argv — matches exactly the
     command shape documented in this module's docstring / the 1C task brief:
     --config, --input, --captions, --device, --max-frames, --save-video, and
-    optionally --no-models."""
+    optionally --no-models/--recon-caption-mode.
+
+    *recon_caption_mode*: forwarded as --recon-caption-mode only when
+    "skip" (the evaluate_video.py default is already "own", so omitting the
+    flag there is equivalent — but run_job always passes it explicitly,
+    derived from the config's use_text, so the log/cmd string never claims
+    "own" while BLIP2 is actually disabled)."""
     cmd = [
         sys.executable, str(_REPO_ROOT / "scripts" / "evaluate_video.py"),
         "--config", str(cfg_path),
@@ -515,6 +522,8 @@ def build_command(cfg_path: Path, input_path: Path, captions_path=None, *,
         cmd.append("--save-video")
     if no_models:
         cmd.append("--no-models")
+    if recon_caption_mode == "skip":
+        cmd += ["--recon-caption-mode", "skip"]
     return cmd
 
 
@@ -632,9 +641,16 @@ def run_job(mode: str, entry: dict, output_root: Path, *, device=None, max_frame
 
     _write_yaml(cfg, cfg_path)
 
+    # use_text: false (see the four etri_lgvsc_1c_*.yaml headers — added to fit
+    # the main SGD-JSCC reconstruction pipeline + external generate worker on a
+    # single 16GB card) disables BLIP2 loading, so recon-side "own" captioning
+    # would silently degrade to no-caption anyway; label that explicitly as
+    # "skip" rather than leaving the log/cmd claiming the "own" default.
+    recon_caption_mode = "skip" if not cfg.get("use_text", True) else "own"
     cmd = build_command(
         cfg_path, entry["processed"], entry.get("captions"),
         device=device, max_frames=max_frames, no_models=no_models, save_video=True,
+        recon_caption_mode=recon_caption_mode,
     )
 
     if dry_run:

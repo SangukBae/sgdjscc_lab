@@ -1,7 +1,7 @@
-# configs/paper_train_jscc_gan.yaml – Stage 1 (JSCC), MSE+GAN compatibility alias
+# configs/experiments/paper_reproduction/paper_train_jscc_gan.yaml – Stage 1 (JSCC), MSE+GAN compatibility alias
 #
 # The paper describes the JSCC autoencoder trained with an objective of the form
-# L = MSE + λ · L_GAN (Sec. VI). configs/paper_train_jscc.yaml now enables this
+# L = MSE + λ · L_GAN (Sec. VI). configs/experiments/paper_reproduction/paper_train_jscc.yaml now enables this
 # path by default; this file is kept as a backward-compatible explicit MSE+GAN
 # entry point. The exact λ and discriminator details remain unpublished.
 #
@@ -13,7 +13,7 @@
 # See docs/paper_training_alignment.md for the confirmed/assumed breakdown.
 #
 # Usage:
-#   python scripts/train.py --config configs/paper_train_jscc_gan.yaml \
+#   python scripts/train.py --config configs/experiments/paper_reproduction/paper_train_jscc_gan.yaml \
 #       --train-list data/imagenet/train --val-list data/imagenet/val --device cuda:0
 
 _defaults_:

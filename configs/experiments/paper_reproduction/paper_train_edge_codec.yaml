@@ -1,4 +1,4 @@
-# configs/paper_train_edge_codec.yaml – PAPER reproduction: edge codec (supporting)
+# configs/experiments/paper_reproduction/paper_train_edge_codec.yaml – PAPER reproduction: edge codec (supporting)
 #
 # Supporting step for the Stage-3 baseline: trains the dedicated edge-JSCC codec
 # (BCE+Dice) whose checkpoint paper_train_controlnet.yaml loads as the edge
@@ -14,7 +14,7 @@
 #   python scripts/prepare_muge_edges.py --input data/coco/train2017 \
 #       --model-root ../checkpoints --repr edge_uncertainty
 # Then:
-#   python scripts/train.py --config configs/paper_train_edge_codec.yaml \
+#   python scripts/train.py --config configs/experiments/paper_reproduction/paper_train_edge_codec.yaml \
 #       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0
 
 _defaults_:

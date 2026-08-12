@@ -1,4 +1,4 @@
-# configs/etri_video_eval_lgvsc_worker_mock.yaml – ExternalSegmentWorkerGenerator
+# configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_mock.yaml – ExternalSegmentWorkerGenerator
 # fake-worker demo config (ETRI 후속 1단계 step 1B).
 #
 # Runs the generate branch through scripts/lgvsc_generate_worker.py's
@@ -15,17 +15,17 @@
 #
 # For a REAL model backend (a different conda env, e.g. `lgvsc_gen` or this
 # machine's existing `semantic-diffusers`), see
-# configs/etri_video_eval_lgvsc_worker_svd.yaml instead.
+# configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml instead.
 #
 # Usage (no GPU required — --no-models keeps SGD-JSCC/diffusion identity, but
 # the generate branch's WORKER SUBPROCESS still genuinely runs):
-#   python scripts/evaluate_video.py --config configs/etri_video_eval_lgvsc_worker_mock.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_mock.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --no-models --save-video
 #
 # Usage (real SGD-JSCC/diffusion reconstruction + mock generate worker, GPU):
-#   python scripts/evaluate_video.py --config configs/etri_video_eval_lgvsc_worker_mock.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_mock.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --snr 5 --device cuda:0 --save-video
@@ -73,8 +73,8 @@ video_generator:
     # Same interpreter this evaluate_video.py invocation itself runs under —
     # correct ONLY because backend: mock has no heavy deps. Change this to a
     # separate conda env's python for backend: svd / callable (see
-    # configs/etri_video_eval_lgvsc_worker_svd.yaml).
-    python_bin: "/home/sangukbae/anaconda3/envs/ptest/bin/python"
+    # configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml).
+    python_bin: "${oc.env:SGDJSCC_LGVSC_WORKER_PYTHON,python}"
     backend: mock
     device: cpu
     dtype: fp32

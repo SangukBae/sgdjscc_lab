@@ -1,4 +1,4 @@
-# configs/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml –
+# configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml –
 # ExternalSegmentWorkerGenerator REAL segment-level model example config
 # (ETRI 후속 1단계 step 1B, Wan, BIDIRECTIONAL conditioning).
 #
@@ -31,7 +31,7 @@
 # whose image_encoder class matches what this pipeline code expects).
 #
 # For a config that IS verified against real GPU output, use
-# configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml instead — that one
+# configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml instead — that one
 # only uses `image` + `prompt` (no `last_image`) and succeeded in a real
 # smoke test (14B model, 64x64, 63s).
 #
@@ -82,7 +82,7 @@ video_generator:
   generated_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_bidirectional_experimental/generated_frames"
 
   worker:
-    python_bin: "/home/sangukbae/anaconda3/envs/semantic-diffusers/bin/python"
+    python_bin: "${oc.env:SGDJSCC_LGVSC_WORKER_PYTHON,python}"
     backend: wan
     model_id: "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
     device: "cuda:0"

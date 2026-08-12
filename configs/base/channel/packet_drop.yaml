@@ -1,4 +1,4 @@
-# configs/channel/packet_drop.yaml – Erasure / packet-drop fragment (Phase 5-A)
+# configs/base/channel/packet_drop.yaml – Erasure / packet-drop fragment (Phase 5-A)
 
 channel: packet_drop
 snr_db: 10

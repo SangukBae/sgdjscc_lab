@@ -1,11 +1,11 @@
-# configs/etri_video_eval.yaml – ETRI 10-video 평가용 수동(단일 실행) 템플릿.
+# configs/experiments/etri_video_eval/etri_video_eval.yaml – ETRI 10-video 평가용 수동(단일 실행) 템플릿.
 #
 # scripts/run_etri_video_eval.py 배치 드라이버는 이 템플릿과 동일한 구성을
 # 각 run 디렉터리에 config.yaml로 자동 생성한다(출력 경로는 run 디렉터리
 # 기준으로 재배치). 이 파일은 배치 없이 한 영상을 직접 돌려볼 때 쓴다.
 #
 # 사용 예 (스모크):
-#   python scripts/evaluate_video.py --config configs/etri_video_eval.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/etri_video_eval/etri_video_eval.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --no-models --save-video
@@ -56,9 +56,9 @@ video_io:
 # 이 파일에 직접 verifier.presence_backend_cfg를 채우는 대신, 바로 실행
 # 가능한 예시 3개를 별도 config로 준비해뒀다 — 각 config의 usage 주석과
 # docs/etri_owlv2_vqa_readiness.md 참조:
-#   configs/etri_video_eval_owlv2.yaml     (presence_mode: owlv2_only)
-#   configs/etri_video_eval_vqa.yaml       (presence_mode: vqa_only)
-#   configs/etri_video_eval_ensemble.yaml  (presence_mode: ensemble_weighted)
+#   configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml     (presence_mode: owlv2_only)
+#   configs/experiments/etri_video_eval/etri_video_eval_vqa.yaml       (presence_mode: vqa_only)
+#   configs/experiments/etri_video_eval/etri_video_eval_ensemble.yaml  (presence_mode: ensemble_weighted)
 
 # 3-way generate 분기 (3차 step 5, mock backend / PoC-exercise band):
 # use_video_gen: true

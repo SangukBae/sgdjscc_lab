@@ -13,7 +13,7 @@
 # transport, random/missing edge codec checkpoints, zero-vector CFG null,
 # single-fixed-SNR edge codec, MSE-only Stage-1 paper claims). Default false →
 # all extensions/ablations remain available. See docs/paper_alignment.md and
-# the configs/paper_train_*.yaml bundle.
+# the configs/experiments/paper_reproduction/paper_train_*.yaml bundle.
 paper_mode: false
 
 # ── Paper-assumed hyperparameters ────────────────────────────────────────────
@@ -63,7 +63,7 @@ train:
   # DDP concrete example: to approximate the paper-scale global batch of 64 on
   # 3 GPUs, use per-rank --batch-size 21 (21 * 3 = 63 ~= 64):
   #   torchrun --standalone --nproc_per_node=3 scripts/train.py \
-  #     --config configs/paper_train_text_dm.yaml \
+  #     --config configs/experiments/paper_reproduction/paper_train_text_dm.yaml \
   #     --train-list data/coco/train2017 --val-list data/coco/val2017 \
   #     --batch-size 21
   num_workers:  2

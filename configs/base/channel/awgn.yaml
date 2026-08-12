@@ -1,4 +1,4 @@
-# configs/channel/awgn.yaml – AWGN channel fragment
+# configs/base/channel/awgn.yaml – AWGN channel fragment
 #
 # Merged into composed configs via the _defaults_ list in load_config().
 # All path values are resolved relative to the root config file's directory.

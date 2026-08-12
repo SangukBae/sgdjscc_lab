@@ -1,10 +1,10 @@
-# configs/etri_lgvsc_1c_svd_start_only.yaml – 1C LGVSC-reproduction baseline
+# configs/experiments/lgvsc_1c/etri_lgvsc_1c_svd_start_only.yaml – 1C LGVSC-reproduction baseline
 # (mode: svd_start_only).
 #
 # Part of the ETRI 후속 1단계 step 1C reproduction-baseline set (see
 # docs/lgvsc_1c_reproduction_readiness.md). The `video_generator`/`worker`
 # block below is copied verbatim from the already real-GPU-verified
-# `configs/etri_video_eval_lgvsc_worker_svd.yaml` (1B, `n_generate=1`/
+# `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml` (1B, `n_generate=1`/
 # `generated_frames=1` confirmed) — only output-path fields differ.
 #
 # LGVSC correspondence: real image-conditioned generation, but the standard
@@ -23,7 +23,7 @@
 #
 # Usage (manual, single video, smoke — requires `huggingface-cli login` +
 # license acceptance for this gated model, see docs/lgvsc_1b_worker_readiness.md):
-#   python scripts/evaluate_video.py --config configs/etri_lgvsc_1c_svd_start_only.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/lgvsc_1c/etri_lgvsc_1c_svd_start_only.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --no-models --max-frames 14 --save-video
@@ -45,6 +45,18 @@ _defaults_:
 use_phase4: true
 use_phase5: false
 
+# use_text: false — frees the VRAM BLIP2 would otherwise hold on the shared
+# main SGD-JSCC pipeline, which real-GPU testing showed left too little
+# headroom for the external SVD worker on a single 16GB card (OOM at model
+# load, not at inference — lowering worker.height/width doesn't help since
+# that's a static-weight footprint issue). Set identically across all four
+# etri_lgvsc_1c_*.yaml modes for a fair comparison. See
+# docs/lgvsc_1c_reproduction_readiness.md. batch_lgvsc_1c_reproduce.py
+# forwards --recon-caption-mode skip accordingly (see that flag's help in
+# evaluate_video.py for what this costs: recon packets carry no BLIP2-derived
+# caption, so hallucination/SRS numbers are the 'skip' variant).
+use_text: false
+
 temporal:
   reuse_threshold: 0.0
 
@@ -60,7 +72,7 @@ video_io:
   recon_video: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/recon.mp4"
 
 # ── Generate branch: external worker, real (svd) backend, start-only ────────
-# Copied from configs/etri_video_eval_lgvsc_worker_svd.yaml — do not change
+# Copied from configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml — do not change
 # worker.* here without re-verifying against real GPU (see that file /
 # docs/lgvsc_1b_worker_readiness.md for the environment-fix history).
 use_video_gen: true
@@ -74,7 +86,7 @@ video_generator:
   generated_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/generated_frames"
 
   worker:
-    python_bin: "/home/sangukbae/anaconda3/envs/semantic-diffusers/bin/python"
+    python_bin: "${oc.env:SGDJSCC_LGVSC_WORKER_PYTHON,python}"
     backend: svd
     model_id: "stabilityai/stable-video-diffusion-img2vid-xt"
     device: "cuda:0"

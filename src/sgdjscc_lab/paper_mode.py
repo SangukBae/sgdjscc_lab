@@ -243,7 +243,7 @@ def enforce_eval(cfg: DictConfig) -> None:
     if on:
         raise PaperModeError(
             "paper_mode (eval): the paper baseline disables all extensions, but "
-            f"these are enabled: {on}. Set them to false (configs/paper_eval_awgn.yaml "
+            f"these are enabled: {on}. Set them to false (configs/experiments/paper_reproduction/paper_eval_awgn.yaml "
             "does), or run with paper_mode=false for the extended evaluation."
         )
     mode = str(OmegaConf.select(
@@ -294,14 +294,14 @@ def enforce_eval_metrics(cfg: DictConfig, enabled_metrics, no_clip: bool) -> Non
         raise PaperModeError(
             f"paper_mode (eval): {detail} are enabled, but the paper reports only "
             f"{sorted(paper_set)}. Use metrics_profile: paper "
-            "(configs/paper_eval_awgn.yaml does); do not pass --profile extended/full."
+            "(configs/experiments/paper_reproduction/paper_eval_awgn.yaml does); do not pass --profile extended/full."
         )
     missing = sorted(paper_set - enabled)
     if missing:
         raise PaperModeError(
             f"paper_mode (eval): the paper reports the FULL set {sorted(paper_set)}, "
             f"but these are missing from the enabled metrics: {missing}. Use "
-            "metrics_profile: paper (configs/paper_eval_awgn.yaml does) — a reduced "
+            "metrics_profile: paper (configs/experiments/paper_reproduction/paper_eval_awgn.yaml does) — a reduced "
             "metric set is not 'the paper metric set'."
         )
     logger.info("paper_mode=ON (eval) → paper metric set confirmed (%s).",

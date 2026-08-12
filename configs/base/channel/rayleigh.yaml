@@ -1,4 +1,4 @@
-# configs/channel/rayleigh.yaml – Slow (flat) Rayleigh fading fragment (Phase 5-A)
+# configs/base/channel/rayleigh.yaml – Slow (flat) Rayleigh fading fragment (Phase 5-A)
 #
 # Merged into composed configs via _defaults_.  Selects the Rayleigh channel and
 # its CSI regime.  Used by JSCCModel.channel_model and the channel-conditioned

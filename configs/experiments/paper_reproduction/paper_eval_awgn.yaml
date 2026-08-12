@@ -1,4 +1,4 @@
-# configs/paper_eval_awgn.yaml – PAPER reproduction: AWGN evaluation
+# configs/experiments/paper_reproduction/paper_eval_awgn.yaml – PAPER reproduction: AWGN evaluation
 #
 # Paper-faithful evaluation path: the paper's reported metrics over the standard
 # AWGN SNR sweep, with ALL extensions OFF (Phase 4 packet eval, Phase 5
@@ -6,7 +6,7 @@
 # shared_vae ablation). Use the 'paper' metric profile (PSNR/SSIM/LPIPS/CLIP/FID).
 #
 # Usage:
-#   python scripts/evaluate.py --config configs/paper_eval_awgn.yaml \
+#   python scripts/evaluate.py --config configs/experiments/paper_reproduction/paper_eval_awgn.yaml \
 #       --snr-list -5,0,5,10,15,20,25 --input data/kodak
 
 _defaults_:

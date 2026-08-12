@@ -1,4 +1,4 @@
-# configs/paper_train_text_dm.yaml – PAPER reproduction: Stage 2 (text-guided DM)
+# configs/experiments/paper_reproduction/paper_train_text_dm.yaml – PAPER reproduction: Stage 2 (text-guided DM)
 #
 # Paper-faithful path (paper_mode=true). With the JSCC model frozen, train the
 # text-guided latent DM (MDTv2) to predict f0 from f_t (Algorithm 1; masked +
@@ -17,7 +17,7 @@
 # docs/paper_training_alignment.md.
 #
 # Usage:
-#   python scripts/train.py --config configs/paper_train_text_dm.yaml \
+#   python scripts/train.py --config configs/experiments/paper_reproduction/paper_train_text_dm.yaml \
 #       --train-list data/coco/train2017 --val-list data/coco/val2017 --device cuda:0
 
 _defaults_:

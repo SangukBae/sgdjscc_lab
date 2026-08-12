@@ -1,4 +1,4 @@
-# configs/etri_video_eval_ensemble.yaml – clip + owlv2 + vqa ensemble-weighted
+# configs/experiments/etri_video_eval/etri_video_eval_ensemble.yaml – clip + owlv2 + vqa ensemble-weighted
 # presence-calibration sanity config.
 #
 # Combines all three image-based backends (CLIP, OWLv2, VQA/BLIP-2) via
@@ -10,13 +10,13 @@
 #
 # Usage (held-out remeasurement against an already-completed real-model run's
 # saved frames — no reconstruction re-run, see items_from_recon_frame_dirs()):
-#   python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_ensemble.yaml \
+#   python scripts/remeasure_video_metrics.py --config configs/experiments/etri_video_eval/etri_video_eval_ensemble.yaml \
 #       --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --device cuda:0
 #
 # Real verification run (actual OWLv2 + VQA weights, GPU, real reconstruction):
-#   python scripts/evaluate_video.py --config configs/etri_video_eval_ensemble.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/etri_video_eval/etri_video_eval_ensemble.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --snr 5 --device cuda:0 --save-video

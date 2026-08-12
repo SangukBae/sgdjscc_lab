@@ -1,8 +1,8 @@
-# configs/etri_lgvsc_1c_skim_sfa_fixed.yaml – 1C LGVSC-reproduction baseline
+# configs/experiments/lgvsc_1c/etri_lgvsc_1c_skim_sfa_fixed.yaml – 1C LGVSC-reproduction baseline
 # (mode: skim_sfa_fixed) — the SKIM+SFA side of the SKIM/SFA vs SKEM/DSA
 # comparison (PSSS/SKEM readiness step).
 #
-# This is `wan_skim_sfa` (`configs/etri_lgvsc_1c_wan_skim_sfa.yaml`) with the
+# This is `wan_skim_sfa` (`configs/experiments/lgvsc_1c/etri_lgvsc_1c_wan_skim_sfa.yaml`) with the
 # keyframe-selection side REPLACED by `keyframe.selector: fixed_interval`
 # (`video/keyframe_extractor.py::FixedIntervalKeyframeSelector`) — a LITERAL
 # fixed-interval selector with ZERO scene-change signal, exactly the paper's
@@ -35,12 +35,12 @@
 # at all.
 #
 # Usage (manual, single video, smoke):
-#   python scripts/evaluate_video.py --config configs/etri_lgvsc_1c_skim_sfa_fixed.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/lgvsc_1c/etri_lgvsc_1c_skim_sfa_fixed.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --no-models --max-frames 14 --save-video
 #
-# See configs/etri_lgvsc_1c_wan_skim_sfa.yaml for the quality-run adjustment
+# See configs/experiments/lgvsc_1c/etri_lgvsc_1c_wan_skim_sfa.yaml for the quality-run adjustment
 # points (temporal.reuse_threshold, worker.height/width/num_inference_steps)
 # — identical here.
 
@@ -53,6 +53,16 @@ _defaults_:
 
 use_phase4: true
 use_phase5: false
+
+# use_text: false — same fix as wan_skim_sfa/wan_skem_dsa/svd_start_only (see
+# docs/lgvsc_1c_reproduction_readiness.md): frees the VRAM BLIP2 would
+# otherwise hold on the shared main SGD-JSCC pipeline, without which the
+# external Wan worker OOMs on a single 16GB card. This config was missed when
+# the fix was first applied to the other four modes (real-GPU batch run
+# confirmed OOM here too — same "CUDA out of memory" failure as wan_skim_sfa
+# before the fix). batch_lgvsc_1c_reproduce.py forwards --recon-caption-mode
+# skip accordingly.
+use_text: false
 
 temporal:
   reuse_threshold: 0.0
@@ -74,7 +84,7 @@ video_io:
   recon_video: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_skim_sfa_fixed/recon.mp4"
 
 # ── Generate branch: external worker, real (wan) backend, start-only ────────
-# Copied from configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml — keep
+# Copied from configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml — keep
 # worker.* in sync with that file (a test asserts this, same as wan_skim_sfa).
 use_video_gen: true
 video_generator:
@@ -87,7 +97,7 @@ video_generator:
   generated_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_skim_sfa_fixed/generated_frames"
 
   worker:
-    python_bin: "/home/sangukbae/anaconda3/envs/semantic-diffusers/bin/python"
+    python_bin: "${oc.env:SGDJSCC_LGVSC_WORKER_PYTHON,python}"
     backend: wan
     model_id: "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
     device: "cuda:0"

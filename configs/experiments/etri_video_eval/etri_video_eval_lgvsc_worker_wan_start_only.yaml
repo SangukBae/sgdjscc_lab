@@ -1,4 +1,4 @@
-# configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml –
+# configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml –
 # ExternalSegmentWorkerGenerator REAL segment-level model example config
 # (ETRI 후속 1단계 step 1B, Wan, start-only conditioning).
 #
@@ -6,7 +6,7 @@
 # (image + prompt only, no last_image). A real GPU smoke test with this exact
 # mode (14B model, 64x64, 63s) succeeded — see docs/lgvsc_1b_worker_readiness.md
 # "WAN_SMOKE_TEST_STARTONLY_OK". For the end-keyframe / last_image bidirectional
-# mode, use configs/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml
+# mode, use configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml
 # instead — real GPU bidirectional currently FAILS on this machine's
 # diffusers/checkpoint combo (image_encoder class mismatch), so it is kept
 # separate rather than being the default here.
@@ -18,7 +18,7 @@
 # it covers the conda env split, model size/VRAM/disk requirements, and what
 # was and wasn't actually run against real GPU in this repo.
 #
-# Why Wan instead of SVD (configs/etri_video_eval_lgvsc_worker_svd.yaml)
+# Why Wan instead of SVD (configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml)
 # -------------------------------------------------------------------------
 # SVD's pipeline only accepts ONE conditioning image — no text prompt, no
 # second image. Wan's image-to-video pipeline genuinely supports the fuller
@@ -53,7 +53,7 @@
 # Usage (real SGD-JSCC/diffusion reconstruction + real Wan generate worker,
 # short smoke test):
 #   python scripts/evaluate_video.py \
-#       --config configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml \
+#       --config configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --snr 5 --device cuda:0 --max-frames 4
@@ -103,7 +103,7 @@ video_generator:
   generated_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_start_only/generated_frames"
 
   worker:
-    python_bin: "/home/sangukbae/anaconda3/envs/semantic-diffusers/bin/python"
+    python_bin: "${oc.env:SGDJSCC_LGVSC_WORKER_PYTHON,python}"
     backend: wan
     model_id: "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
     device: "cuda:0"

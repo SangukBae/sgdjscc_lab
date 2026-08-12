@@ -1,4 +1,4 @@
-# configs/etri_lgvsc_1c_skem_dsa_mock_psss.yaml – 1C diagnostic mode
+# configs/experiments/lgvsc_1c/etri_lgvsc_1c_skem_dsa_mock_psss.yaml – 1C diagnostic mode
 # (mode: skem_dsa_mock_psss) — structural smoke-test twin of
 # skem_dsa_psss.yaml, with NO real model dependency at all.
 #
@@ -23,7 +23,7 @@
 # confound.
 #
 # Usage (manual, single video, smoke — safe, no GPU, no downloads):
-#   python scripts/evaluate_video.py --config configs/etri_lgvsc_1c_skem_dsa_mock_psss.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/lgvsc_1c/etri_lgvsc_1c_skem_dsa_mock_psss.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --no-models --max-frames 14 --save-video
 

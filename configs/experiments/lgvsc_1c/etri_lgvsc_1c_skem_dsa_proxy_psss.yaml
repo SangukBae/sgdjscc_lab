@@ -1,4 +1,4 @@
-# configs/etri_lgvsc_1c_skem_dsa_proxy_psss.yaml – 1C diagnostic mode
+# configs/experiments/lgvsc_1c/etri_lgvsc_1c_skem_dsa_proxy_psss.yaml – 1C diagnostic mode
 # (mode: skem_dsa_proxy_psss) — same as skem_dsa_mock_psss.yaml, except the
 # PSSS score comes from `keyframe.psss.backend: proxy`
 # (`ClipTextProxyPsssBackend` in src/sgdjscc_lab/video/psss.py): this repo's
@@ -23,7 +23,7 @@
 #
 # Usage (manual, single video, smoke — CPU-viable; CLIP weights download on
 # first use):
-#   python scripts/evaluate_video.py --config configs/etri_lgvsc_1c_skem_dsa_proxy_psss.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/lgvsc_1c/etri_lgvsc_1c_skem_dsa_proxy_psss.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --no-models --max-frames 14 --save-video
 

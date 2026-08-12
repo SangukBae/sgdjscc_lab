@@ -37,7 +37,7 @@ object-preservation claims and ``ensemble_openworld_filter`` for
 hallucination/additional-object analysis; ``ensemble_nofilter`` is comparison-only.
 
 Each (mode, video_id) job:
-1. Loads the mode's base config (``configs/etri_video_eval_{owlv2,vqa,ensemble}.yaml``)
+1. Loads the mode's base config (``configs/experiments/etri_video_eval/etri_video_eval_{owlv2,vqa,ensemble}.yaml``)
    via ``sgdjscc_lab.config.load_config`` (fragments + path resolution already
    applied), then overrides every output-artefact path (``heldout.*`` — the only
    paths ``remeasure_video_metrics.py`` actually reads/writes — plus the other
@@ -579,7 +579,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     p.add_argument("--captions-dir", default=str(DEFAULT_CAPTIONS_DIR))
     p.add_argument("--gt-dir", default=str(DEFAULT_GT_DIR))
     p.add_argument("--configs-dir", default=str(DEFAULT_CONFIGS_DIR),
-                   help="Directory containing the base configs/etri_video_eval_{owlv2,vqa,ensemble}.yaml")
+                   help="Directory containing the base configs/experiments/etri_video_eval/etri_video_eval_{owlv2,vqa,ensemble}.yaml")
     p.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT))
     p.add_argument("--videos", default=None,
                    help="Comma-separated video id subset (default: every video id discovered "

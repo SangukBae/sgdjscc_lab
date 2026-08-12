@@ -1,10 +1,10 @@
-# configs/etri_lgvsc_1c_wan_skem_dsa.yaml – 1C LGVSC-reproduction baseline
+# configs/experiments/lgvsc_1c/etri_lgvsc_1c_wan_skem_dsa.yaml – 1C LGVSC-reproduction baseline
 # (mode: wan_skem_dsa).
 #
 # Part of the ETRI 후속 1단계 step 1C reproduction-baseline set (see
 # docs/lgvsc_1c_reproduction_readiness.md). The `video_generator`/`worker`
 # block below is copied verbatim from the already real-GPU-verified
-# `configs/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml` (1B Wan
+# `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml` (1B Wan
 # bidirectional smoke: segment 0 conditioning_mode=bidirectional,
 # end_keyframe_index=12, n_generated=11 via Wan2.1-FLF2V-14B-720P; segment 1,
 # the video's last GOP with no end keyframe, conditioning_mode=start_only via
@@ -21,7 +21,7 @@
 # choosing keyframes by meaning-change rather than a fixed frame interval) is
 # **NOT separately implemented** in this repository — every 1C mode,
 # including this one, uses the SAME keyframe extraction
-# (`keyframe.max_gop` + scene-change detector in `configs/video/default.yaml`)
+# (`keyframe.max_gop` + scene-change detector in `configs/base/video/default.yaml`)
 # as wan_skim_sfa. Do not read "wan_skem_dsa" as "this run used LGVSC's SKEM
 # keyframe selector" — it did not; only the DSA-style dual-keyframe decoder
 # conditioning is genuinely reproduced here. `side_infos` (motion/delta
@@ -35,7 +35,7 @@
 # Usage (manual, single video, smoke — needs >= one segment with an end
 # keyframe to actually exercise the bidirectional path; with the default
 # keyframe.max_gop: 12, --max-frames must be > 12, e.g. 14):
-#   python scripts/evaluate_video.py --config configs/etri_lgvsc_1c_wan_skem_dsa.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/lgvsc_1c/etri_lgvsc_1c_wan_skem_dsa.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --no-models --max-frames 14 --save-video
@@ -61,6 +61,17 @@ _defaults_:
 use_phase4: true
 use_phase5: false
 
+# use_text: false — frees VRAM BLIP2 would otherwise hold on the shared main
+# SGD-JSCC pipeline; real-GPU testing of svd_start_only showed the main
+# pipeline + external worker together OOM on a single 16GB card even with
+# offload_mode: sequential on the worker side. Set identically across all
+# four etri_lgvsc_1c_*.yaml modes for a fair comparison — see
+# docs/lgvsc_1c_reproduction_readiness.md. batch_lgvsc_1c_reproduce.py
+# forwards --recon-caption-mode skip accordingly (recon packets carry no
+# BLIP2-derived caption; hallucination/SRS numbers are the 'skip' variant,
+# not 'own' — see evaluate_video.py's --recon-caption-mode help).
+use_text: false
+
 temporal:
   reuse_threshold: 0.0
 
@@ -76,7 +87,7 @@ video_io:
   recon_video: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_wan_skem_dsa/recon.mp4"
 
 # ── Generate branch: external worker, real (wan) backend, bidirectional ─────
-# Copied from configs/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml
+# Copied from configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml
 # — keep worker.* in sync with that file (a test asserts this). Segment-level
 # checkpoint selection (I2V-480P for segments without an end keyframe,
 # FLF2V-720P for segments with one) happens automatically inside
@@ -93,7 +104,7 @@ video_generator:
   generated_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_wan_skem_dsa/generated_frames"
 
   worker:
-    python_bin: "/home/sangukbae/anaconda3/envs/semantic-diffusers/bin/python"
+    python_bin: "${oc.env:SGDJSCC_LGVSC_WORKER_PYTHON,python}"
     backend: wan
     model_id: "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
     device: "cuda:0"

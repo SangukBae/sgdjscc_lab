@@ -1,4 +1,4 @@
-# configs/channel/fast_fading.yaml – Block / fast Rayleigh fading fragment (Phase 5-A)
+# configs/base/channel/fast_fading.yaml – Block / fast Rayleigh fading fragment (Phase 5-A)
 
 channel: fast_fading
 snr_db: 10

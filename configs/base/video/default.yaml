@@ -1,4 +1,4 @@
-# configs/video/default.yaml – Phase 4-B temporal pipeline settings
+# configs/base/video/default.yaml – Phase 4-B temporal pipeline settings
 #
 # Loaded alongside the main config for video / keyframe evaluation
 # (scripts/evaluate_video.py).  All fields are optional and default-safe so the
@@ -166,7 +166,7 @@ verifier:
   # presence_backend_cfg.<backend_name>.<key> (evaluators/presence_backends.py).
   # Empty/absent here = every backend's own hardcoded default. Fill in only
   # the backend(s) actually listed in presence_backends above. See
-  # docs/etri_owlv2_vqa_readiness.md and configs/etri_video_eval_owlv2.yaml /
+  # docs/etri_owlv2_vqa_readiness.md and configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml /
   # _vqa.yaml / _ensemble.yaml for filled-in, ready-to-run examples.
   presence_backend_cfg: {}
     # clip:

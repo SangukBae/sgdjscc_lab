@@ -1,4 +1,4 @@
-# configs/etri_video_eval_vqa.yaml – VQA-only presence-calibration sanity config.
+# configs/experiments/etri_video_eval/etri_video_eval_vqa.yaml – VQA-only presence-calibration sanity config.
 #
 # Single-video config for verifying the VQA presence backend against REAL
 # weights (BLIP-2 by default, lazy-loaded on first use — needs `transformers`
@@ -8,13 +8,13 @@
 #
 # Usage (held-out remeasurement against an already-completed real-model run's
 # saved frames — no reconstruction re-run, see items_from_recon_frame_dirs()):
-#   python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_vqa.yaml \
+#   python scripts/remeasure_video_metrics.py --config configs/experiments/etri_video_eval/etri_video_eval_vqa.yaml \
 #       --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --device cuda:0
 #
 # Real verification run (actual VQA weights, GPU, real reconstruction):
-#   python scripts/evaluate_video.py --config configs/etri_video_eval_vqa.yaml \
+#   python scripts/evaluate_video.py --config configs/experiments/etri_video_eval/etri_video_eval_vqa.yaml \
 #       --input data/etri_video_eval/processed/01_person_walk.mp4 \
 #       --captions data/etri_video_eval/captions/01_person_walk.txt \
 #       --snr 5 --device cuda:0 --save-video
