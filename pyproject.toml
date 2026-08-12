@@ -8,6 +8,12 @@ version = "0.2.0"
 description = "SGDJSCC research fork – modular AWGN inference package"
 requires-python = ">=3.9"
 
+[project.scripts]
+sgdjscc-infer = "sgdjscc_lab.cli:infer_main"
+sgdjscc-train = "sgdjscc_lab.cli:train_main"
+sgdjscc-evaluate = "sgdjscc_lab.cli:evaluate_main"
+sgdjscc-evaluate-video = "sgdjscc_lab.cli:evaluate_video_main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
