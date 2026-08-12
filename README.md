@@ -35,7 +35,7 @@ inference 실행 전, pretrained checkpoint를
 단일 이미지/폴더 AWGN inference(non-AWGN 채널은 Phase 5 opt-in):
 
 ```bash
-cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
+cd /path/to/sgdjscc_lab
 conda activate ptest
 
 python scripts/infer_images.py --config configs/base/default.yaml       # flat config
@@ -50,7 +50,7 @@ python scripts/infer_images.py --config configs/recipes/inference/composed.yaml 
 Phase 3 평가는 PSNR, SSIM, LPIPS, CLIP 기반 지표, SRS, SNR-sweep CSV 로깅을 지원한다.
 
 ```bash
-cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
+cd /path/to/sgdjscc_lab
 conda activate ptest
 
 python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 10
@@ -71,7 +71,7 @@ python scripts/evaluate.py --config configs/base/dataset/kodak.yaml
 inference/evaluation 경로는 영향받지 않는다.
 
 ```bash
-cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab && conda activate ptest
+cd /path/to/sgdjscc_lab && conda activate ptest
 
 python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \
     --train-list /data/imagenet/train/ --device cuda:0 --epochs 20
@@ -80,14 +80,39 @@ python scripts/train.py --config configs/recipes/training/composed_train_jscc.ya
 `--stage`로 stage override, `--max-steps N`으로 step 모드, `--no-models`로 GPU 없는
 dry-run, `--resume latest`로 재개, Multi-GPU는 `torchrun`. 전체 stage·config·freeze·
 export·DDP는 [docs/training_scaffold.md](./docs/training_scaffold.md), 실제 모델로
-1–2 step 배선 검증은 [docs/smoke_training.md](./docs/smoke_training.md) 참조.
+1–2 step 배선 검증은 [docs/dev/smoke_training.md](./docs/dev/smoke_training.md) 참조.
 
 ## Tests
 ```bash
-cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
+cd /path/to/sgdjscc_lab
 conda activate ptest
 python -m pytest tests/ -v
 ```
+
+## 외부 workspace / 환경변수 (선택)
+기본값은 지금까지와 동일하게 대용량 작업 디렉터리를 저장소 내부에 둔다. 실제
+데이터 이동은 자동으로 수행하지 않는다. 추후 별도 디스크로 옮긴 뒤 아래
+환경변수를 설정하면 config 수정 없이 새 위치를 사용하고, 설정하지 않으면 기존
+경로 그대로 동작한다.
+
+| 환경변수 | 영향받는 경로 |
+|---|---|
+| `SGDJSCC_DATA_ROOT` | 데이터셋 루트(기본 `data/`) |
+| `SGDJSCC_MODEL_ROOT` | `checkpoints/`, `checkpoints_custom/`, `remote_weights/`를 담는 모델 workspace |
+| `SGDJSCC_RUN_ROOT` | 실행 결과 루트(기본 `outputs/`) |
+| `SGDJSCC_CACHE_ROOT` | `HF_HOME`/`TORCH_HOME`/`XDG_CACHE_HOME` 기본값(이미 설정돼 있으면 덮어쓰지 않음) |
+| `SGDJSCC_ROOT` | 원본 `SGDJSCC` baseline repo 위치(기본은 `../SGDJSCC` 자동 탐색) |
+
+예:
+```bash
+export SGDJSCC_DATA_ROOT=/legend/sgdjscc_workspace/datasets
+export SGDJSCC_MODEL_ROOT=/legend/sgdjscc_workspace/models
+export SGDJSCC_RUN_ROOT=/legend/sgdjscc_workspace/runs
+export SGDJSCC_CACHE_ROOT=/legend/sgdjscc_workspace/cache
+```
+`SGDJSCC_MODEL_ROOT` 아래에는 `checkpoints/`, `checkpoints_custom/`,
+`remote_weights/` 하위 디렉터리를 둔다. 자세한 규칙은
+`src/sgdjscc_lab/paths.py`를 참조한다.
 
 ## 문서
 전체 문서 맵은 [docs/README.md](./docs/README.md) 참조. 주요 항목:
@@ -95,8 +120,8 @@ python -m pytest tests/ -v
 - [docs/etri_overview.md](./docs/etri_overview.md) — 프로젝트 목표, pipeline, SRS, 실험 설정
 - [docs/phase4.md](./docs/phase4.md) / [docs/phase5.md](./docs/phase5.md) — 확장 설계 & 상태
 - [docs/training_scaffold.md](./docs/training_scaffold.md) — stage-aware training
-- [docs/framework_comparison.md](./docs/framework_comparison.md) — 원본 vs lab 구조 + 논문 충실도
-- [docs/paper_gap_closure.md](./docs/paper_gap_closure.md) — `paper_mode` guardrail & DDP
+- [docs/archive/framework_comparison.md](./docs/archive/framework_comparison.md) — 원본 vs lab 구조 + 논문 충실도
+- [docs/archive/paper_gap_closure.md](./docs/archive/paper_gap_closure.md) — `paper_mode` guardrail & DDP
 
 Phase 1~4 완료, Phase 5 스캐폴드. 상세 현황은 [docs/README.md](./docs/README.md#phase-현황) 참조.
 

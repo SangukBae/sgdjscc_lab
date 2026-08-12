@@ -197,3 +197,17 @@ class TestFragmentComposition:
         cfg = load_config(minimal_yaml)
         assert "_defaults_" not in cfg
         assert cfg.snr_db == 10
+
+    @pytest.mark.parametrize(
+        "legacy_path",
+        [
+            "configs/default.yaml",
+            "configs/channel/awgn.yaml",
+            "configs/etri_video_eval.yaml",
+            "configs/etri_lgvsc_1c_mock_baseline.yaml",
+            "configs/paper_eval_awgn.yaml",
+        ],
+    )
+    def test_legacy_config_paths_remain_loadable(self, legacy_path):
+        cfg = load_config(legacy_path)
+        assert cfg is not None

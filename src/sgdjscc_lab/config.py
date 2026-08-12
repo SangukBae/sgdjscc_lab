@@ -12,8 +12,9 @@ A config file may declare a ``_defaults_`` list::
 Each entry is a path relative to the root config file's directory (without the
 ``.yaml`` extension).  ``load_config()`` loads the fragments in order, merges
 them with ``OmegaConf.merge()``, then merges the root config on top so that
-explicit keys in the root file always win.  After composition all relative path
-fields are resolved relative to the root config's directory.
+explicit keys in the root file always win. After composition all relative path
+fields are resolved relative to the root config's directory. Workspace-aware
+configs use the ``${sgdjscc:<kind>}`` resolver from :mod:`sgdjscc_lab.paths`.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from typing import Optional
 
 from omegaconf import OmegaConf, DictConfig, ListConfig
 
-from .paths import register_omegaconf_resolver
+from .paths import lab_repo_root, register_omegaconf_resolver
 
 register_omegaconf_resolver()
 
@@ -95,6 +96,40 @@ _NESTED_PATH_KEYS = (
 )
 
 
+def _resolve_config_path(config_path: str | Path) -> Path:
+    """Resolve a config path, including pre-reorganization legacy paths."""
+    requested = Path(config_path).expanduser()
+    if requested.exists():
+        return requested.resolve()
+
+    parts = requested.parts
+    try:
+        suffix = Path(*parts[parts.index("configs") + 1 :])
+    except ValueError:
+        return requested.resolve()
+
+    root = lab_repo_root() / "configs"
+    candidates = []
+    if len(suffix.parts) > 1 and suffix.parts[0] in {
+        "acceleration", "channel", "dataset", "eval", "infer", "model", "train", "video"
+    }:
+        candidates.append(root / "base" / suffix)
+    if suffix == Path("default.yaml"):
+        candidates.append(root / "base" / suffix)
+    name = suffix.name
+    if name.startswith("etri_video_eval"):
+        candidates.append(root / "experiments" / "etri_video_eval" / name)
+    if name.startswith("etri_lgvsc_1c"):
+        candidates.append(root / "experiments" / "lgvsc_1c" / name)
+    if name.startswith("paper_"):
+        candidates.append(root / "experiments" / "paper_reproduction" / name)
+
+    existing = [path for path in candidates if path.exists()]
+    if len(existing) == 1:
+        return existing[0].resolve()
+    return requested.resolve()
+
+
 def _resolve_paths(cfg: DictConfig, cfg_dir: Path) -> DictConfig:
     for key in _PATH_KEYS:
         val = cfg.get(key, None)
@@ -115,7 +150,7 @@ def load_config(config_path: str | Path) -> DictConfig:
 
     Paths inside the config are resolved relative to the **config file's
     directory**, not the current working directory.  This lets users run
-    ``python scripts/infer_images.py --config configs/default.yaml`` from any
+    ``python scripts/infer_images.py --config configs/base/default.yaml`` from any
     working directory and still have ``input_path`` / ``output_dir`` /
     ``model_root`` resolve sensibly.
 
@@ -123,7 +158,7 @@ def load_config(config_path: str | Path) -> DictConfig:
     YAML (path without ``.yaml``, relative to ``cfg_dir``) that is loaded and
     merged in order before the root config is applied on top.
     """
-    config_path = Path(config_path).resolve()
+    config_path = _resolve_config_path(config_path)
     cfg = OmegaConf.load(config_path)
     cfg_dir = config_path.parent
 

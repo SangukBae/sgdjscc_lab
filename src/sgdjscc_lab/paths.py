@@ -93,6 +93,26 @@ def cache_root() -> Path:
     return _env_path("SGDJSCC_CACHE_ROOT") or (_lab_repo_root() / ".cache")
 
 
+def configure_external_cache_env() -> None:
+    """Point common model caches at ``SGDJSCC_CACHE_ROOT`` when configured.
+
+    Explicit ``HF_HOME``, ``TORCH_HOME`` and ``XDG_CACHE_HOME`` values always
+    win. No directory is created when ``SGDJSCC_CACHE_ROOT`` is unset, keeping
+    the legacy environment unchanged.
+    """
+    root = _env_path("SGDJSCC_CACHE_ROOT")
+    if root is None:
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    defaults = {
+        "HF_HOME": root / "huggingface",
+        "TORCH_HOME": root / "torch",
+        "XDG_CACHE_HOME": root / "xdg",
+    }
+    for name, path in defaults.items():
+        os.environ.setdefault(name, str(path))
+
+
 _RESOLVER_MAP = {
     "root": lab_repo_root,
     "data": data_root,
