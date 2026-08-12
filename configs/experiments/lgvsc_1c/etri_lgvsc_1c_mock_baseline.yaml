@@ -1,0 +1,79 @@
+# configs/etri_lgvsc_1c_mock_baseline.yaml – 1C LGVSC-reproduction baseline
+# (mode: mock_baseline).
+#
+# Part of the ETRI 후속 1단계 step 1C reproduction-baseline set (see
+# docs/lgvsc_1c_reproduction_readiness.md). This is the NO real generative
+# model comparator: the generate branch uses
+# BidirectionalInterpolationGenerator (video_generator.backend: auto +
+# conditioning_mode: bidirectional), a linear blend of the start/end keyframe
+# reconstructions — never a learned model. It exists so the other three
+# modes (svd_start_only, wan_skim_sfa, wan_skem_dsa) have a cheap, GPU-light
+# reference point to be compared against.
+#
+# LGVSC correspondence: NOT an LGVSC component at all — this is this
+# repository's own pre-existing mock/interpolation fallback, included only as
+# a "what does zero real generation buy you" floor. Never call this an
+# "LGVSC baseline" without the "mock" qualifier in a results table.
+#
+# `scripts/batch_lgvsc_1c_reproduce.py` loads this file as the base template
+# for mode=mock_baseline and writes a per-video copy (with only
+# output-path/`_defaults_`/`model_root` fields rewritten) to
+# outputs/etri_video_eval/lgvsc_1c_reproduce/_generated_configs/mock_baseline/<video_id>.yaml
+# — that generated file, not this one, is what actually gets passed to
+# evaluate_video.py in batch runs. This file is also directly runnable
+# standalone for a single manual video (see Usage below).
+#
+# Usage (manual, single video, smoke):
+#   python scripts/evaluate_video.py --config configs/etri_lgvsc_1c_mock_baseline.yaml \
+#       --input data/etri_video_eval/processed/01_person_walk.mp4 \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --no-models --max-frames 14 --save-video
+#
+# Quality-run adjustment points (see docs/lgvsc_1c_reproduction_readiness.md):
+#   - temporal.reuse_threshold: 0.0 below forces EVERY inter-frame into the
+#     generate branch — a smoke-test setting so a short --max-frames run
+#     always exercises generate. For a real comparison table, raise this to
+#     the pipeline's own default (0.2) — or whatever value you use
+#     consistently across all four etri_lgvsc_1c_*.yaml configs, since the
+#     four-way comparison is only fair if every mode routes the SAME frames
+#     to reuse/recompute/generate.
+#   - Drop --max-frames entirely (or raise it) to use the full 100-frame clip.
+#   - Drop --no-models to use real SGD-JSCC keyframe reconstruction (the
+#     generate-branch backend below is independent of that choice).
+
+_defaults_:
+  - ../../base/channel/awgn
+  - ../../base/model/sgdjscc
+  - ../../base/infer/awgn
+  - ../../base/eval/default
+  - ../../base/video/default
+
+use_phase4: true
+use_phase5: false
+
+temporal:
+  reuse_threshold: 0.0
+
+keyframe_json: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_mock_baseline/keyframes.json"
+segment_json: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_mock_baseline/segments.json"
+temporal_csv: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_mock_baseline/temporal_metrics.csv"
+frame_log_csv: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_mock_baseline/temporal_frames.csv"
+video_io:
+  extracted_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_mock_baseline/_extracted"
+  recon_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_mock_baseline/recon_frames"
+  save_recon_frames: true
+  save_recon_video: true
+  recon_video: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_mock_baseline/recon.mp4"
+
+# ── Generate branch: mock backend, bidirectional (interpolation, not a
+#    learned model) ──────────────────────────────────────────────────────────
+use_video_gen: true
+video_generator:
+  enabled: true
+  backend: auto                        # -> bidirectional_interpolation (mock)
+  conditioning_mode: bidirectional
+  bidirectional_missing_end_policy: fallback_start_only
+  generate_delta_min: 0.0
+  generate_delta_max: 1.0
+  save_generated_frames: true
+  generated_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_mock_baseline/generated_frames"

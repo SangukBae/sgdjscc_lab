@@ -38,11 +38,11 @@ inference 실행 전, pretrained checkpoint를
 cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
 conda activate ptest
 
-python scripts/infer_images.py --config configs/default.yaml       # flat config
-python scripts/infer_images.py --config configs/composed.yaml       # _defaults_ composition
+python scripts/infer_images.py --config configs/base/default.yaml       # flat config
+python scripts/infer_images.py --config configs/recipes/inference/composed.yaml       # _defaults_ composition
 
 # 런타임 override
-python scripts/infer_images.py --config configs/composed.yaml \
+python scripts/infer_images.py --config configs/recipes/inference/composed.yaml \
     --input /path/to/images/ --output /path/to/out/ --snr 5 --device cuda:0
 ```
 
@@ -53,15 +53,15 @@ Phase 3 평가는 PSNR, SSIM, LPIPS, CLIP 기반 지표, SRS, SNR-sweep CSV 로�
 cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
 conda activate ptest
 
-python scripts/evaluate.py --config configs/composed.yaml --snr 10
-python scripts/evaluate.py --config configs/composed.yaml --snr-list -5,0,5,10,15,20,25
-python scripts/evaluate.py --config configs/composed.yaml --snr 10 --no-clip
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 10
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr-list -5,0,5,10,15,20,25
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 10 --no-clip
 ```
 
 데이터셋 config 예시:
 
 ```bash
-python scripts/evaluate.py --config configs/dataset/kodak.yaml
+python scripts/evaluate.py --config configs/base/dataset/kodak.yaml
 ```
 
 ## Training
@@ -73,7 +73,7 @@ inference/evaluation 경로는 영향받지 않는다.
 ```bash
 cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab && conda activate ptest
 
-python scripts/train.py --config configs/composed_train_jscc.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \
     --train-list /data/imagenet/train/ --device cuda:0 --epochs 20
 ```
 

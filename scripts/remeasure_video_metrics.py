@@ -24,7 +24,7 @@ in *--config*): strips non-object caption-noun contamination (count words like
 the object metric before it reaches either the clip_only or calibrated column
 — see ``evaluators/object_vocabulary_filter.py`` and
 ``pipelines/heldout_remeasurement.py``'s "Object vocabulary filter" docstring
-section. Disabled by default; enabled in ``configs/etri_video_eval_ensemble.yaml``.
+section. Disabled by default; enabled in ``configs/experiments/etri_video_eval/etri_video_eval_ensemble.yaml``.
 
 Alternative input #1: previously-saved packet JSON pairs (``--from-packets``),
 for when you already have ``<stem>.orig_packet.json`` / ``<stem>.packet.json``
@@ -51,16 +51,16 @@ frames without spending GPU time on reconstruction again.
 Usage
 -----
 # Re-run reconstruction (mock reconstruct_fn without --no-models omitted):
-python scripts/remeasure_video_metrics.py --config configs/composed_video.yaml \\
+python scripts/remeasure_video_metrics.py --config configs/recipes/video/composed_video.yaml \\
     --input /path/to/frames/ --no-models --captions captions.txt
 
 # From previously-saved packet JSON pairs (no reconstruction re-run):
-python scripts/remeasure_video_metrics.py --config configs/composed_video.yaml \\
+python scripts/remeasure_video_metrics.py --config configs/recipes/video/composed_video.yaml \\
     --from-packets /path/to/packet_dir/
 
 # From an already-completed run's saved frames (no reconstruction re-run,
 # real reconstructed image available for owlv2/vqa/clip backends):
-python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_owlv2.yaml \\
+python scripts/remeasure_video_metrics.py --config configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml \\
     --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \\
     --captions data/etri_video_eval/captions/01_person_walk.txt \\
     --device cuda:0

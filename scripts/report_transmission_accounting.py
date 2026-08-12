@@ -28,7 +28,7 @@ docs/etri_strategy.md 6차 구현 결과.
 Usage
 -----
 # From-run: recompute accounting + rate/reliability from a frame folder
-python scripts/report_transmission_accounting.py --config configs/composed_video.yaml \\
+python scripts/report_transmission_accounting.py --config configs/recipes/video/composed_video.yaml \\
     --input /path/to/frames/ --no-models --accounting-output-dir ../outputs/accounting
 
 # Recombine: rebuild just the rate/reliability report from an existing output folder

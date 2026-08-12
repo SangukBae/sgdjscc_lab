@@ -1,0 +1,83 @@
+# configs/etri_video_eval_lgvsc_worker_mock.yaml – ExternalSegmentWorkerGenerator
+# fake-worker demo config (ETRI 후속 1단계 step 1B).
+#
+# Runs the generate branch through scripts/lgvsc_generate_worker.py's
+# dependency-free `mock` backend, over an actual out-of-process subprocess
+# round-trip (JSON manifest + PNG keyframes out, PNG frames + JSON metadata
+# back) — NOT through the in-process CopyGenerator/InterpolationGenerator
+# mocks 3~4차 used. This is what proves the 1B plumbing itself (IPC, error
+# handling, FrameRecord/SegmentRecord projection) end-to-end without needing
+# any real model weights, GPU, or a second conda environment — `python_bin`
+# below points at the SAME `ptest` interpreter this config is normally run
+# with, since the mock backend only needs torch/torchvision/PIL (already
+# ptest dependencies). This config produces NO claim about generation
+# quality — see docs/lgvsc_1b_worker_readiness.md.
+#
+# For a REAL model backend (a different conda env, e.g. `lgvsc_gen` or this
+# machine's existing `semantic-diffusers`), see
+# configs/etri_video_eval_lgvsc_worker_svd.yaml instead.
+#
+# Usage (no GPU required — --no-models keeps SGD-JSCC/diffusion identity, but
+# the generate branch's WORKER SUBPROCESS still genuinely runs):
+#   python scripts/evaluate_video.py --config configs/etri_video_eval_lgvsc_worker_mock.yaml \
+#       --input data/etri_video_eval/processed/01_person_walk.mp4 \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --no-models --save-video
+#
+# Usage (real SGD-JSCC/diffusion reconstruction + mock generate worker, GPU):
+#   python scripts/evaluate_video.py --config configs/etri_video_eval_lgvsc_worker_mock.yaml \
+#       --input data/etri_video_eval/processed/01_person_walk.mp4 \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --snr 5 --device cuda:0 --save-video
+
+_defaults_:
+  - ../../base/channel/awgn
+  - ../../base/model/sgdjscc
+  - ../../base/infer/awgn
+  - ../../base/eval/default
+  - ../../base/video/default
+
+use_phase4: true
+use_phase5: false
+
+temporal:
+  # Force inter-frames that would otherwise reuse the keyframe into the
+  # generate branch, so this mock config actually exercises the external
+  # worker subprocess path during smoke tests.
+  reuse_threshold: 0.0
+
+keyframe_json: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_mock/keyframes.json"
+segment_json: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_mock/segments.json"
+temporal_csv: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_mock/temporal_metrics.csv"
+frame_log_csv: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_mock/temporal_frames.csv"
+video_io:
+  extracted_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_mock/_extracted"
+  recon_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_mock/recon_frames"
+  save_recon_frames: true
+  save_recon_video: true
+  recon_video: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_mock/recon.mp4"
+
+# ── Generate branch: external worker, mock backend, bidirectional ───────────
+use_video_gen: true
+video_generator:
+  enabled: true
+  backend: external_segment_worker
+  conditioning_mode: bidirectional       # exercises start+end keyframe conditioning too
+  bidirectional_missing_end_policy: fallback_start_only
+  generate_delta_min: 0.0
+  generate_delta_max: 1.0
+  save_generated_frames: true
+  generated_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_mock/generated_frames"
+
+  worker:
+    # Same interpreter this evaluate_video.py invocation itself runs under —
+    # correct ONLY because backend: mock has no heavy deps. Change this to a
+    # separate conda env's python for backend: svd / callable (see
+    # configs/etri_video_eval_lgvsc_worker_svd.yaml).
+    python_bin: "/home/sangukbae/anaconda3/envs/ptest/bin/python"
+    backend: mock
+    device: cpu
+    dtype: fp32
+    seed: 1234
+    timeout_sec: 60
+    cleanup_on_success: true

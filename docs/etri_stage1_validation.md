@@ -21,7 +21,7 @@ CLIP/packet 기반 잠정 구현이므로, 최종 평가 주장은 5차 OWLv2/VQ
 | `e9d648e` | fix(test): DDP dry-run 로그 기대 문구를 rank-0 전용 로깅에 맞춤 |
 
 1차 구현 코드의 기준은 `f000b3c`(원격 검증 시점의 HEAD)이며, `e9d648e` 이후
-전체 테스트 스위트가 green이다. 이 리포트와 `configs/composed_video_smoke.yaml`은
+전체 테스트 스위트가 green이다. 이 리포트와 `configs/recipes/video/composed_video_smoke.yaml`은
 후속 docs 커밋으로 추가된다.
 
 ## 구현 범위 (순서 0~4)
@@ -47,7 +47,7 @@ Calibration, bit accounting.
   `semantic_reliability.py`, `pipelines/eval_pipeline.py`, `scripts/evaluate.py`
   — presence threshold/band 배선
 - `scripts/evaluate_video.py` — mp4 입력, 복원 frame/mp4 저장, segments.json, stale 정리
-- `configs/video/default.yaml`, `configs/eval/default.yaml`, `src/sgdjscc_lab/config.py`
+- `configs/base/video/default.yaml`, `configs/base/eval/default.yaml`, `src/sgdjscc_lab/config.py`
   — 신규 config 키 + 경로 해석
 - 테스트: `tests/test_video.py`, `tests/test_video_io.py`, `tests/test_evaluators.py`,
   `tests/test_ddp.py`(기대 문구 수정)
@@ -80,9 +80,9 @@ dry-run(모델 미로딩, `--no-models`) 검증 — 8프레임 mp4 실행 후 �
 3프레임 mp4로 재실행:
 
 ```bash
-python scripts/evaluate_video.py --config configs/composed_video.yaml \
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml \
     --input /tmp/vdemo/a/clip.mp4 --no-models --save-video   # 8프레임
-python scripts/evaluate_video.py --config configs/composed_video.yaml \
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml \
     --input /tmp/vdemo/b/clip.mp4 --no-models --save-video   # 3프레임, 같은 stem
 ```
 
@@ -99,7 +99,7 @@ CLIP(ViT-B/32·ViT-L/14) 실로딩 경로. 샘플: `inputs/test_1.png`에서 만
 256×256 mp4(프레임 0~3 = 카메라 팬 크롭, 4~5 = 장면 전환), 4 fps.
 
 ```bash
-python scripts/evaluate_video.py --config configs/composed_video_smoke.yaml \
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video_smoke.yaml \
     --input outputs/smoke_video/sample.mp4 --snr 5 --save-video
 ```
 

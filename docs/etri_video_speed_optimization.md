@@ -28,11 +28,11 @@
 | # | 원인 | 근거 |
 |---|---|---|
 | 1 | **프레임당 diffusion 호출이 8배** | ETRI 영상은 512×256 → `prepare_patches`가 128×128 타일 8개로 분할. `TemporalPipeline`이 diffusion을 부르는 매 프레임(키프레임 또는 recompute)마다 `_process_patches`가 패치 8개를 **순차적으로** `run_single_image`에 넣는다 — 배치화되어 있지 않음. |
-| 2 | `diffusion_step=50` 고정 | `configs/model/sgdjscc.yaml`의 기본값. DPM-Solver++ 2M 루프 스텝 수에 선형적으로 비례하는 비용. |
+| 2 | `diffusion_step=50` 고정 | `configs/base/model/sgdjscc.yaml`의 기본값. DPM-Solver++ 2M 루프 스텝 수에 선형적으로 비례하는 비용. |
 | 3 | recon(복원) 프레임 packet 추출 시 BLIP2가 매번 새로 호출됨 | `evaluate_video.py`의 `_caption_for()`: `--captions`를 줘도 **원본** 프레임만 그 캡션을 쓰고, **복원된** 프레임의 packet(캡션→오브젝트/할루시네이션 판정)은 실모델 모드에서 항상 `caption=None`을 넘겨 BLIP2를 다시 호출했다 — recompute/generate/키프레임마다 반복. (reuse 프레임만 예외: 키프레임의 recon_packet을 그대로 재사용.) |
 | 4 | Scene-label/오브젝트 어휘 CLIP 텍스트 인코딩이 프레임마다 재계산됨 | `SemanticPacketExtractor._probe_scene()`이 고정된 15개 scene label을 **매 프레임** `clip.tokenize`+`encode_text`로 다시 인코딩. `ObjectExtractor`의 COCO-80 어휘도 동일 패턴. |
 | 5 | 진행률을 알 수 없음 | 산출물이 `pipeline.run()` 전체가 끝난 뒤에만 파일로 써짐 — 100프레임 실행 중 몇 번째 프레임인지, 왜 느린지 알 방법이 없었음. |
-| 6 | (신규 발견) `model_root` 상대경로가 배치 드라이버 출력 폴더 깊이와 안 맞음 | `configs/model/sgdjscc.yaml: model_root: "../checkpoints/"`는 config 파일이 `configs/` 바로 아래 있다고 가정. `run_etri_video_eval.py`가 생성하는 config.yaml은 `<output_root>/<stage>/<video>/`(2단계 아래)에 있어 `../checkpoints`가 엉뚱한 경로로 풀림 → **실모델(`--no-models` 아닌) 배치 실행은 지금까지 한 번도 성공한 적이 없었다.** `--no-models`만 `build_models()`를 건너뛰어 증상이 드러나지 않았던 것. §4에서 수정. |
+| 6 | (신규 발견) `model_root` 상대경로가 배치 드라이버 출력 폴더 깊이와 안 맞음 | `configs/base/model/sgdjscc.yaml: model_root: "../checkpoints/"`는 config 파일이 `configs/` 바로 아래 있다고 가정. `run_etri_video_eval.py`가 생성하는 config.yaml은 `<output_root>/<stage>/<video>/`(2단계 아래)에 있어 `../checkpoints`가 엉뚱한 경로로 풀림 → **실모델(`--no-models` 아닌) 배치 실행은 지금까지 한 번도 성공한 적이 없었다.** `--no-models`만 `build_models()`를 건너뛰어 증상이 드러나지 않았던 것. §4에서 수정. |
 | 7 | (신규 발견) SGDJSCC 원본의 `.cuda()` 하드코딩 | `SGDJSCC/models/test_advanced_network/diffusion_element_wise.py::encode_text()`가 `clip.tokenize(...).cuda()`로 **항상 프로세스 기본 CUDA 디바이스**를 씀 (`.to(self.device)`가 아님). `--device cuda:1`로 돌리면 텍스트 토큰(cuda:0)과 모델(cuda:1)이 어긋나 `RuntimeError`. `cuda:0`에서만 우연히 맞았던 것. SGDJSCC는 읽기 전용이라 원본은 못 고침 — §4에서 `CUDA_VISIBLE_DEVICES` 우회로 해결. |
 
 원인 1·2(diffusion 자체 비용)이 압도적이고, 3·4는 부가 비용, 6·7은 애초에

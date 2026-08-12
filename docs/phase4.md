@@ -10,7 +10,7 @@
 모든 Phase 4 기능은 **기본값 off**다. 상위 게이트 `use_phase4` 하나로 제어한다.
 
 ```yaml
-# configs/eval/default.yaml
+# configs/base/eval/default.yaml
 use_phase4: false          # 기본 — 4-A/B 전체 비활성화
 
 # Phase 4만 활성화
@@ -53,7 +53,7 @@ use_packet_regeneration: false # 오류 유형 인식 재시도 (use_packet_eval
 
 ```bash
 # eval/default.yaml에서 use_phase4/use_packet_eval: true 설정 후
-python scripts/evaluate.py --config configs/composed.yaml --snr 0 -i ../inputs/
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 0 -i ../inputs/
 ```
 
 이미지별 출력: `<stem>.orig_packet.json`, `.packet.json`, `.error_report.json`.
@@ -83,11 +83,11 @@ missing/additional_object_count, relation/attribute_error_count, guidance_regime
 
 ```bash
 # 전체 실행 (SGD-JSCC + CLIP/BLIP2)
-python scripts/evaluate_video.py --config configs/composed_video.yaml \
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml \
     --input /path/ordered_frames/ --snr 5 --device cuda:0
 
 # dry run (체크포인트 없음, 캡션 주면 델타/지표가 의미를 가짐)
-python scripts/evaluate_video.py --config configs/composed_video.yaml \
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml \
     --input /path/ordered_frames/ --no-models --captions /path/captions.txt
 ```
 

@@ -9,7 +9,7 @@ the edge-codec training stage; it does not touch the inference/eval pipelines.
 Usage
 -----
 python scripts/eval_edge_codec.py \\
-    --config configs/composed_train_edge_codec.yaml \\
+    --config configs/recipes/training/composed_train_edge_codec.yaml \\
     --checkpoint outputs/checkpoints/edge_codec/best.pth \\
     --val-list /data/edges/val/ --device cuda:0
 

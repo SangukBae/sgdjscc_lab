@@ -14,7 +14,7 @@
 출력 저장, 원본 추론 경로 보존.
 
 ```bash
-python scripts/infer_images.py --config configs/default.yaml
+python scripts/infer_images.py --config configs/base/default.yaml
 ```
 
 ## Phase 2 — 모듈화

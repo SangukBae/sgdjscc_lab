@@ -1,8 +1,0 @@
-# configs/infer/awgn.yaml – I/O and runtime fragment for AWGN inference
-#
-# Merged into composed configs via the _defaults_ list in load_config().
-# Paths below are relative to the root config file's directory (configs/).
-
-input_path: "../inputs/"
-output_dir: "../outputs/"
-device: "cuda:0"

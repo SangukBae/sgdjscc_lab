@@ -53,7 +53,7 @@ tracked **paper-like multi-GPU** workflow는 Stage 2/3를 결합 file-list
 `sa1b_images`, `journey_pairs`, `cc3m_pairs`, `datacomp_pairs`, `celeba_hq`를
 풀링하고 edge/ControlNet 경로에는 이미지별 MuGE edge sidecar를 사용한다.
 `scripts/prepare_paper_like_stage23_data.sh`와
-`configs/custom_paper_like/paper_train_{text_dm,edge_codec,controlnet}_multi.yaml`
+`configs/experiments/paper_reproduction/custom_paper_like/paper_train_{text_dm,edge_codec,controlnet}_multi.yaml`
 config 참조.
 
 ## Conversion Workflows

@@ -23,11 +23,11 @@ diffusers 버전 문제가 아니라 **체크포인트 선택 문제**였다 —
 end keyframe이 있는 segment와 없는 segment(마지막 GOP)가 섞여 있을 수 있으므로,
 `scripts/lgvsc_generate_worker.py`는 이제 **segment마다** 필요한 체크포인트를
 자동으로 고른다. Config는 세 가지로 나뉜다:
-`configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml`(안전/기본,
+`configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml`(안전/기본,
 start-only 검증 완료),
-`configs/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`(수정본,
+`configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`(수정본,
 **bidirectional 실제 GPU 검증 완료** — 지금부터 이걸 쓸 것),
-`configs/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml`
+`configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml`
 (원래 실패를 재현하는 기록용 — 삭제하지 않고 원인 분석 근거로 유지). 이전에
 고친 non-contiguous 프레임 매핑 버그(`target_index - start_frame_index` 기준
 매핑)는 이 수정에도 그대로 적용된다.
@@ -99,21 +99,21 @@ keyframe + caption + side-info로 세그먼트를 생성하는 구조)에 코드
 - 코드: `src/sgdjscc_lab/video/video_generator.py::ExternalSegmentWorkerGenerator`
   (+ `SegmentWorkerError`), `scripts/lgvsc_generate_worker.py`,
   `scripts/lgvsc_example_callable_backend.py`.
-- Config: `configs/video/default.yaml`의 `video_generator.backend:
+- Config: `configs/base/video/default.yaml`의 `video_generator.backend:
   external_segment_worker` + `video_generator.worker.*` (기본값 전부
   비활성/no-op — `use_video_gen`/`video_generator.enabled`가 여전히 이중
   게이트이고, `backend`가 기본 `auto`이므로 이 블록은 아무것도 켜지 않는 한
   기존 결과에 영향이 없다).
-- 예시 config: `configs/etri_video_eval_lgvsc_worker_mock.yaml` (fake-worker,
-  ptest에서 바로 실행 가능), `configs/etri_video_eval_lgvsc_worker_svd.yaml`
+- 예시 config: `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_mock.yaml` (fake-worker,
+  ptest에서 바로 실행 가능), `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml`
   (실제 GPU, image만 조건화, 실제 GPU 검증 완료),
-  `configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml` (실제 GPU,
+  `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml` (실제 GPU,
   image+prompt 조건화 — 실제 GPU 검증 완료),
-  `configs/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml` (실제
+  `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml` (실제
   GPU, image+last_image+prompt 조건화 — **실제 GPU 검증 완료, 지금부터 이걸
   쓸 것**; end keyframe이 있는 segment는 `Wan2.1-FLF2V-14B-720P`, 없는 segment는
   `Wan2.1-I2V-14B-480P`를 자동 선택),
-  `configs/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml`
+  `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml`
   (원래 실패를 재현하는 기록용 config — 삭제하지 않고 원인 분석 근거로 유지,
   **더 이상 실사용하지 말 것**). start-only/bidirectional_fixed를 별도 config로
   둔 이유는 각각 다른 체크포인트가 필요하기 때문이다(worker가 segment별로
@@ -209,7 +209,7 @@ semantic-diffusers      /home/<user>/anaconda3/envs/semantic-diffusers
 
 ### PYTHONNOUSERSITE — 방향이 실측과 반대였다
 
-이전 버전의 `configs/etri_video_eval_lgvsc_worker_svd.yaml`은
+이전 버전의 `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml`은
 `PYTHONNOUSERSITE: "1"`(user-site 패키지 제외)을 "오염 방지"용으로
 설정했었다. 이번 Wan 작업 중 실제로 재현해보니 **반대**였다: 위 세 패키지
 업그레이드 후, `semantic-diffusers` 환경 자체의 `huggingface_hub` 설치본은
@@ -233,7 +233,7 @@ conda run -n lgvsc_gen pip install torch diffusers "transformers>=4.52" peft acc
 
 ## 실제 GPU 검증 전 필요한 것 (Hugging Face / 라이선스 / 디스크 / VRAM)
 
-**SVD** — `configs/etri_video_eval_lgvsc_worker_svd.yaml`이 기본으로 가리키는
+**SVD** — `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml`이 기본으로 가리키는
 `stabilityai/stable-video-diffusion-img2vid-xt`는 **gated model**이다:
 
 1. huggingface.co에서 해당 모델 페이지에 로그인해 라이선스 동의.
@@ -244,7 +244,7 @@ conda run -n lgvsc_gen pip install torch diffusers "transformers>=4.52" peft acc
    `video_generator.worker.height`/`width`를 줄이거나 `decode_chunk_size`를
    낮춘다.
 
-**Wan** — `configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml`이 기본으로 가리키는
+**Wan** — `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml`이 기본으로 가리키는
 `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`는 **gated가 아니다**(Apache-2.0,
 공개, 로그인/라이선스 동의 불필요 — HF Hub API로 직접 확인함:
 `model_info(...).gated == False`). 대신:
@@ -468,7 +468,7 @@ shape 에러로 크래시하는 대신, 원인과 대응 방법을 담은 메시
 
 **실제 GPU 재검증 (2026-07, 직접 실행)**: `Wan2.1-FLF2V-14B-720P-Diffusers`
 전체 가중치(84GB)를 `semantic-diffusers` 환경에 다운로드(40.5분, `snapshot_download(...,
-max_workers=8)`)한 뒤, `configs/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`로
+max_workers=8)`)한 뒤, `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`로
 `scripts/evaluate_video.py --input .../01_person_walk.mp4 --captions
 .../01_person_walk.txt --no-models --max-frames 14 --save-video`를 실제로
 실행했다(`keyframe.max_gop: 12` 기본값으로 frame 0, 12에 keyframe이 생겨
@@ -501,7 +501,7 @@ for image_encoder..." 경고가 **여전히 출력되지만 실행은 성공**�
 
 **③ SVD (`StableVideoDiffusionPipeline`, image만 조건화) — ✅ 성공**
 
-`configs/etri_video_eval_lgvsc_worker_svd.yaml`을 통해 `semantic-diffusers`
+`configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml`을 통해 `semantic-diffusers`
 환경의 실제 GPU에서 SVD backend로 segment 생성을 직접 시도했다: 1개
 segment에 대해 generate 분기가 트리거되어(`n_generate=1`) 실제
 `StableVideoDiffusionPipeline` 호출로 1개 프레임이 생성됐다
@@ -536,12 +536,12 @@ print('OK', result.target_indices)
 
 ### 3) `scripts/evaluate_video.py` 실제 CLI 경로 end-to-end 스모크
 
-`configs/etri_video_eval_lgvsc_worker_mock.yaml`로 실제 ETRI 테스트 영상
+`configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_mock.yaml`로 실제 ETRI 테스트 영상
 (`01_person_walk.mp4`, 100프레임)을 `--no-models`로 돌렸다:
 
 ```bash
 conda run -n ptest python scripts/evaluate_video.py \
-    --config configs/etri_video_eval_lgvsc_worker_mock.yaml \
+    --config configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_mock.yaml \
     --input data/etri_video_eval/processed/01_person_walk.mp4 \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --no-models --save-video
@@ -567,12 +567,12 @@ cd sgdjscc_lab
 
 # (A) Wan I2V start-only (실제 GPU 검증 완료). 첫 실행은 ~90GB 다운로드
 #     (로그인/라이선스 불필요, Apache-2.0) — 시간이 걸린다. VRAM이 부족하면
-#     configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml의
+#     configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml의
 #     video_generator.worker.extra_json을
 #     '{"offload_mode": "sequential"}' 그대로 두거나(느리지만 VRAM 절약)
 #     height/width/num_inference_steps를 더 줄인다.
 conda run -n ptest python scripts/evaluate_video.py \
-    --config configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml \
+    --config configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml \
     --input data/etri_video_eval/processed/01_person_walk.mp4 \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --snr 5 --device cuda:0 --max-frames 4
@@ -580,7 +580,7 @@ conda run -n ptest python scripts/evaluate_video.py \
 # (B) SVD (더 가벼움, image만 조건화, 실제 GPU 검증 완료 — Hugging Face 로그인 + 라이선스 동의 필요)
 conda run -n semantic-diffusers huggingface-cli login
 conda run -n ptest python scripts/evaluate_video.py \
-    --config configs/etri_video_eval_lgvsc_worker_svd.yaml \
+    --config configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml \
     --input data/etri_video_eval/processed/01_person_walk.mp4 \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --snr 5 --device cuda:0 --max-frames 4
@@ -593,7 +593,7 @@ conda run -n ptest python scripts/evaluate_video.py \
 #     non-final GOP가 생기도록 keyframe.max_gop(기본 12)보다 커야
 #     bidirectional 경로가 실제로 실행된다 — 14 이상을 권장.
 conda run -n ptest python scripts/evaluate_video.py \
-    --config configs/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml \
+    --config configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml \
     --input data/etri_video_eval/processed/01_person_walk.mp4 \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --snr 5 --device cuda:0 --max-frames 14
@@ -603,7 +603,7 @@ conda run -n ptest python scripts/evaluate_video.py \
 #     보여주는 config다(pos_embed_seq_len 없는 체크포인트 — 위 "Wan
 #     bidirectional 수정" 참조). 정상적인 실행에는 (C)를 쓴다.
 conda run -n ptest python scripts/evaluate_video.py \
-    --config configs/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml \
+    --config configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml \
     --input data/etri_video_eval/processed/01_person_walk.mp4 \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --snr 5 --device cuda:0 --max-frames 4

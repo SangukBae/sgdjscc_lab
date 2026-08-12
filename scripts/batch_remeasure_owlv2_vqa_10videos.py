@@ -19,8 +19,8 @@ genuinely heavy operation, left for the operator to launch explicitly.
 
 Five modes (see MODE_SPECS)
 -----------------------------
-owlv2                    OWLv2-only detector calibration (configs/etri_video_eval_owlv2.yaml)
-vqa                      VQA-only calibration (configs/etri_video_eval_vqa.yaml)
+owlv2                    OWLv2-only detector calibration (configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml)
+vqa                      VQA-only calibration (configs/experiments/etri_video_eval/etri_video_eval_vqa.yaml)
 ensemble_nofilter        ensemble_weighted (clip+owlv2+vqa), object_vocabulary_filter OFF —
                           the pre-filter baseline; comparison-only, see caveat below
 ensemble_gt_filter       ensemble_weighted + object_vocabulary_filter ON, use_gt_vocabulary=True —
@@ -102,11 +102,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("sgdjscc_lab.batch_remeasure_owlv2_vqa_10videos")
 
-DEFAULT_BASELINE_ROOT = _REPO_ROOT / "outputs" / "etri_video_eval_real_full_step50" / "baseline"
+from sgdjscc_lab.paths import run_root as _run_root
+
+DEFAULT_BASELINE_ROOT = _run_root() / "etri_video_eval_real_full_step50" / "baseline"
 DEFAULT_CAPTIONS_DIR = _REPO_ROOT / "data" / "etri_video_eval" / "captions"
 DEFAULT_GT_DIR = _REPO_ROOT / "data" / "etri_video_eval" / "gt"
-DEFAULT_OUTPUT_ROOT = _REPO_ROOT / "outputs" / "etri_video_eval" / "remeasure_10videos"
-DEFAULT_CONFIGS_DIR = _REPO_ROOT / "configs"
+DEFAULT_OUTPUT_ROOT = _run_root() / "etri_video_eval" / "remeasure_10videos"
+DEFAULT_CONFIGS_DIR = _REPO_ROOT / "configs" / "experiments" / "etri_video_eval"
 REMEASURE_SCRIPT = _REPO_ROOT / "scripts" / "remeasure_video_metrics.py"
 
 GENERATED_CONFIGS_DIRNAME = "_generated_configs"

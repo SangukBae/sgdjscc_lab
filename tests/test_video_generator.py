@@ -1123,7 +1123,7 @@ class TestBuildGeneratorExternalSegmentWorker:
         """The worker.backend value is a plain passthrough string — this
         proves 'wan' specifically routes through config → build_generator()
         → ExternalSegmentWorkerGenerator → subprocess argv, matching what
-        configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml relies on."""
+        configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml relies on."""
         from sgdjscc_lab.video.video_generator import build_generator, ExternalSegmentWorkerGenerator
         cfg = OmegaConf.create({
             "video_generator": {

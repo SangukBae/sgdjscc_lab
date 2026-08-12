@@ -295,7 +295,7 @@ class TestBuildPresenceCalibrator:
 
     def test_owlv2_and_vqa_config_keys_route_through_without_loading_weights(self):
         """Readiness check for real OWLv2/VQA verification runs: every key the
-        operator will set in configs/etri_video_eval_owlv2.yaml /
+        operator will set in configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml /
         _vqa.yaml / _ensemble.yaml (verifier.presence_backend_cfg.owlv2.
         model_id/score_threshold, verifier.presence_backend_cfg.vqa.
         vqa_backend.type/model_id/device) must reach the actual backend

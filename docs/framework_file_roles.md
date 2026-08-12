@@ -50,7 +50,7 @@ evaluate.py → eval config → eval_pipeline.py → infer_pipeline.py
 | 파일 | 역할 |
 |---|---|
 | `scripts/evaluate.py` | 평가 CLI: SNR 옵션, eval context, 단일/sweep 실행 |
-| `configs/eval/default.yaml`, `dataset/*.yaml` | 지표·SNR·CSV·SRS 가중치·데이터셋 설정 |
+| `configs/base/eval/default.yaml`, `dataset/*.yaml` | 지표·SNR·CSV·SRS 가중치·데이터셋 설정 |
 | `pipelines/eval_pipeline.py` | 추론을 감싸 데이터셋 순회·지표·CSV·sweep 제어 |
 | `pipelines/infer_pipeline.py` | 평가 내부에서 실제 복원 수행(추론을 대체하지 않고 감쌈) |
 | `evaluators/quality.py` | PSNR / SSIM / LPIPS |

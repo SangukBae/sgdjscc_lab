@@ -3,11 +3,11 @@
 
 Usage examples
 --------------
-# Use defaults from configs/default.yaml
-python scripts/infer_images.py --config configs/default.yaml
+# Use defaults from configs/base/default.yaml
+python scripts/infer_images.py --config configs/base/default.yaml
 
 # Override input / output at runtime
-python scripts/infer_images.py --config configs/default.yaml \\
+python scripts/infer_images.py --config configs/base/default.yaml \\
     --input /path/to/images/ --output /path/to/out/ --snr 5 --device cuda:0
 """
 
@@ -52,7 +52,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config", "-c",
         required=True,
-        help="Path to YAML config file (e.g. configs/default.yaml)",
+        help="Path to YAML config file (e.g. configs/base/default.yaml)",
     )
     parser.add_argument(
         "--input", "-i",

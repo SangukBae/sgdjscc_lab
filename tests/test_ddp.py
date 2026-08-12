@@ -178,7 +178,7 @@ def test_entrypoint_torchrun_dryrun(tmp_path):
     env["CUDA_VISIBLE_DEVICES"] = ""          # force the Gloo CPU backend
     cmd = [sys.executable, "-m", "torch.distributed.run", "--standalone",
            "--nproc_per_node=2", str(repo / "scripts" / "train.py"),
-           "--config", str(repo / "configs" / "composed_train_text_dm.yaml"),
+           "--config", str(repo / "configs" / "recipes" / "training" / "composed_train_text_dm.yaml"),
            "--train-list", str(train), "--val-list", str(val),
            "--no-models", "--epochs", "1", "--device", "cpu"]
     r = subprocess.run(cmd, cwd=str(repo), env=env,

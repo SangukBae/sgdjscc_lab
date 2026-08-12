@@ -86,6 +86,7 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 # auto-conversion) — kept importable here as `convert_gt_to_presence` for
 # backward compatibility with this module's own callers/tests.
 from sgdjscc_lab.pipelines.heldout_remeasurement import convert_gt_to_presence  # noqa: E402
+from sgdjscc_lab.paths import run_root as _run_root  # noqa: E402
 
 STAGES = (
     "baseline", "motion_sweep", "verifier", "generate",
@@ -93,9 +94,12 @@ STAGES = (
 )
 
 # Config fragments composed for every generated run config (same set as
-# configs/composed_video.yaml). Written as absolute paths so the generated
+# configs/recipes/video/composed_video.yaml). Written as absolute paths so the generated
 # config can live inside its run directory.
-_FRAGMENTS = ("channel/awgn", "model/sgdjscc", "infer/awgn", "eval/default", "video/default")
+_FRAGMENTS = (
+    "base/channel/awgn", "base/model/sgdjscc", "base/infer/awgn",
+    "base/eval/default", "base/video/default",
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -179,7 +183,7 @@ def build_run_config(
         "use_packet_eval": True,
         # Absolute override: model/sgdjscc.yaml's "model_root: ../checkpoints/"
         # is written assuming the config file sits exactly one level below
-        # configs/ (as configs/etri_video_eval.yaml does). This driver's
+        # configs/ (as configs/experiments/etri_video_eval/etri_video_eval.yaml does). This driver's
         # generated config.yaml instead sits under
         # <output_root>/<stage>/<video>[/th_<t>]/ — TWO+ levels deep — so the
         # relative path would resolve to a nonexistent
@@ -500,7 +504,7 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--data-root", default=str(_REPO_ROOT / "data" / "etri_video_eval"))
-    p.add_argument("--output-root", default=str(_REPO_ROOT / "outputs" / "etri_video_eval"))
+    p.add_argument("--output-root", default=str(_run_root() / "etri_video_eval"))
     p.add_argument("--stages", default="baseline",
                    help=f"Comma list from {STAGES} or 'all'.")
     p.add_argument("--videos", default=None,

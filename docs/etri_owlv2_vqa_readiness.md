@@ -45,7 +45,7 @@ CLI 경로, ③ 그 경로의 한계를 명시한 이 문서다.
 
 ## 준비된 예시 config 3종
 
-`configs/video/default.yaml`의 `verifier.presence_backend_cfg`는 기본값이
+`configs/base/video/default.yaml`의 `verifier.presence_backend_cfg`는 기본값이
 빈 dict(`{}`, 전부 주석)로 남아 있다 — **기존 결과는 바뀌지 않는다**
 (`verifier.use_presence_calibration: false`가 기본값이므로
 `build_presence_calibrator()`는 여전히 `None`을 반환한다).
@@ -54,9 +54,9 @@ CLI 경로, ③ 그 경로의 한계를 명시한 이 문서다.
 
 | Config | `presence_mode` | 용도 |
 |---|---|---|
-| `configs/etri_video_eval_owlv2.yaml` | `owlv2_only` | OWLv2 zero-shot detector 단독 검증 |
-| `configs/etri_video_eval_vqa.yaml` | `vqa_only` | BLIP-2 VQA 단독 검증 |
-| `configs/etri_video_eval_ensemble.yaml` | `ensemble_weighted` | CLIP+OWLv2+VQA 가중 앙상블 |
+| `configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml` | `owlv2_only` | OWLv2 zero-shot detector 단독 검증 |
+| `configs/experiments/etri_video_eval/etri_video_eval_vqa.yaml` | `vqa_only` | BLIP-2 VQA 단독 검증 |
+| `configs/experiments/etri_video_eval/etri_video_eval_ensemble.yaml` | `ensemble_weighted` | CLIP+OWLv2+VQA 가중 앙상블 |
 
 셋 다 `use_phase4: true` / `use_packet_verifier: true` /
 `verifier.use_presence_calibration: true`가 이미 켜져 있고, 출력은
@@ -70,7 +70,7 @@ CLI 경로, ③ 그 경로의 한계를 명시한 이 문서다.
 ```bash
 cd sgdjscc_lab
 conda activate ptest
-python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_owlv2.yaml \
+python scripts/remeasure_video_metrics.py --config configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml \
     --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --device cuda:0
@@ -79,7 +79,7 @@ python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_owlv2
 ### 1개 영상 VQA sanity check (동일 방식)
 
 ```bash
-python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_vqa.yaml \
+python scripts/remeasure_video_metrics.py --config configs/experiments/etri_video_eval/etri_video_eval_vqa.yaml \
     --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --device cuda:0
@@ -113,9 +113,9 @@ open-world filter — 해석 차이" 참고):
 
 | 모드 | base config | 목적 |
 |---|---|---|
-| `owlv2` | `configs/etri_video_eval_owlv2.yaml` | OWLv2-only detector calibration |
-| `vqa` | `configs/etri_video_eval_vqa.yaml` | VQA-only (BLIP-2) calibration |
-| `ensemble_nofilter` | `configs/etri_video_eval_ensemble.yaml` (`object_vocabulary_filter.enabled=false`) | 필터 적용 전 baseline — **비교용, 최종 주장에 쓰지 말 것** |
+| `owlv2` | `configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml` | OWLv2-only detector calibration |
+| `vqa` | `configs/experiments/etri_video_eval/etri_video_eval_vqa.yaml` | VQA-only (BLIP-2) calibration |
+| `ensemble_nofilter` | `configs/experiments/etri_video_eval/etri_video_eval_ensemble.yaml` (`object_vocabulary_filter.enabled=false`) | 필터 적용 전 baseline — **비교용, 최종 주장에 쓰지 말 것** |
 | `ensemble_gt_filter` | 〃 (`enabled=true`, `use_gt_vocabulary=true`) | GT object-only 보존 평가 — **object preservation 주장용** |
 | `ensemble_openworld_filter` | 〃 (`enabled=true`, `use_gt_vocabulary=false`) | count/action/scene 잡음만 제거, non-GT object는 유지 — **hallucination/additional object 분석용** |
 
@@ -264,7 +264,7 @@ gt_presence.json`(`{"frame_00000": {"person": true}, ...}` 형식)을 그대로
 `PresenceBackendUnavailableError`를 던진다(조용히 틀린 값으로 판정하지
 않음).
 
-`configs/etri_video_eval_owlv2.yaml`을 손으로 직접 호출할 때는 heldout 출력
+`configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml`을 손으로 직접 호출할 때는 heldout 출력
 경로가 모든 영상에 대해 같은 `outputs/etri_video_eval/manual_owlv2/heldout/`
 로 덮어써진다는 점에 주의한다 — 영상별로 결과를 보존하려면 영상마다
 `--config` 또는 heldout 출력 경로를 다르게 줘야 한다. 이 경로 충돌 문제를
@@ -350,7 +350,7 @@ decisions… prefer --from-packets for byte-for-byte remeasurement"). 이번에
 경로를 건드리는 더 큰 변경이라 이번 "준비 단계" 범위에서는 하지 않았다(요청
 사항의 "대규모 리팩터링은 하지 않는다"에 해당). 필요해지면:
 
-1. `configs/video/default.yaml`에 `packet_dump.enabled`/`packet_dump.dir`류
+1. `configs/base/video/default.yaml`에 `packet_dump.enabled`/`packet_dump.dir`류
    게이트를 하나 추가하고,
 2. `video/temporal_pipeline.py`가 각 프레임 처리 후
    `save_packet(orig_packet, orig_packet_path(dir, frame_id))` /
@@ -365,23 +365,23 @@ cd sgdjscc_lab
 conda activate ptest   # 또는 실제 OWLv2/VQA weight를 내려받을 GPU 환경
 
 # (A) 기존 실모델 recon 재사용 — GPU 재구성 없이 presence backend만 검증
-python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_owlv2.yaml \
+python scripts/remeasure_video_metrics.py --config configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml \
     --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --device cuda:0
 
-python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_vqa.yaml \
+python scripts/remeasure_video_metrics.py --config configs/experiments/etri_video_eval/etri_video_eval_vqa.yaml \
     --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --device cuda:0
 
-python scripts/remeasure_video_metrics.py --config configs/etri_video_eval_ensemble.yaml \
+python scripts/remeasure_video_metrics.py --config configs/experiments/etri_video_eval/etri_video_eval_ensemble.yaml \
     --from-recon-frames outputs/etri_video_eval_real_full_step50/baseline/01_person_walk \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --device cuda:0
 
 # (B) 완전한 실모델 재구성부터 다시 검증하고 싶다면 (GPU, 시간 소요)
-python scripts/evaluate_video.py --config configs/etri_video_eval_owlv2.yaml \
+python scripts/evaluate_video.py --config configs/experiments/etri_video_eval/etri_video_eval_owlv2.yaml \
     --input data/etri_video_eval/processed/01_person_walk.mp4 \
     --captions data/etri_video_eval/captions/01_person_walk.txt \
     --snr 5 --device cuda:0 --save-video

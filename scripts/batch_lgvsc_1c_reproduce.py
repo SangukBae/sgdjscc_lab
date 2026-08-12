@@ -71,7 +71,7 @@ the full mapping — the one-line version:
 **Keyframe SELECTION (the SKIM-vs-SKEM distinction) is identical across
 mock_baseline/svd_start_only/wan_skim_sfa/wan_skem_dsa** — those four modes
 all use this repository's pre-existing keyframe extractor (`keyframe.max_gop`
-+ scene-change detector, `configs/video/default.yaml`), not a semantic/
++ scene-change detector, `configs/base/video/default.yaml`), not a semantic/
 PSSS-driven selector. The four PSSS/SKEM-readiness modes above (skim_sfa_fixed
 plus the three skem_dsa_* modes) are what actually distinguish the two
 selectors — skim_sfa_fixed keeps the fixed extractor, the skem_dsa_* modes use
@@ -86,8 +86,8 @@ documented gap, not a silent omission.
 
 Each mode's config (``configs/etri_lgvsc_1c_<mode>.yaml``) is copied from an
 already real-GPU-verified 1B config — ``wan_skim_sfa`` from
-``configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml``, ``wan_skem_dsa``
-from ``configs/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`` —
+``configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml``, ``wan_skem_dsa``
+from ``configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`` —
 so this driver never introduces new, unverified generation-backend wiring;
 it only orchestrates the already-working per-video/per-mode config
 generation, subprocess dispatch, and result aggregation.
@@ -158,6 +158,9 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+from sgdjscc_lab.paths import model_root as _model_root  # noqa: E402
+from sgdjscc_lab.paths import run_root as _run_root  # noqa: E402
+
 MODES = (
     "mock_baseline", "svd_start_only", "wan_skim_sfa", "wan_skem_dsa",
     # PSSS/SKEM readiness step: the SKIM/SFA-vs-SKEM/DSA comparison pair
@@ -169,15 +172,17 @@ MODES = (
     "skim_sfa_fixed", "skem_dsa_psss", "skem_dsa_mock_psss", "skem_dsa_proxy_psss",
 )
 
+_LGVSC_1C_CONFIG_DIR = _REPO_ROOT / "configs" / "experiments" / "lgvsc_1c"
+
 _MODE_CONFIG = {
-    "mock_baseline": _REPO_ROOT / "configs" / "etri_lgvsc_1c_mock_baseline.yaml",
-    "svd_start_only": _REPO_ROOT / "configs" / "etri_lgvsc_1c_svd_start_only.yaml",
-    "wan_skim_sfa": _REPO_ROOT / "configs" / "etri_lgvsc_1c_wan_skim_sfa.yaml",
-    "wan_skem_dsa": _REPO_ROOT / "configs" / "etri_lgvsc_1c_wan_skem_dsa.yaml",
-    "skim_sfa_fixed": _REPO_ROOT / "configs" / "etri_lgvsc_1c_skim_sfa_fixed.yaml",
-    "skem_dsa_psss": _REPO_ROOT / "configs" / "etri_lgvsc_1c_skem_dsa_psss.yaml",
-    "skem_dsa_mock_psss": _REPO_ROOT / "configs" / "etri_lgvsc_1c_skem_dsa_mock_psss.yaml",
-    "skem_dsa_proxy_psss": _REPO_ROOT / "configs" / "etri_lgvsc_1c_skem_dsa_proxy_psss.yaml",
+    "mock_baseline": _LGVSC_1C_CONFIG_DIR / "etri_lgvsc_1c_mock_baseline.yaml",
+    "svd_start_only": _LGVSC_1C_CONFIG_DIR / "etri_lgvsc_1c_svd_start_only.yaml",
+    "wan_skim_sfa": _LGVSC_1C_CONFIG_DIR / "etri_lgvsc_1c_wan_skim_sfa.yaml",
+    "wan_skem_dsa": _LGVSC_1C_CONFIG_DIR / "etri_lgvsc_1c_wan_skem_dsa.yaml",
+    "skim_sfa_fixed": _LGVSC_1C_CONFIG_DIR / "etri_lgvsc_1c_skim_sfa_fixed.yaml",
+    "skem_dsa_psss": _LGVSC_1C_CONFIG_DIR / "etri_lgvsc_1c_skem_dsa_psss.yaml",
+    "skem_dsa_mock_psss": _LGVSC_1C_CONFIG_DIR / "etri_lgvsc_1c_skem_dsa_mock_psss.yaml",
+    "skem_dsa_proxy_psss": _LGVSC_1C_CONFIG_DIR / "etri_lgvsc_1c_skem_dsa_proxy_psss.yaml",
 }
 
 # SKIM/SFA-vs-SKEM/DSA comparison axis (PSSS/SKEM readiness step): which
@@ -191,9 +196,12 @@ _SKIM_SKEM_FAMILY = {
 }
 
 # Same fragment set every etri_lgvsc_1c_*.yaml / etri_video_eval_lgvsc_worker_*.yaml
-# config composes via `_defaults_` (configs/video/default.yaml being the one
+# config composes via `_defaults_` (configs/base/video/default.yaml being the one
 # that turns on use_temporal / keyframe / video_generator machinery).
-_FRAGMENTS = ("channel/awgn", "model/sgdjscc", "infer/awgn", "eval/default", "video/default")
+_FRAGMENTS = (
+    "base/channel/awgn", "base/model/sgdjscc", "base/infer/awgn",
+    "base/eval/default", "base/video/default",
+)
 
 _SUMMARY_METRIC_FIELDS = (
     "n_frames", "n_keyframes", "n_interframes", "n_generate", "n_reused",
@@ -461,7 +469,7 @@ def build_run_config(mode: str, out_dir: Path, cbr_match: dict = None) -> dict:
 
     out_dir = Path(out_dir)
     cfg["_defaults_"] = [str((_REPO_ROOT / "configs" / f)) for f in _FRAGMENTS]
-    cfg["model_root"] = str((_REPO_ROOT / "checkpoints").resolve())
+    cfg["model_root"] = str(_model_root())
     cfg["keyframe_json"] = str(out_dir / "keyframes.json")
     cfg["segment_json"] = str(out_dir / "segments.json")
     cfg["temporal_csv"] = str(out_dir / "temporal_metrics.csv")
@@ -1103,7 +1111,7 @@ def _parse_args(argv=None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--data-root", default=str(_REPO_ROOT / "data" / "etri_video_eval"))
-    p.add_argument("--output-root", default=str(_REPO_ROOT / "outputs" / "etri_video_eval" / "lgvsc_1c_reproduce"))
+    p.add_argument("--output-root", default=str(_run_root() / "etri_video_eval" / "lgvsc_1c_reproduce"))
     p.add_argument("--modes", default="all",
                    help=f"Comma list from {MODES} or 'all'.")
     p.add_argument("--videos", default=None,

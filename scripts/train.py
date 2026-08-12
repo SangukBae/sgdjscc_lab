@@ -20,20 +20,20 @@ message if a caption/edge source is missing.
 Usage examples
 --------------
 # Stage 1 (JSCC) full run on GPU
-python scripts/train.py --config configs/composed_train_jscc.yaml \\
+python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \\
     --train-list /data/imagenet/train/ --val-list /data/imagenet/val/ \\
     --device cuda:0 --epochs 20
 
 # Stage 2 (text DM) — captions via per-image .txt sidecars
-python scripts/train.py --config configs/composed_train_text_dm.yaml \\
+python scripts/train.py --config configs/recipes/training/composed_train_text_dm.yaml \\
     --train-list /data/pairs/train/ --device cuda:0
 
 # Stage 3 (ControlNet) — edges via on-the-fly Canny
-python scripts/train.py --config configs/composed_train_controlnet.yaml \\
+python scripts/train.py --config configs/recipes/training/composed_train_controlnet.yaml \\
     --train-list /data/pairs/train/ --device cuda:0
 
 # Dry-run (no checkpoints/GPU): exercises config/stage/dataset wiring only
-python scripts/train.py --config configs/composed_train_jscc.yaml \\
+python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \\
     --train-list /path/to/images/ --no-models --epochs 1
 
 Options
@@ -89,7 +89,7 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--config", "-c", required=True,
-                   help="Path to YAML config (e.g. configs/composed_train.yaml)")
+                   help="Path to YAML config (e.g. configs/recipes/training/composed_train.yaml)")
     p.add_argument("--stage", default=None,
                    choices=["jscc", "text_dm", "controlnet", "edge_codec",
                             "csi_estimation", "end_to_end_ft"],

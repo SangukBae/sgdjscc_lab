@@ -24,7 +24,7 @@ Ground-truth 우선순위: **공개 코드 우선**, 논문 table 차순; 충돌
 | timestep `frequency_embedding_size` | 256 | `mask_diffusion.py` `TimestepEmbedder(…)` |
 | JSCC training SNR | 10 dB | 논문 §VI + repo 기본값 |
 
-`sgdjscc_lab`에서는: `configs/model/sgdjscc.yaml`(scalar)과
+`sgdjscc_lab`에서는: `configs/base/model/sgdjscc.yaml`(scalar)과
 `models/diffusion_wrapper.py`(`MDTv2` dim). dim은 **변경 금지**(checkpoint 호환성).
 
 ## 2. 공개 코드 vs 논문 table 충돌

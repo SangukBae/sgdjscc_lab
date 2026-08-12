@@ -191,7 +191,7 @@ NTSCC 자리에 기존 SGD-JSCC 경로를 그대로 쓰고(교체 불필요), �
 ```text
 ① 진입·설정
   scripts/evaluate_video.py [구현됨]  --input clip.mp4 입력 → 프레임 추출 IO (1차 완료)
-    → config.py · configs/composed_video.yaml [재사용]  _defaults_ 프래그먼트 병합
+    → config.py · configs/recipes/video/composed_video.yaml [재사용]  _defaults_ 프래그먼트 병합
     → phase_gates.py [확장]  use_video_gen 신설 — 활성 조건: use_phase4 && use_video_gen
                              (상위 게이트 use_phase4가 꺼지면 use_video_gen도 무시. 기본 off = 현행과 수치 동일)
 
@@ -460,8 +460,8 @@ Face 요구사항(Wan은 로그인/라이선스 불필요, SVD는 gated), VRAM/�
 `target_indices` 리스트 순서가 아니라 실제 segment 시간 위치
 (`target_index - start_frame_index`) 기준이 되도록 수정했고(비연속 target
 `[1, 5, 8]` 등에서 잘못된 프레임을 반환하던 버그), Wan config를
-`configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml`(기본)과
-`configs/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml`
+`configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml`(기본)과
+`configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml`
 (당시 실패 재현용)로 분리했으며, `docs/lgvsc_1b_worker_readiness.md`의 "SVD
 실제 GPU 세그먼트 생성 미시도" 오기재도 정정했다(SVD도 실제 GPU에서
 `n_generate=1`/`generated_frames=1`로 성공 확인됨).
@@ -484,7 +484,7 @@ keyframe이 있는/없는 segment가 섞여 있을 때를 대비해
 `extra_json.bidirectional_model_id`로 자동 선택하도록 수정했다. 체크포인트와
 요청된 조건화 모드가 맞지 않으면 파이프라인 호출 전에
 `WorkerBackendUnavailableError`로 명확히 실패하는 preflight 체크도 추가했다.
-신규 config `configs/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`로
+신규 config `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`로
 실제 GPU에서 `scripts/evaluate_video.py --max-frames 14`를 실행해 segment 0
 (`conditioning_mode=bidirectional`, `end_keyframe_index=12`,
 `n_generated=11`, `Wan2.1-FLF2V-14B-720P`)과 segment 1(마지막 GOP,

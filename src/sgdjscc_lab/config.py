@@ -23,6 +23,10 @@ from typing import Optional
 
 from omegaconf import OmegaConf, DictConfig, ListConfig
 
+from .paths import register_omegaconf_resolver
+
+register_omegaconf_resolver()
+
 _PATH_KEYS = (
     "input_path",
     "output_dir",

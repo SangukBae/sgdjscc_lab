@@ -66,11 +66,11 @@ cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
 conda activate ptest   # Python 3.9, PyTorch 2.1.0, CUDA 11.8
 
 # 추론 (AWGN, 단일 이미지/폴더)
-python scripts/infer_images.py --config configs/composed.yaml \
+python scripts/infer_images.py --config configs/recipes/inference/composed.yaml \
     --input /path/imgs/ --output /path/out/ --snr 5 --device cuda:0
 
 # 평가 (단일 SNR / sweep / 픽셀 품질만)
-python scripts/evaluate.py --config configs/composed.yaml --snr-list -5,0,5,10,15,20,25
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr-list -5,0,5,10,15,20,25
 
 # 테스트 (GPU 불필요)
 python -m pytest tests/ -v

@@ -29,7 +29,7 @@ if str(_SRC) not in sys.path:
 from sgdjscc_lab import paper_mode  # noqa: E402
 from sgdjscc_lab.paper_mode import PaperModeError  # noqa: E402
 
-_CONFIGS = Path(__file__).resolve().parents[1] / "configs"
+_CONFIGS = Path(__file__).resolve().parents[1] / "configs" / "experiments" / "paper_reproduction"
 
 
 def _img(p: Path, size=16):

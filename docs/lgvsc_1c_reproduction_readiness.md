@@ -35,7 +35,7 @@ baseline"이며, 정확히 어느 부분이 실제 대응이고 어느 부분이
 | `wan_skem_dsa` | `SKEM+DSA`의 **DSA(Dual-side Adapter)** 측 | `WanImageToVideoPipeline`, 시작+끝 keyframe + caption 조건화 (real, 1B에서 실제 GPU 검증됨 — segment별 체크포인트 자동 선택) | **SKEM(의미 기반 keyframe 선택)은 대응되지 않음** — 아래 참조. `side_infos` 미사용은 wan_skim_sfa와 동일 |
 
 **keyframe 선택(SKIM vs SKEM)은 네 모드 전부 동일하다.** 이 저장소는
-`configs/video/default.yaml`의 `keyframe.max_gop`(고정 간격) + scene-change
+`configs/base/video/default.yaml`의 `keyframe.max_gop`(고정 간격) + scene-change
 detector(히스토그램 기반) 하나만 갖고 있고, 이는 SKIM에 가까운 방식이지
 LGVSC의 SKEM이 뜻하는 의미/PSSS 기반 keyframe 선택과 동일하지 않다. 네
 config 어느 것도 "SKEM 방식으로 keyframe을 골랐다"는 뜻이 아니다 — `wan_skim_sfa`와
@@ -47,10 +47,10 @@ config 어느 것도 "SKEM 방식으로 keyframe을 골랐다"는 뜻이 아니�
 
 | 1C config | 기반 (1B 실제 GPU 검증 완료) |
 |---|---|
-| `configs/etri_lgvsc_1c_mock_baseline.yaml` | 없음 — 이 저장소 mock backend (`video_generator.backend: auto` + `conditioning_mode: bidirectional`) |
-| `configs/etri_lgvsc_1c_svd_start_only.yaml` | `configs/etri_video_eval_lgvsc_worker_svd.yaml` (worker 블록 그대로 복사) |
-| `configs/etri_lgvsc_1c_wan_skim_sfa.yaml` | `configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml` (worker 블록 그대로 복사 — `tests/test_batch_lgvsc_1c_reproduce.py`가 두 파일의 `video_generator.worker`가 일치하는지 검증) |
-| `configs/etri_lgvsc_1c_wan_skem_dsa.yaml` | `configs/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml` (worker 블록 그대로 복사, segment별 `Wan2.1-I2V-14B-480P`/`Wan2.1-FLF2V-14B-720P` 자동 선택 로직 포함 — 동일하게 테스트로 검증) |
+| `configs/experiments/lgvsc_1c/etri_lgvsc_1c_mock_baseline.yaml` | 없음 — 이 저장소 mock backend (`video_generator.backend: auto` + `conditioning_mode: bidirectional`) |
+| `configs/experiments/lgvsc_1c/etri_lgvsc_1c_svd_start_only.yaml` | `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_svd.yaml` (worker 블록 그대로 복사) |
+| `configs/experiments/lgvsc_1c/etri_lgvsc_1c_wan_skim_sfa.yaml` | `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml` (worker 블록 그대로 복사 — `tests/test_batch_lgvsc_1c_reproduce.py`가 두 파일의 `video_generator.worker`가 일치하는지 검증) |
+| `configs/experiments/lgvsc_1c/etri_lgvsc_1c_wan_skem_dsa.yaml` | `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml` (worker 블록 그대로 복사, segment별 `Wan2.1-I2V-14B-480P`/`Wan2.1-FLF2V-14B-720P` 자동 선택 로직 포함 — 동일하게 테스트로 검증) |
 
 각 config는 (1) `configs/`에 직접 두고 단일 영상 수동 실행에도 쓸 수 있고,
 (2) `scripts/batch_lgvsc_1c_reproduce.py`가 이 파일을 **base template**으로

@@ -30,26 +30,26 @@ epoch·step 두 모드를 모두 지원하는 통합 루프(global-step 기준)�
 cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab && conda activate ptest
 
 # Stage 1 — JSCC (이미지 전용, 고정 SNR=10dB, MSE[+patch-GAN])
-python scripts/train.py --config configs/composed_train_jscc.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \
     --train-list /data/imagenet/train/ --val-list /data/imagenet/val/ --epochs 20
 
 # Stage 2 — text-guided DM (sidecar .txt 캡션)
-python scripts/train.py --config configs/composed_train_text_dm.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_text_dm.yaml \
     --train-list /data/pairs/train/ --device cuda:0
 
 # (supporting) edge codec — stage 3용 codec 선행 학습 (JSCC/DM 불필요, edge만)
-python scripts/train.py --config configs/composed_train_edge_codec.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_edge_codec.yaml \
     --train-list /data/edges/train/ --epochs 50
 
 # Stage 3 — edge ControlNet (BASELINE = edge_jscc transport)
 #   train.controlnet.edge_jscc.checkpoint 가 위 edge_codec 결과를 가리켜야 함
-python scripts/train.py --config configs/composed_train_controlnet.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_controlnet.yaml \
     --train-list /data/pairs/train/ --device cuda:0
 
 # 대규모 step-based / dry-run
-python scripts/train.py --config configs/composed_train_text_dm.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_text_dm.yaml \
     --train-list /data/pairs/train/ --max-steps 250000
-python scripts/train.py --config configs/composed_train_jscc.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \
     --train-list /path/imgs/ --no-models --epochs 1   # 배선만 검증(GPU 불필요)
 ```
 
@@ -79,7 +79,7 @@ python scripts/train.py --config configs/composed_train_jscc.yaml \
 > transport, `end_to_end_ft` 근사, 데이터 규모, CSI `√α`·adaLN edge codec)과
 > 충실도 분류·`paper_mode` 정책은 [paper_alignment.md](./paper_alignment.md)에 정리했다.
 
-## 주요 config (`configs/train/default.yaml`)
+## 주요 config (`configs/base/train/default.yaml`)
 
 ```yaml
 train:
@@ -169,9 +169,9 @@ stage 3의 `edge_jscc` transport가 쓸 전용 codec을 BCE+Dice로 학습한다
 
 ```bash
 # self-supervised: caption·JSCC/DM 체크포인트 불필요 (CPU 가능)
-python scripts/train.py --config configs/composed_train_edge_codec.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_edge_codec.yaml \
     --train-list /data/edges/train/ --val-list /data/edges/val/ --epochs 50
-python scripts/eval_edge_codec.py --config configs/composed_train_edge_codec.yaml \
+python scripts/eval_edge_codec.py --config configs/recipes/training/composed_train_edge_codec.yaml \
     --checkpoint outputs/checkpoints/edge_codec/best.pth --val-list /data/edges/val/
 #   → BCE/Dice/IoU@0.5/F1@0.5 출력, --snr 로 edge-link SNR 스윕
 ```
@@ -230,7 +230,7 @@ python scripts/eval_edge_codec.py --config configs/composed_train_edge_codec.yam
 
 ```bash
 torchrun --standalone --nproc_per_node=3 scripts/train.py \
-    --config configs/paper_train_text_dm.yaml \
+    --config configs/experiments/paper_reproduction/paper_train_text_dm.yaml \
     --train-list data/coco/train2017 --val-list data/coco/val2017 --batch-size 21
 ```
 

@@ -4,8 +4,8 @@
 
 ## 핵심 결론
 
-- `configs/composed.yaml`, `configs/composed_video.yaml`은 공개 baseline checkpoint를 쓰는 기본 config다.
-- `configs/composed_paper_like_multi.yaml`, `configs/composed_video_paper_like_multi.yaml`은 원격에서 학습한 paper-like multi-stage checkpoint를 쓰는 custom config다.
+- `configs/recipes/inference/composed.yaml`, `configs/recipes/video/composed_video.yaml`은 공개 baseline checkpoint를 쓰는 기본 config다.
+- `configs/recipes/inference/composed_paper_like_multi.yaml`, `configs/recipes/video/composed_video_paper_like_multi.yaml`은 원격에서 학습한 paper-like multi-stage checkpoint를 쓰는 custom config다.
 - baseline과 custom 가중치를 같은 `checkpoints/` 폴더에서 덮어써서 관리하지 않는다.
 
 ## 디렉터리 역할
@@ -21,8 +21,8 @@
 공개 baseline 가중치를 사용하려면 기존 config를 쓴다.
 
 ```bash
-python scripts/infer_images.py --config configs/composed.yaml --snr 5
-python scripts/evaluate_video.py --config configs/composed_video.yaml --input /path/to/video_or_frames --snr 5
+python scripts/infer_images.py --config configs/recipes/inference/composed.yaml --snr 5
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml --input /path/to/video_or_frames --snr 5
 ```
 
 이 경로는 `model_root: ../checkpoints/`를 사용한다.
@@ -32,8 +32,8 @@ python scripts/evaluate_video.py --config configs/composed_video.yaml --input /p
 원격에서 학습한 multi-stage 가중치를 inference/evaluation에 반영하려면 새 config를 쓴다.
 
 ```bash
-python scripts/infer_images.py --config configs/composed_paper_like_multi.yaml --snr 5
-python scripts/evaluate_video.py --config configs/composed_video_paper_like_multi.yaml --input /path/to/video_or_frames --snr 5
+python scripts/infer_images.py --config configs/recipes/inference/composed_paper_like_multi.yaml --snr 5
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video_paper_like_multi.yaml --input /path/to/video_or_frames --snr 5
 ```
 
 이 경로는 다음을 사용한다.
@@ -74,4 +74,4 @@ cp checkpoints/muge-epoch-19-checkpoint.pth checkpoints_custom/paper_like_multi/
 - `outputs/checkpoints/*/best.pth`는 학습 재개 또는 export 입력용이다.
 - `checkpoints/*.pth`와 `checkpoints_custom/*/*.pth`는 inference loader가 직접 읽는 파일이다.
 - 로컬과 원격에서 같은 결과를 비교하려면 반드시 같은 config를 써야 한다.
-- 특히 `configs/composed.yaml`과 `configs/composed_paper_like_multi.yaml`은 같은 입력을 줘도 서로 다른 diffusion 가중치를 쓰므로 결과가 달라질 수 있다.
+- 특히 `configs/recipes/inference/composed.yaml`과 `configs/recipes/inference/composed_paper_like_multi.yaml`은 같은 입력을 줘도 서로 다른 diffusion 가중치를 쓰므로 결과가 달라질 수 있다.

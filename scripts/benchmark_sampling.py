@@ -7,7 +7,7 @@ latency data described in the Phase 5-B plan.
 
 Usage
 -----
-python scripts/benchmark_sampling.py --config configs/composed.yaml \
+python scripts/benchmark_sampling.py --config configs/recipes/inference/composed.yaml \
     --input ../inputs/test_1.png --steps 50,20,10,5
 """
 
@@ -50,7 +50,7 @@ def main():
         sys.exit(
             "Error: use_phase5 is false — Phase 5-B sampling benchmarks require "
             "'use_phase5: true' in your config.\n"
-            "Add it to configs/eval/default.yaml or use configs/composed_phase5.yaml."
+            "Add it to configs/base/eval/default.yaml or use configs/recipes/inference/composed_phase5.yaml."
         )
 
     budgets = [int(s) for s in str(args.steps).split(",")]

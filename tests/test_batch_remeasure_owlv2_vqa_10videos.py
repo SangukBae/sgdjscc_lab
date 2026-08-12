@@ -709,7 +709,7 @@ class TestBuildModeConfigAgainstRealRepoConfigs:
     def test_ensemble_modes_apply_over_real_ensemble_config_defaults(self, tmp_path):
         from omegaconf import OmegaConf
         cfg = cli.build_mode_config("ensemble_openworld_filter", "01_person_walk", tmp_path / "out")
-        # Real configs/etri_video_eval_ensemble.yaml defaults use_gt_vocabulary=True —
+        # Real configs/experiments/etri_video_eval/etri_video_eval_ensemble.yaml defaults use_gt_vocabulary=True —
         # the openworld mode's override must actually flip it to False, not just
         # inherit the base config's default.
         assert OmegaConf.select(cfg, "verifier.object_vocabulary_filter.use_gt_vocabulary") is False

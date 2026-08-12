@@ -4,20 +4,20 @@
 Usage examples
 --------------
 # Single SNR with default config
-python scripts/evaluate.py --config configs/composed.yaml --snr 10
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 10
 
 # SNR sweep writing to CSV
-python scripts/evaluate.py --config configs/composed.yaml --snr-list -5,0,5,10,15,20,25
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr-list -5,0,5,10,15,20,25
 
 # Custom input / output CSV
 python scripts/evaluate.py \\
-    --config configs/composed.yaml \\
+    --config configs/recipes/inference/composed.yaml \\
     --input /data/kodak/ \\
     --output-csv outputs/kodak_snr10.csv \\
     --snr 10 --device cuda:0
 
 # Skip CLIP metrics (faster, quality metrics only)
-python scripts/evaluate.py --config configs/composed.yaml --snr 10 --no-clip
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 10 --no-clip
 
 Options
 -------
@@ -75,7 +75,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config", "-c",
         required=True,
-        help="Path to YAML config file (e.g. configs/composed.yaml)",
+        help="Path to YAML config file (e.g. configs/recipes/inference/composed.yaml)",
     )
     parser.add_argument(
         "--input", "-i",

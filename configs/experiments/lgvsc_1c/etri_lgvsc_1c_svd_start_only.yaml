@@ -1,0 +1,91 @@
+# configs/etri_lgvsc_1c_svd_start_only.yaml – 1C LGVSC-reproduction baseline
+# (mode: svd_start_only).
+#
+# Part of the ETRI 후속 1단계 step 1C reproduction-baseline set (see
+# docs/lgvsc_1c_reproduction_readiness.md). The `video_generator`/`worker`
+# block below is copied verbatim from the already real-GPU-verified
+# `configs/etri_video_eval_lgvsc_worker_svd.yaml` (1B, `n_generate=1`/
+# `generated_frames=1` confirmed) — only output-path fields differ.
+#
+# LGVSC correspondence: real image-conditioned generation, but the standard
+# `StableVideoDiffusionPipeline` accepts ONLY a single start image — no
+# text prompt, no end keyframe, no side-info. It cannot represent either
+# SKIM+SFA (needs caption) or SKEM+DSA (needs end keyframe + caption) — this
+# mode exists purely as a "real diffusion video model, weakest possible
+# conditioning" reference point, not a stand-in for any specific LGVSC
+# component. See docs/lgvsc_1b_worker_readiness.md "SVD vs Wan".
+#
+# `scripts/batch_lgvsc_1c_reproduce.py` loads this file as the base template
+# for mode=svd_start_only and writes a per-video copy (output-path/
+# `_defaults_`/`model_root` fields rewritten only) to
+# outputs/etri_video_eval/lgvsc_1c_reproduce/_generated_configs/svd_start_only/<video_id>.yaml.
+# This file is also directly runnable standalone for a single manual video.
+#
+# Usage (manual, single video, smoke — requires `huggingface-cli login` +
+# license acceptance for this gated model, see docs/lgvsc_1b_worker_readiness.md):
+#   python scripts/evaluate_video.py --config configs/etri_lgvsc_1c_svd_start_only.yaml \
+#       --input data/etri_video_eval/processed/01_person_walk.mp4 \
+#       --captions data/etri_video_eval/captions/01_person_walk.txt \
+#       --no-models --max-frames 14 --save-video
+#
+# Quality-run adjustment points (see docs/lgvsc_1c_reproduction_readiness.md):
+#   - temporal.reuse_threshold: 0.0 below is a smoke-test setting (forces
+#     every inter-frame into generate); raise it to a consistent value across
+#     all four etri_lgvsc_1c_*.yaml configs for a fair comparison table.
+#   - worker.height/width/num_inference_steps/decode_chunk_size are low-VRAM
+#     smoke defaults — raise for quality once a first run succeeds.
+
+_defaults_:
+  - ../../base/channel/awgn
+  - ../../base/model/sgdjscc
+  - ../../base/infer/awgn
+  - ../../base/eval/default
+  - ../../base/video/default
+
+use_phase4: true
+use_phase5: false
+
+temporal:
+  reuse_threshold: 0.0
+
+keyframe_json: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/keyframes.json"
+segment_json: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/segments.json"
+temporal_csv: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/temporal_metrics.csv"
+frame_log_csv: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/temporal_frames.csv"
+video_io:
+  extracted_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/_extracted"
+  recon_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/recon_frames"
+  save_recon_frames: true
+  save_recon_video: true
+  recon_video: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/recon.mp4"
+
+# ── Generate branch: external worker, real (svd) backend, start-only ────────
+# Copied from configs/etri_video_eval_lgvsc_worker_svd.yaml — do not change
+# worker.* here without re-verifying against real GPU (see that file /
+# docs/lgvsc_1b_worker_readiness.md for the environment-fix history).
+use_video_gen: true
+video_generator:
+  enabled: true
+  backend: external_segment_worker
+  conditioning_mode: start_only
+  generate_delta_min: 0.0
+  generate_delta_max: 1.0
+  save_generated_frames: true
+  generated_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_1c_svd_start_only/generated_frames"
+
+  worker:
+    python_bin: "/home/sangukbae/anaconda3/envs/semantic-diffusers/bin/python"
+    backend: svd
+    model_id: "stabilityai/stable-video-diffusion-img2vid-xt"
+    device: "cuda:0"
+    dtype: fp16
+    seed: 1234
+    height: 256
+    width: 256
+    num_inference_steps: 5
+    decode_chunk_size: 1
+    timeout_sec: 1800
+    cleanup_on_success: false
+    extra_env:
+      PYTHONNOUSERSITE: "0"
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"

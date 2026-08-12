@@ -321,7 +321,7 @@ segment 1: conditioning_mode=start_only backend=external_segment_worker:wan:Wan-
 cd sgdjscc_lab
 
 # (1) real MLLM PSSS + real Wan bidirectional (가장 무거움, 최초 준비 필요:
-#     configs/etri_lgvsc_1c_skem_dsa_psss.yaml의 keyframe.psss.real.model_id를
+#     configs/experiments/lgvsc_1c/etri_lgvsc_1c_skem_dsa_psss.yaml의 keyframe.psss.real.model_id를
 #     실제 보유한 MLLM으로 확정)
 conda run -n ptest python scripts/batch_lgvsc_1c_reproduce.py \
     --modes skim_sfa_fixed,skem_dsa_psss --videos 01_person_walk \

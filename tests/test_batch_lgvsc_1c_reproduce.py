@@ -330,23 +330,23 @@ class TestBasedOnVerifiedConfigs:
         return OmegaConf.to_container(OmegaConf.load(path), resolve=False)
 
     def test_wan_skim_sfa_worker_matches_wan_start_only(self):
-        c1c = self._load_yaml(_REPO / "configs" / "etri_lgvsc_1c_wan_skim_sfa.yaml")
-        source = self._load_yaml(_REPO / "configs" / "etri_video_eval_lgvsc_worker_wan_start_only.yaml")
+        c1c = self._load_yaml(_REPO / "configs" / "experiments" / "lgvsc_1c" / "etri_lgvsc_1c_wan_skim_sfa.yaml")
+        source = self._load_yaml(_REPO / "configs" / "experiments" / "etri_video_eval" / "etri_video_eval_lgvsc_worker_wan_start_only.yaml")
         assert c1c["video_generator"]["worker"] == source["video_generator"]["worker"]
         assert c1c["video_generator"]["conditioning_mode"] == source["video_generator"]["conditioning_mode"]
         assert c1c["video_generator"]["conditioning_mode"] == "start_only"
 
     def test_wan_skem_dsa_worker_matches_wan_bidirectional_fixed(self):
-        c1c = self._load_yaml(_REPO / "configs" / "etri_lgvsc_1c_wan_skem_dsa.yaml")
-        source = self._load_yaml(_REPO / "configs" / "etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml")
+        c1c = self._load_yaml(_REPO / "configs" / "experiments" / "lgvsc_1c" / "etri_lgvsc_1c_wan_skem_dsa.yaml")
+        source = self._load_yaml(_REPO / "configs" / "experiments" / "etri_video_eval" / "etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml")
         assert c1c["video_generator"]["worker"] == source["video_generator"]["worker"]
         assert c1c["video_generator"]["conditioning_mode"] == source["video_generator"]["conditioning_mode"]
         assert c1c["video_generator"]["conditioning_mode"] == "bidirectional"
         assert "bidirectional_model_id" in c1c["video_generator"]["worker"]["extra_json"]
 
     def test_svd_start_only_worker_matches_verified_svd_config(self):
-        c1c = self._load_yaml(_REPO / "configs" / "etri_lgvsc_1c_svd_start_only.yaml")
-        source = self._load_yaml(_REPO / "configs" / "etri_video_eval_lgvsc_worker_svd.yaml")
+        c1c = self._load_yaml(_REPO / "configs" / "experiments" / "lgvsc_1c" / "etri_lgvsc_1c_svd_start_only.yaml")
+        source = self._load_yaml(_REPO / "configs" / "experiments" / "etri_video_eval" / "etri_video_eval_lgvsc_worker_svd.yaml")
         assert c1c["video_generator"]["worker"] == source["video_generator"]["worker"]
 
 
@@ -374,8 +374,8 @@ class TestPsssSkemModeConfigs:
         return OmegaConf.to_container(OmegaConf.load(path), resolve=False)
 
     def test_skim_sfa_fixed_worker_matches_wan_start_only_and_is_explicitly_fixed(self):
-        c1c = self._load_yaml(_REPO / "configs" / "etri_lgvsc_1c_skim_sfa_fixed.yaml")
-        source = self._load_yaml(_REPO / "configs" / "etri_video_eval_lgvsc_worker_wan_start_only.yaml")
+        c1c = self._load_yaml(_REPO / "configs" / "experiments" / "lgvsc_1c" / "etri_lgvsc_1c_skim_sfa_fixed.yaml")
+        source = self._load_yaml(_REPO / "configs" / "experiments" / "etri_video_eval" / "etri_video_eval_lgvsc_worker_wan_start_only.yaml")
         assert c1c["video_generator"]["worker"] == source["video_generator"]["worker"]
         assert c1c["video_generator"]["conditioning_mode"] == "start_only"
         # Literal SKIM (zero scene-change signal), not the scene-change-
@@ -384,8 +384,8 @@ class TestPsssSkemModeConfigs:
         assert c1c["keyframe"]["fixed_interval"]["interval"] == 12
 
     def test_skem_dsa_psss_worker_matches_wan_bidirectional_fixed_and_uses_psss_selector(self):
-        c1c = self._load_yaml(_REPO / "configs" / "etri_lgvsc_1c_skem_dsa_psss.yaml")
-        source = self._load_yaml(_REPO / "configs" / "etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml")
+        c1c = self._load_yaml(_REPO / "configs" / "experiments" / "lgvsc_1c" / "etri_lgvsc_1c_skem_dsa_psss.yaml")
+        source = self._load_yaml(_REPO / "configs" / "experiments" / "etri_video_eval" / "etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml")
         assert c1c["video_generator"]["worker"] == source["video_generator"]["worker"]
         assert c1c["video_generator"]["conditioning_mode"] == "bidirectional"
         assert c1c["keyframe"]["selector"] == "psss"

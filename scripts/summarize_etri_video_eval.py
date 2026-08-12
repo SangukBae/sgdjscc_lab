@@ -68,6 +68,8 @@ _SRC = _REPO_ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+from sgdjscc_lab.paths import run_root as _run_root  # noqa: E402 – zero-torch import, safe here
+
 FOCUS_VIDEOS = ("05_camera_pan_person", "06_handheld_sign")
 
 
@@ -653,7 +655,7 @@ def summarize_all(output_root: Path, nomodels_root=None, real_model_root=None) -
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Summarize ETRI 10-video batch outputs")
-    p.add_argument("--output-root", default=str(_REPO_ROOT / "outputs" / "etri_video_eval"))
+    p.add_argument("--output-root", default=str(_run_root() / "etri_video_eval"))
     p.add_argument("--nomodels-root", default=None,
                    help="Sibling no-models batch dir to compare against real-model baseline "
                         "(default: <output-root>_nomodels if it exists)")

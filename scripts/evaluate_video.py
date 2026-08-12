@@ -24,15 +24,15 @@ Outputs
 
 Usage
 -----
-python scripts/evaluate_video.py --config configs/composed_video.yaml \
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml \
     --input /path/to/ordered_frames/ --snr 5 --device cuda:0
 
 # mp4 input + re-assembled mp4 output:
-python scripts/evaluate_video.py --config configs/composed_video.yaml \
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml \
     --input /path/to/clip.mp4 --save-video --snr 5
 
 # Dry run of the keyframe/delta logic without loading SGD-JSCC checkpoints:
-python scripts/evaluate_video.py --config configs/composed_video.yaml \
+python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml \
     --input /path/to/frames/ --no-models
 """
 
@@ -221,8 +221,8 @@ def main() -> None:
         sys.exit(
             "Error: use_phase4 is false — Phase 4-B temporal/video evaluation "
             "requires 'use_phase4: true' in your config.\n"
-            "Add it to configs/eval/default.yaml or your composed config, "
-            "or use configs/composed_phase5_full.yaml for the full Phase 4+5 stack."
+            "Add it to configs/base/eval/default.yaml or your composed config, "
+            "or use configs/recipes/inference/composed_phase5_full.yaml for the full Phase 4+5 stack."
         )
 
     logger.info("Video eval config: %s", args.config)

@@ -1,0 +1,104 @@
+# configs/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml –
+# ExternalSegmentWorkerGenerator REAL segment-level model example config
+# (ETRI 후속 1단계 step 1B, Wan, BIDIRECTIONAL conditioning).
+#
+# *** EXPERIMENTAL — KNOWN TO FAIL ON REAL GPU WITH THE CURRENT ENVIRONMENT ***
+#
+# conditioning_mode: bidirectional sends both `image` (start keyframe) AND
+# `last_image` (end keyframe) to diffusers' WanImageToVideoPipeline. Code-path
+# wiring is correct and covered by fake-pipeline unit tests
+# (tests/test_lgvsc_generate_worker.py::TestRunWanBackendReferenceWiring), but
+# an actual real-GPU run with Wan-AI/Wan2.1-I2V-14B-480P-Diffusers on this
+# machine's `semantic-diffusers` env (diffusers 0.39.0.dev0 dev branch) fails:
+#
+#   RuntimeError: Sizes of tensors must match except in dimension 1. Expected
+#   size 2 but got size 1 for tensor number 1 in the list.
+#   (diffusers/models/transformers/transformer_wan.py:691, inside
+#   torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1))
+#
+# accompanied by:
+#   Expected types for image_encoder: (CLIPVisionModel, NoneType), got
+#   CLIPVisionModelWithProjection.
+#
+# Root cause: the checkpoint ships a CLIPVisionModelWithProjection image
+# encoder, but this diffusers dev-branch pipeline's image-embedding code path
+# expects a plain CLIPVisionModel — a genuine library/checkpoint version
+# incompatibility, not an application bug in this repo. See
+# docs/lgvsc_1b_worker_readiness.md "1B Wan 검토" for the full traceback and
+# investigation notes. Not fixed as part of 1B — pick it up as new work if
+# bidirectional conditioning is needed for a real run (try a stable diffusers
+# release instead of this dev checkout, or a different Wan checkpoint variant
+# whose image_encoder class matches what this pipeline code expects).
+#
+# For a config that IS verified against real GPU output, use
+# configs/etri_video_eval_lgvsc_worker_wan_start_only.yaml instead — that one
+# only uses `image` + `prompt` (no `last_image`) and succeeded in a real
+# smoke test (14B model, 64x64, 63s).
+#
+# Everything else below mirrors wan_start_only.yaml — see that file for the
+# environment-fix history (transformers/peft/torchaudio) and the Wan-vs-SVD
+# rationale.
+
+_defaults_:
+  - ../../base/channel/awgn
+  - ../../base/model/sgdjscc
+  - ../../base/infer/awgn
+  - ../../base/eval/default
+  - ../../base/video/default
+
+use_phase4: true
+use_phase5: false
+
+temporal:
+  # Smoke-test config: with --no-models and repeated captions, the default
+  # reuse threshold would reuse inter-frames and never call the worker. Force
+  # generate decisions so a short --max-frames run actually exercises Wan.
+  reuse_threshold: 0.0
+
+keyframe_json: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_bidirectional_experimental/keyframes.json"
+segment_json: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_bidirectional_experimental/segments.json"
+temporal_csv: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_bidirectional_experimental/temporal_metrics.csv"
+frame_log_csv: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_bidirectional_experimental/temporal_frames.csv"
+video_io:
+  extracted_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_bidirectional_experimental/_extracted"
+  recon_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_bidirectional_experimental/recon_frames"
+  save_recon_frames: true
+  save_recon_video: true
+  recon_video: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_bidirectional_experimental/recon.mp4"
+
+# ── Generate branch: external worker, real (wan) backend, bidirectional ─────
+# bidirectional (not start_only): Wan's last_image argument genuinely uses
+# the end keyframe when it works — see the EXPERIMENTAL warning above for why
+# it currently does NOT work on this machine's real-GPU environment.
+use_video_gen: true
+video_generator:
+  enabled: true
+  backend: external_segment_worker
+  conditioning_mode: bidirectional
+  bidirectional_missing_end_policy: fallback_start_only
+  generate_delta_min: 0.0
+  generate_delta_max: 1.0
+  save_generated_frames: true
+  generated_frames_dir: "${sgdjscc:run}/etri_video_eval/manual_lgvsc_worker_wan_bidirectional_experimental/generated_frames"
+
+  worker:
+    python_bin: "/home/sangukbae/anaconda3/envs/semantic-diffusers/bin/python"
+    backend: wan
+    model_id: "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers"
+    device: "cuda:0"
+    dtype: bf16
+    seed: 1234
+    # Low-VRAM smoke-test defaults for a 16GB card. Increase these only after
+    # a first real worker run produces frames successfully.
+    height: 320
+    width: 320
+    num_inference_steps: 10
+    timeout_sec: 3600               # Wan I2V-14B can be very slow per segment,
+                                    # especially with CPU offload — 60 min ceiling
+    cleanup_on_success: false       # keep generated frames on disk for inspection
+    extra_json: '{"offload_mode": "sequential"}'   # "sequential" | "model" | omit
+    extra_env:
+      # See docs/lgvsc_1b_worker_readiness.md "1B Wan 검토" for why each of
+      # these was needed on this machine's semantic-diffusers env.
+      PYTHONNOUSERSITE: "0"
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"

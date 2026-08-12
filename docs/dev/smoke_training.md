@@ -35,12 +35,12 @@ edge_codec은 캡션 불필요.
 
 ```bash
 # edge_codec (CPU 가능, 가장 먼저)
-python scripts/train.py --config configs/composed_train_edge_codec.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_edge_codec.yaml \
     --train-list ../data/tiny/train/ --val-list ../data/tiny/val/ \
     --device cpu --max-steps 2 --log-every-steps 1 --save-every-steps 2
 
 # jscc / text_dm / controlnet — config만 바꿔 동일 패턴 (device cuda:0)
-python scripts/train.py --config configs/composed_train_jscc.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \
     --train-list ../data/tiny/train/ --device cuda:0 \
     --max-steps 2 --log-every-steps 1 --save-every-steps 2
 ```
@@ -55,11 +55,11 @@ python scripts/train.py --config configs/composed_train_jscc.yaml \
 
 ```bash
 # 2 step → latest/best.pth
-python scripts/train.py --config configs/composed_train_edge_codec.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_edge_codec.yaml \
     --train-list ../data/tiny/train/ --device cpu \
     --max-steps 2 --log-every-steps 1 --save-every-steps 2
 # resume: global_step 2 → 4까지만 돌고 멈춰야 함
-python scripts/train.py --config configs/composed_train_edge_codec.yaml \
+python scripts/train.py --config configs/recipes/training/composed_train_edge_codec.yaml \
     --train-list ../data/tiny/train/ --device cpu \
     --max-steps 4 --log-every-steps 1 --save-every-steps 2 \
     --resume outputs/checkpoints/edge_codec/best.pth

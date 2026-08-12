@@ -57,6 +57,8 @@ sys.path.insert(0, str(_REPO_ROOT / "src"))
 sys.path.insert(0, str(_REPO_ROOT / "scripts"))
 
 import run_etri_video_eval as batch  # noqa: E402  (manifest/config/command builders)
+from sgdjscc_lab.paths import model_root as _model_root  # noqa: E402
+from sgdjscc_lab.paths import run_root as _run_root  # noqa: E402
 
 MODES = {
     "no_models_captions": dict(no_models=True, diffusion_step=None, force_interframe_reuse=False),
@@ -79,7 +81,7 @@ def _parse_args() -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--data-root", default=str(_REPO_ROOT / "data" / "etri_video_eval"))
-    p.add_argument("--output-root", default=str(_REPO_ROOT / "outputs" / "speed_experiment"))
+    p.add_argument("--output-root", default=str(_run_root() / "speed_experiment"))
     p.add_argument("--videos", default=None,
                    help="Comma list of video keys/ids (e.g. 01_person_walk or 01); "
                         "default: the first video in the manifest only.")
@@ -113,7 +115,7 @@ def run_mode_video(mode: str, mode_cfg: dict, entry: dict, output_root: Path, *,
     # nesting depth matches the batch driver's, so the same fix applies here
     # for free; kept explicit below only as a defensive re-assertion in case a
     # future edit changes build_run_config's default.
-    cfg["model_root"] = str((_REPO_ROOT / "checkpoints").resolve())
+    cfg["model_root"] = str(_model_root())
     if mode_cfg["diffusion_step"] is not None:
         cfg["diffusion_step"] = mode_cfg["diffusion_step"]
     cfg_path = out_dir / "config.yaml"

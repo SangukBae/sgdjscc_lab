@@ -9,7 +9,7 @@
 ## 마스터 스위치
 
 ```yaml
-# configs/eval/default.yaml
+# configs/base/eval/default.yaml
 use_phase5: false          # 기본 — 5-A/B/C 전체 비활성화
 
 # Phase 5만 활성화
@@ -23,7 +23,7 @@ use_regeneration_search: false
 `use_phase5: false`이면 개별 플래그(`use_channel_conditioning`, `acceleration.*`,
 `use_srs_v2`, `use_vqa_hallucination`, `use_regeneration_search`)는 무시된다.
 Phase 4와 5는 독립 스위치다. 두 스위치 + 확장 플래그를 모두 켠 preset은
-`configs/composed_phase5_full.yaml`. 런타임 체크는 `phase_gates.effective_flag(..., phase=5)`.
+`configs/recipes/inference/composed_phase5_full.yaml`. 런타임 체크는 `phase_gates.effective_flag(..., phase=5)`.
 
 ---
 

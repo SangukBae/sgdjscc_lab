@@ -80,7 +80,7 @@ python -m pytest tests/test_paper_mode.py -q      # 논문 config 로드 + smoke
 python -m pytest tests/ -q                          # 전체 suite
 
 # 논문 config dry-run (GPU/checkpoint 불필요):
-python scripts/train.py --config configs/paper_train_jscc.yaml \
+python scripts/train.py --config configs/experiments/paper_reproduction/paper_train_jscc.yaml \
     --train-list data/imagenet/train --no-models --epochs 1
 
 # inference-aligned MuGE repr precompute (2ch edge+uncertainty):
@@ -88,7 +88,7 @@ python scripts/prepare_muge_edges.py --input data/coco/train2017 \
     --model-root ../checkpoints --repr edge_uncertainty
 
 # eval paper_mode 강제 (확장 OFF → 하나라도 켜지면 hard exit):
-python scripts/evaluate.py --config configs/paper_eval_awgn.yaml \
+python scripts/evaluate.py --config configs/experiments/paper_reproduction/paper_eval_awgn.yaml \
     --input data/kodak --snr 10
 ```
 
@@ -101,7 +101,7 @@ no-op으로 degrade). `train.batch_size`는 **per-rank**:
 
 ```bash
 torchrun --standalone --nproc_per_node=3 scripts/train.py \
-    --config configs/paper_train_text_dm.yaml \
+    --config configs/experiments/paper_reproduction/paper_train_text_dm.yaml \
     --train-list data/coco/train2017 --val-list data/coco/val2017 --batch-size 21
 ```
 
@@ -127,4 +127,4 @@ token). Export + evaluation은 single-process 유지. `DistributedSampler` paddi
   `prepare_muge_edges.py`, `configs/paper_*.yaml`, `tests/test_{paper_mode,ddp}.py`.
 - **수정**: `training/{stages,stage_runners}.py`, `data/datasets.py`,
   `models/edge_jscc.py`, `training/edge_transport.py`, `pipelines/train_pipeline.py`,
-  `scripts/{generate_captions,train,evaluate}.py`, `configs/train/default.yaml`.
+  `scripts/{generate_captions,train,evaluate}.py`, `configs/base/train/default.yaml`.
