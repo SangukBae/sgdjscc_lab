@@ -84,6 +84,46 @@ python scripts/batch_lgvsc_1c_reproduce.py \
 
 ### 실제 GPU 검증 (사용자가 직접 실행)
 
+#### RTX 4090 3장 서버: 한 Wan 파이프라인을 세 GPU에 분산
+
+호스트 RAM이 62 GiB이고 swap이 없는 현재 서버에서는 Wan 작업 세 개를 GPU별
+독립 프로세스로 동시에 띄우지 않는다. 각 프로세스가 별도의 14B 체크포인트와
+CPU offload 메모리를 요구하기 때문이다. 대신 아래 옵션으로 **한 작업의 Wan
+파이프라인을 GPU 0/1/2에 분산**하고, 영상과 모드는 순차 처리한다. GPU 0에는
+SGD-JSCC/PSSS 실행 공간을 남기고 GPU 1/2에 더 많은 메모리를 배정한다.
+
+```bash
+export CUDA_VISIBLE_DEVICES=0,1,2
+export SGDJSCC_LGVSC_WORKER_PYTHON=/home/wilco/SangukBae/Semantic/.venvs/lgvsc_gen/bin/python
+
+python scripts/batch_lgvsc_1c_reproduce.py \
+    --modes skem_dsa_psss --videos 01_person_walk \
+    --max-frames 14 --device cuda:0 \
+    --worker-device-map balanced \
+    --worker-max-memory '{"0":"8GiB","1":"22GiB","2":"22GiB","cpu":"40GiB"}'
+```
+
+`CUDA_VISIBLE_DEVICES`를 `0` 하나로 제한하면 worker가 GPU 1/2를 볼 수 없으므로
+위 값을 유지한다. 생성 config에서는 기존 `offload_mode: sequential`이 제거되고
+`device_map: balanced`가 적용된다. 메모리 부족 시 GPU 0 한도를 먼저 6 GiB로
+낮추고 CPU 한도는 호스트의 다른 프로세스를 고려해 40 GiB 이상 올리지 않는다.
+
+위 smoke가 성공한 뒤 실제 비교는 `skem_dsa_psss`를 먼저 실행하고, 그 결과의
+keyframe 수에 맞춰 `skim_sfa_fixed`를 실행한다.
+
+```bash
+python scripts/batch_lgvsc_1c_reproduce.py \
+    --modes skem_dsa_psss --device cuda:0 --skip-existing \
+    --worker-device-map balanced \
+    --worker-max-memory '{"0":"8GiB","1":"22GiB","2":"22GiB","cpu":"40GiB"}'
+
+python scripts/batch_lgvsc_1c_reproduce.py \
+    --modes skim_sfa_fixed --device cuda:0 --skip-existing \
+    --keyframe-count-match-from skem_dsa_psss \
+    --worker-device-map balanced \
+    --worker-max-memory '{"0":"8GiB","1":"22GiB","2":"22GiB","cpu":"40GiB"}'
+```
+
 ```bash
 # 모드 하나, 영상 하나, smoke 크기 (권장 첫 실행)
 python scripts/batch_lgvsc_1c_reproduce.py \

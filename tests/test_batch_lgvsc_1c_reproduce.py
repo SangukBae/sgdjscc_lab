@@ -763,6 +763,36 @@ class TestBuildRunConfigCbrMatch:
         assert cfg["keyframe"]["fixed_interval"]["interval"] == 12
 
 
+class TestWorkerPlacementOverride:
+    def test_balanced_map_replaces_offload_and_preserves_model_options(self, tmp_path):
+        memory = {"0": "8GiB", "1": "22GiB", "2": "22GiB", "cpu": "40GiB"}
+        cfg = driver.build_run_config(
+            "skem_dsa_psss", tmp_path / "out",
+            worker_device_map="balanced", worker_max_memory=memory,
+        )
+        worker_cfg = cfg["video_generator"]["worker"]
+        extra = json.loads(worker_cfg["extra_json"])
+
+        assert "offload_mode" not in extra
+        assert extra["device_map"] == "balanced"
+        assert extra["max_memory"] == memory
+        assert extra["bidirectional_model_id"].endswith("FLF2V-14B-720P-Diffusers")
+        assert worker_cfg["extra_env"]["HF_ENABLE_PARALLEL_LOADING"] == "YES"
+
+    def test_override_is_ignored_for_non_wan_mode(self, tmp_path):
+        cfg = driver.build_run_config(
+            "mock_baseline", tmp_path / "out",
+            worker_device_map="balanced", worker_max_memory={"0": "8GiB"},
+        )
+        assert not (cfg["video_generator"].get("worker") or {}).get("extra_json")
+
+    def test_cli_requires_device_map_for_memory_limits(self, tmp_path):
+        assert driver.main([
+            "--data-root", str(tmp_path),
+            "--worker-max-memory", '{"0":"8GiB"}',
+        ]) == 1
+
+
 class TestCbrMatchEndToEnd:
     def test_run_job_records_cbr_match_and_summary_reflects_it(self, tmp_path, monkeypatch):
         data_root = tmp_path / "data"

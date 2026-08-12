@@ -388,6 +388,9 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
     ``'{"offload_mode": "sequential"}'`` for a much lower (but much slower)
     VRAM footprint via ``enable_sequential_cpu_offload()``, or
     ``'{"offload_mode": "model"}'`` for the faster ``enable_model_cpu_offload()``.
+    On a multi-GPU host, ``device_map="balanced"`` and an optional
+    ``max_memory`` mapping load one pipeline across all visible GPUs. Device
+    mapping and CPU offload are mutually exclusive placement strategies.
 
     Checkpoint choice for bidirectional (``last_image``) conditioning
     -------------------------------------------------------------------
@@ -451,7 +454,33 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
         except (json.JSONDecodeError, TypeError):
             extra = {}
     offload_mode = extra.get("offload_mode")
+    device_map = extra.get("device_map")
+    raw_max_memory = extra.get("max_memory")
     bidirectional_model_id = extra.get("bidirectional_model_id")
+
+    if device_map is not None and offload_mode is not None:
+        raise WorkerBackendUnavailableError(
+            "Wan worker extra_json cannot set both `device_map` and "
+            "`offload_mode`; use device_map=balanced for multi-GPU sharding "
+            "or offload_mode for single-GPU CPU offload."
+        )
+    max_memory = None
+    if raw_max_memory is not None:
+        if device_map is None:
+            raise WorkerBackendUnavailableError(
+                "Wan worker `max_memory` requires `device_map` in extra_json."
+            )
+        if not isinstance(raw_max_memory, dict):
+            raise WorkerBackendUnavailableError(
+                "Wan worker `max_memory` must be a JSON object such as "
+                "{\"0\": \"8GiB\", \"1\": \"22GiB\", \"cpu\": \"40GiB\"}."
+            )
+        # JSON object keys are strings, while Accelerate expects GPU indices
+        # as integers and the CPU key as the literal string "cpu".
+        max_memory = {
+            int(key) if str(key).isdigit() else key: value
+            for key, value in raw_max_memory.items()
+        }
 
     start_arr = load_keyframe_image(manifest_dir / manifest["start_keyframe_image"])
     start_img = Image.fromarray((start_arr * 255.0).round().astype(np.uint8))
@@ -475,8 +504,17 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
         model_id = args.model_id or default_model_id
 
     try:
-        pipe = WanImageToVideoPipeline.from_pretrained(model_id, torch_dtype=torch_dtype)
-        if offload_mode == "sequential":
+        load_kwargs = {"torch_dtype": torch_dtype}
+        if device_map is not None:
+            load_kwargs["device_map"] = device_map
+            if max_memory is not None:
+                load_kwargs["max_memory"] = max_memory
+        pipe = WanImageToVideoPipeline.from_pretrained(model_id, **load_kwargs)
+        if device_map is not None:
+            # from_pretrained() has already placed every component according
+            # to the map. Calling .to() or enabling offload would discard it.
+            pass
+        elif offload_mode == "sequential":
             pipe.enable_sequential_cpu_offload(device=args.device)
         elif offload_mode == "model":
             pipe.enable_model_cpu_offload(device=args.device)
@@ -489,7 +527,8 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
             "access to download weights on first use (the smallest official "
             "Wan I2V checkpoint is ~90GB); (2) enough VRAM — set "
             "video_generator.worker.extra_json='{\"offload_mode\": \"sequential\"}' "
-            "for a much lower-VRAM (but much slower) CPU-offloaded run; "
+            "for a much lower-VRAM (but much slower) CPU-offloaded run, or "
+            "use device_map=balanced to shard across visible GPUs; "
             "(3) Hugging Face access if using a gated mirror."
         ) from exc
 
@@ -616,6 +655,7 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
             "two-image start+end conditioning, not a simulated/interpolated blend)"
         )
     notes_caption = f", prompt=caption ({prompt[:60]!r})" if used_caption else ", no caption available (empty prompt)"
+    notes_placement = f", device_map={device_map}" if device_map is not None else ""
 
     frames_out, metadata = {}, {}
     for idx in target_indices:
@@ -645,7 +685,8 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
             "used_side_info": used_side_info,
             "mock": False,
             "notes": (
-                f"diffusers WanImageToVideoPipeline — {notes_conditioning}{notes_caption}. "
+                f"diffusers WanImageToVideoPipeline — {notes_conditioning}{notes_caption}"
+                f"{notes_placement}. "
                 f"Generated an internal {n_frames}-frame Wan clip (segment span "
                 f"[{start_frame_index}, {span_end}]) and mapped target index {idx} "
                 f"(segment offset {idx - start_frame_index}) to clip position "

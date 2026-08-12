@@ -503,6 +503,64 @@ class TestRunWanBackendReferenceWiring:
         assert offload_calls == [("sequential", "cuda:0")]
         assert set(result["frames"]) == {1}
 
+    def test_balanced_device_map_and_memory_limits_are_forwarded(self, tmp_path, monkeypatch):
+        load_calls = []
+        placement_calls = []
+
+        class _FakePipeline:
+            @classmethod
+            def from_pretrained(cls, model_id, **kwargs):
+                load_calls.append((model_id, kwargs))
+                self = cls()
+                self.transformer = types.SimpleNamespace(
+                    config=types.SimpleNamespace(pos_embed_seq_len=None)
+                )
+                return self
+
+            def to(self, device):
+                placement_calls.append(("to", device))
+                return self
+
+            def enable_sequential_cpu_offload(self, device=None):
+                placement_calls.append(("sequential", device))
+
+            def __call__(self, image, **kwargs):
+                frames = [
+                    Image.new("RGB", (kwargs["width"], kwargs["height"]))
+                    for _ in range(kwargs["num_frames"])
+                ]
+                return types.SimpleNamespace(frames=[frames])
+
+        monkeypatch.setitem(
+            sys.modules, "diffusers", types.SimpleNamespace(WanImageToVideoPipeline=_FakePipeline),
+        )
+        _, manifest = _write_manifest(tmp_path, [1])
+        result = worker.run_wan_backend(manifest, tmp_path, self._args(
+            device="cuda:0",
+            extra_json=json.dumps({
+                "device_map": "balanced",
+                "max_memory": {
+                    "0": "8GiB", "1": "22GiB", "2": "22GiB", "cpu": "40GiB",
+                },
+            }),
+        ))
+
+        assert load_calls[0][0] == "fake/wan"
+        assert load_calls[0][1]["device_map"] == "balanced"
+        assert load_calls[0][1]["max_memory"] == {
+            0: "8GiB", 1: "22GiB", 2: "22GiB", "cpu": "40GiB",
+        }
+        assert placement_calls == []
+        assert "device_map=balanced" in result["metadata"][1]["notes"]
+
+    def test_device_map_and_cpu_offload_are_rejected_together(self, tmp_path, monkeypatch):
+        monkeypatch.setitem(sys.modules, "diffusers", self._fake_diffusers_module([]))
+        _, manifest = _write_manifest(tmp_path, [1])
+        with pytest.raises(worker.WorkerBackendUnavailableError, match="cannot set both"):
+            worker.run_wan_backend(manifest, tmp_path, self._args(
+                extra_json='{"device_map":"balanced","offload_mode":"sequential"}',
+            ))
+
     def test_missing_wan_pipeline_class_raises_worker_backend_unavailable(self, tmp_path):
         """ptest's own diffusers (0.26.3, needed by SGD-JSCC's own diffusion
         reconstruction — NOT installed for this feature) has no

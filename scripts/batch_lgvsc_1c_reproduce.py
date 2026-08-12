@@ -410,7 +410,9 @@ def resolve_cbr_match(
     }
 
 
-def build_run_config(mode: str, out_dir: Path, cbr_match: dict = None) -> dict:
+def build_run_config(mode: str, out_dir: Path, cbr_match: dict = None, *,
+                     worker_device_map: str = None,
+                     worker_max_memory: dict = None) -> dict:
     """Load ``configs/experiments/lgvsc_1c/etri_lgvsc_1c_<mode>.yaml`` and rewrite it into a
     per-video-ready config dict.
 
@@ -433,9 +435,11 @@ def build_run_config(mode: str, out_dir: Path, cbr_match: dict = None) -> dict:
 
     Everything else — most importantly ``video_generator.backend``/
     ``conditioning_mode``/``worker.*`` — is carried over UNCHANGED from the
-    base template, so a generated wan_skem_dsa config's worker block is
-    exactly the base template's (which is itself a copy of the verified
-    wan_bidirectional_fixed.yaml). ``input_path`` is deliberately left unset
+    base template unless a worker placement override is explicitly supplied.
+    A placement override preserves backend/model-specific extra JSON (such as
+    ``bidirectional_model_id``), replaces CPU offload with Diffusers' pipeline
+    ``device_map``, and optionally supplies per-device memory limits.
+    ``input_path`` is deliberately left unset
     here — the driver passes ``--input``/``--captions`` as CLI flags (see
     build_command), matching how every other 1B/1C config in this repo is
     actually invoked.
@@ -483,6 +487,30 @@ def build_run_config(mode: str, out_dir: Path, cbr_match: dict = None) -> dict:
     }
     vg = dict(cfg.get("video_generator") or {})
     vg["generated_frames_dir"] = str(out_dir / "generated_frames")
+    if worker_device_map is not None or worker_max_memory is not None:
+        worker = dict(vg.get("worker") or {})
+        if worker_device_map is None:
+            raise ValueError("worker_max_memory requires worker_device_map")
+        # SVD and mock modes do not use the Wan placement contract. This lets
+        # --modes all apply one command-line override only where it is valid.
+        if str(worker.get("backend")) == "wan":
+            try:
+                extra = json.loads(worker.get("extra_json") or "{}")
+            except (json.JSONDecodeError, TypeError) as exc:
+                raise ValueError(
+                    f"Mode {mode!r} has invalid worker.extra_json"
+                ) from exc
+            if not isinstance(extra, dict):
+                raise ValueError(f"Mode {mode!r} worker.extra_json must be a JSON object")
+            extra.pop("offload_mode", None)
+            extra["device_map"] = worker_device_map
+            if worker_max_memory is not None:
+                extra["max_memory"] = dict(worker_max_memory)
+            worker["extra_json"] = json.dumps(extra, separators=(",", ":"))
+            extra_env = dict(worker.get("extra_env") or {})
+            extra_env["HF_ENABLE_PARALLEL_LOADING"] = "YES"
+            worker["extra_env"] = extra_env
+            vg["worker"] = worker
     cfg["video_generator"] = vg
     return cfg
 
@@ -596,7 +624,8 @@ def verify_keyframe_count_match(out_dir: Path, plan: dict) -> dict:
 
 def run_job(mode: str, entry: dict, output_root: Path, *, device=None, max_frames=None,
             no_models: bool = False, skip_existing: bool = False, dry_run: bool = False,
-            cbr_match_from: str = None) -> dict:
+            cbr_match_from: str = None, worker_device_map: str = None,
+            worker_max_memory: dict = None) -> dict:
     """Generate the per-video config, then either print (dry_run) or actually
     run the evaluate_video.py subprocess for one (mode, video) job.
 
@@ -622,7 +651,11 @@ def run_job(mode: str, entry: dict, output_root: Path, *, device=None, max_frame
         )
         if cbr_match_from else None
     )
-    cfg = build_run_config(mode, out_dir, cbr_match=cbr_match)
+    cfg = build_run_config(
+        mode, out_dir, cbr_match=cbr_match,
+        worker_device_map=worker_device_map,
+        worker_max_memory=worker_max_memory,
+    )
 
     match_plan = cfg.get("_keyframe_count_match")
     if skip_existing and marker.exists():
@@ -1121,6 +1154,20 @@ def build_summary(output_root: Path, modes: list, entries: list, status_by_id: d
 # CLI
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _parse_worker_max_memory(value: str) -> dict:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise argparse.ArgumentTypeError(
+            f"--worker-max-memory must be valid JSON: {exc}"
+        ) from exc
+    if not isinstance(parsed, dict) or not parsed:
+        raise argparse.ArgumentTypeError(
+            "--worker-max-memory must be a non-empty JSON object"
+        )
+    return parsed
+
+
 def _parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="ETRI 후속 1단계 1C — LGVSC-reproduction-baseline batch driver",
@@ -1135,6 +1182,15 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--max-frames", type=int, default=None,
                    help="Forwarded to evaluate_video.py's --max-frames (smoke: 14; omit for full clip).")
     p.add_argument("--device", default=None, help="Forwarded to evaluate_video.py's --device.")
+    p.add_argument(
+        "--worker-device-map", choices=("balanced",), default=None,
+        help="Shard each Wan worker pipeline across all visible GPUs. Jobs still run sequentially.",
+    )
+    p.add_argument(
+        "--worker-max-memory", type=_parse_worker_max_memory, default=None,
+        help='JSON memory map for the worker, e.g. {"0":"8GiB","1":"22GiB",'
+             '"2":"22GiB","cpu":"40GiB"}; requires --worker-device-map.',
+    )
     p.add_argument("--no-models", action="store_true",
                    help="Forwarded to evaluate_video.py's --no-models — disables SGD-JSCC Rx "
                         "reconstruction ONLY; svd_start_only/wan_* worker backends still run for "
@@ -1165,6 +1221,9 @@ def _parse_args(argv=None) -> argparse.Namespace:
 
 def main(argv=None) -> int:
     args = _parse_args(argv)
+    if args.worker_max_memory is not None and args.worker_device_map is None:
+        print("Error: --worker-max-memory requires --worker-device-map.", file=sys.stderr)
+        return 1
     # Always absolute — build_run_config() writes out_dir-derived paths
     # verbatim into the generated per-video config, which config.py then
     # resolves relative to the GENERATED config file's own directory (not the
@@ -1229,6 +1288,8 @@ def main(argv=None) -> int:
                 device=args.device, max_frames=args.max_frames, no_models=args.no_models,
                 skip_existing=args.skip_existing, dry_run=args.dry_run,
                 cbr_match_from=keyframe_count_match_from,
+                worker_device_map=args.worker_device_map,
+                worker_max_memory=args.worker_max_memory,
             )
             runs.append(status)
             tag = "DRY-RUN" if status["status"] == "dry_run" else status["status"].upper()
