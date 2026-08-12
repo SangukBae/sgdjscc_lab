@@ -51,24 +51,12 @@ from typing import Dict, List, Optional
 import torch
 import torch.nn.functional as F
 
+from sgdjscc_lab.core.vocabulary import COCO_CLASSES
+
 logger = logging.getLogger(__name__)
 
-# COCO 80-class vocabulary (used as default object probe set)
-_COCO_CLASSES: List[str] = [
-    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train",
-    "truck", "boat", "traffic light", "fire hydrant", "stop sign",
-    "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow",
-    "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag",
-    "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite",
-    "baseball bat", "baseball glove", "skateboard", "surfboard",
-    "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon",
-    "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot",
-    "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant",
-    "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote",
-    "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
-    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
-    "hair drier", "toothbrush",
-]
+# Backward-compatible private alias. New code imports the shared constant.
+_COCO_CLASSES = COCO_CLASSES
 
 
 class ObjectPreservationEvaluator:

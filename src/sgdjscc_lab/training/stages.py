@@ -28,113 +28,21 @@ from typing import Optional
 
 from omegaconf import DictConfig, OmegaConf
 
-# ── Stage identifiers ─────────────────────────────────────────────────────────
-# Core baseline = the three sequential SGD-JSCC stages below.
-STAGE_JSCC = "jscc"
-STAGE_TEXT_DM = "text_dm"
-STAGE_CONTROLNET = "controlnet"
-# Supporting codec-training step for Stage 3's `edge_jscc` transport: trains the
-# dedicated edge JSCC (BCE+Dice) whose checkpoint Stage 3 loads as side info.
-# It is NOT a stage of the main image pipeline — it produces a component the
-# controlnet baseline consumes. See docs/training_scaffold.md "Edge codec".
-STAGE_EDGE_CODEC = "edge_codec"
-# Supporting step: train the blind SNR estimator (paper Sec. IV-C, eq. 15) on
-# image latents with synthetic noise. See docs/training_scaffold.md "CSI".
-STAGE_CSI_ESTIMATION = "csi_estimation"
-# Paper-appendix EXTENSION (not part of the core baseline): joint JSCC↔DM
-# end-to-end fine-tuning. See docs/training_scaffold.md "End-to-end fine-tuning".
-STAGE_END_TO_END_FT = "end_to_end_ft"
-# The three core baseline stages, in training order.
-CORE_STAGES = (STAGE_JSCC, STAGE_TEXT_DM, STAGE_CONTROLNET)
-VALID_STAGES = (
-    STAGE_JSCC, STAGE_TEXT_DM, STAGE_CONTROLNET,
-    STAGE_EDGE_CODEC, STAGE_CSI_ESTIMATION, STAGE_END_TO_END_FT,
+from sgdjscc_lab.core.stages import (
+    CORE_STAGES,
+    STAGE_CONTROLNET,
+    STAGE_CSI_ESTIMATION,
+    STAGE_EDGE_CODEC,
+    STAGE_END_TO_END_FT,
+    STAGE_JSCC,
+    STAGE_TEXT_DM,
+    VALID_CAPTION_SOURCES,
+    VALID_EDGE_SOURCES,
+    VALID_STAGES,
+    StageConfigError,
+    resolve_dataset_type,
+    resolve_stage,
 )
-
-# ── Default dataset type per stage ────────────────────────────────────────────
-# Used when ``train.dataset.type`` is "auto" (the default).
-STAGE_DATASET_TYPE = {
-    STAGE_JSCC: "image",
-    STAGE_TEXT_DM: "text_image",
-    STAGE_CONTROLNET: "text_image_edge",
-    # edge codec trains on edge maps only — no captions needed.
-    STAGE_EDGE_CODEC: "edge",
-    # CSI estimation trains on image latents (image-only data).
-    STAGE_CSI_ESTIMATION: "image",
-    # e2e needs captions; edge only when the ControlNet branch is fine-tuned.
-    STAGE_END_TO_END_FT: "text_image",
-}
-
-# Caption sources understood by TextImage / TextImageEdge datasets.
-#   single-caption : sidecar | manifest | filename
-#   multi-caption  : coco_json (COCO captions_*.json) | multi_manifest (JSON
-#                    {filename: [captions]}); one caption is picked per access via
-#                    train.dataset.caption_select (first | longest | random).
-VALID_CAPTION_SOURCES = ("sidecar", "manifest", "filename", "coco_json", "multi_manifest")
-# Edge sources understood by TextImageEdge / EdgeOnly datasets.
-#   canny        : on-the-fly Canny (paper-like / ablation).
-#   sidecar      : a generic precomputed edge "<stem>_edge.png".
-#   muge_sidecar : a precomputed MuGE soft edge "<stem>_muge.png" (paper-faithful
-#                  structure; produce with scripts/prepare_muge_edges.py).
-#   muge_runtime : run the MuGE extractor at train time (reuses
-#                  guidance/edge_extractor; needs the MuGE checkpoint + model_root;
-#                  recommend num_workers=0 — see data/datasets.py).
-VALID_EDGE_SOURCES = ("sidecar", "canny", "muge_sidecar", "muge_runtime")
-
-
-class StageConfigError(ValueError):
-    """Raised when a stage's required config inputs are missing or inconsistent.
-
-    The CLI converts this into an early, explicit failure so a misconfigured run
-    fails *before* loading checkpoints — never silently doing the wrong thing.
-    """
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Resolution
-# ─────────────────────────────────────────────────────────────────────────────
-
-def resolve_stage(cfg: DictConfig) -> str:
-    """Return the active training stage from ``train.stage`` (default ``jscc``).
-
-    Raises
-    ------
-    StageConfigError
-        If ``train.stage`` is set to an unknown value.
-    """
-    stage = OmegaConf.select(cfg, "train.stage", default=STAGE_JSCC)
-    stage = str(stage).lower().strip()
-    if stage not in VALID_STAGES:
-        raise StageConfigError(
-            f"Unknown train.stage={stage!r}. "
-            f"Valid stages: {', '.join(VALID_STAGES)}."
-        )
-    return stage
-
-
-def resolve_dataset_type(cfg: DictConfig, stage: Optional[str] = None) -> str:
-    """Return the dataset type for *stage*.
-
-    ``train.dataset.type`` may be ``auto`` (→ derived from the stage) or one of
-    ``image`` / ``text_image`` / ``text_image_edge`` to override.
-    """
-    if stage is None:
-        stage = resolve_stage(cfg)
-    ds_type = str(OmegaConf.select(cfg, "train.dataset.type", default="auto")).lower()
-    if ds_type == "auto":
-        # end_to_end_ft needs edges only when the ControlNet branch is fine-tuned;
-        # promoting the dataset keeps config intent and the forward path aligned.
-        if stage == STAGE_END_TO_END_FT and bool(OmegaConf.select(
-                cfg, "train.end_to_end_ft.train_controlnet", default=False)):
-            return "text_image_edge"
-        return STAGE_DATASET_TYPE[stage]
-    valid = set(STAGE_DATASET_TYPE.values())
-    if ds_type not in valid:
-        raise StageConfigError(
-            f"Unknown train.dataset.type={ds_type!r}. "
-            f"Valid: auto, {', '.join(sorted(valid))}."
-        )
-    return ds_type
 
 
 # ─────────────────────────────────────────────────────────────────────────────

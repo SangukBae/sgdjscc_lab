@@ -48,7 +48,7 @@ from typing import Callable, Optional
 
 import torch
 
-from sgdjscc_lab.training.noise_schedule import SigmoidNoiseScheduler
+from sgdjscc_lab.core.noise_schedule import SigmoidNoiseScheduler
 
 logger = logging.getLogger(__name__)
 

@@ -24,7 +24,7 @@ from typing import List, Optional
 
 import torch
 
-from sgdjscc_lab.evaluators.object_preservation import _COCO_CLASSES
+from sgdjscc_lab.core.vocabulary import COCO_CLASSES
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +78,7 @@ class ObjectExtractor:
         device: Optional[torch.device] = None,
     ) -> None:
         self._clip = clip_evaluator
-        self.vocabulary = vocabulary or list(_COCO_CLASSES)
+        self.vocabulary = vocabulary or list(COCO_CLASSES)
         self.presence_threshold = presence_threshold
         self._device = device or torch.device("cpu")
         self._obj_pres = None

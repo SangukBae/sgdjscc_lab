@@ -33,7 +33,7 @@ from omegaconf import OmegaConf
 
 from sgdjscc_lab.data.image_dataset import _IMG_EXTS, _list_images
 from sgdjscc_lab.data.transforms import ImageTransform, build_transform
-from sgdjscc_lab.training.stages import (
+from sgdjscc_lab.core.stages import (
     STAGE_CONTROLNET,
     VALID_CAPTION_SOURCES,
     VALID_EDGE_SOURCES,
@@ -674,7 +674,7 @@ def build_dataset_for_stage(
 ) -> Dataset:
     """Build the dataset matching the active stage / ``train.dataset.type``.
 
-    Selection (via :func:`~sgdjscc_lab.training.stages.resolve_dataset_type`):
+    Selection (via :func:`~sgdjscc_lab.core.stages.resolve_dataset_type`):
       ``image`` → ImageOnlyDataset, ``text_image`` → TextImageDataset,
       ``text_image_edge`` → TextImageEdgeDataset.
     """
