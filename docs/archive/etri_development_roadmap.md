@@ -66,4 +66,3 @@ stage 인식 학습 프레임워크가 논문 재현을 뒷받침한다([trainin
 
 ## 관련 문서
 - [../etri_strategy.md](../etri_strategy.md) · [../etri_overview.md](../etri_overview.md) · [../phase4.md](../phase4.md) · [../phase5.md](../phase5.md)
-</content>

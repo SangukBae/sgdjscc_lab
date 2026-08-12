@@ -68,7 +68,7 @@ edge codec → ControlNet, JSCC 선택)는
 
 ```bash
 torchrun --standalone --nproc_per_node=3 scripts/train.py \
-    --config configs/paper_train_<stage>.yaml \
+    --config configs/experiments/paper_reproduction/paper_train_<stage>.yaml \
     --train-list data/coco/train2017 --val-list data/coco/val2017 --batch-size 21
 ```
 

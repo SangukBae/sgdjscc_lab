@@ -42,7 +42,7 @@ guardrail이 재현 경로를 어떻게 강제하는지에 대한 single source 
 
 `paper_mode`는 어떤 확장도 **삭제하지 않는다** — 모든 경로는 `paper_mode: false`에서
 그대로 동작. 논문 경로는
-`configs/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml` + `paper_eval_awgn.yaml`에
+`configs/experiments/paper_reproduction/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml` + `paper_eval_awgn.yaml`에
 번들됨.
 
 ## 항목별 상태 (8개 task)
@@ -56,7 +56,7 @@ guardrail이 재현 경로를 어떻게 강제하는지에 대한 single source 
 | 5 | Edge-codec SNR conditioning | **done** | `edge_codec.multi_snr.{enabled,min_db,max_db}`가 edge-link SNR sampling → `EdgeJSCC.reconstruct(snr_db=…)` → adaLN. paper_mode가 요구. |
 | 6 | Stage-3 train/infer edge 경로 통합 | **partial (논문 기본)** | paper_mode가 `edge_jscc` 강제, `shared_vae` 차단; codec `in_ch`는 `muge_repr`에서 유도(dataset→codec→transport 정렬). Bit-exact train≡infer는 **주장 안 함**(inference는 canny-transmission/VAE 경로 사용). |
 | 7 | Complex phase / joint CSI (Alg. 3) | **partial (faithful layer, unsupported e2e)** | `channels/complex_ops.py`: complex 채널, 2-step equalization(`e^{-jφ̂}` 후 `/√(\|h\|²+σ²)`), phase/SNR 교대 loop. 공개 JSCC는 **real** latent 출력 → e2e complex는 비공개 retrain 필요. |
-| 8 | Paper-only config 번들 | **done** | `configs/paper_*` + eval `paper_mode` 강제(`enforce_eval` + `enforce_eval_metrics`). |
+| 8 | Paper-only config 번들 | **done** | `configs/experiments/paper_reproduction/paper_*` + eval `paper_mode` 강제(`enforce_eval` + `enforce_eval_metrics`). |
 
 ## 남은 논문 비등가성 (정직하게)
 
@@ -124,7 +124,7 @@ token). Export + evaluation은 single-process 유지. `DistributedSampler` paddi
 ## 파일 (요약)
 
 - **신규**: `paper_mode.py`, `distributed.py`, `channels/complex_ops.py`,
-  `prepare_muge_edges.py`, `configs/paper_*.yaml`, `tests/test_{paper_mode,ddp}.py`.
+  `prepare_muge_edges.py`, `configs/experiments/paper_reproduction/paper_*.yaml`, `tests/test_{paper_mode,ddp}.py`.
 - **수정**: `training/{stages,stage_runners}.py`, `data/datasets.py`,
   `models/edge_jscc.py`, `training/edge_transport.py`, `pipelines/train_pipeline.py`,
   `scripts/{generate_captions,train,evaluate}.py`, `configs/base/train/default.yaml`.

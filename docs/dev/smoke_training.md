@@ -11,7 +11,7 @@
 ## 준비
 
 ```bash
-cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab && conda activate ptest
+cd /path/to/sgdjscc_lab && conda activate ptest
 
 # stage 공유 tiny dataset (이미지 + 캡션 sidecar)
 python scripts/make_tiny_dataset.py --stage all --out ../data/tiny --n 6 --val 2 --size 128
@@ -91,4 +91,3 @@ CPU 단위/통합 테스트도 통과해야 한다: `python -m pytest tests/test
 
 ## 관련 문서
 - [../training_scaffold.md](../training_scaffold.md) · [../etri_strategy.md](../etri_strategy.md)
-</content>

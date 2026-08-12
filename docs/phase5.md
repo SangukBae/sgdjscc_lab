@@ -103,7 +103,7 @@ Phase 5 기능은 독립 모듈이 아니라 **메인 `scripts/evaluate.py` 경�
 `acceleration.early_exit`, `use_srs_v2`(+`vqa_backend`), `use_regeneration_search`,
 `channel_condition` config 블록(encoder/policy가 소비).
 
-config: `configs/channel/{rayleigh,fast_fading,packet_drop}.yaml`,
+config: `configs/base/channel/{rayleigh,fast_fading,packet_drop}.yaml`,
 `model/channel_conditioned.yaml`, `acceleration/default.yaml`, `eval/phase5.yaml`,
 composed 예시 `composed_phase5.yaml`.
 
@@ -122,4 +122,3 @@ composed 예시 `composed_phase5.yaml`.
 - 학습된 consistency/distilled student 없음(few-step은 결정론적 근사).
 - 샘플러 내부 인터럽트는 연속 샘플러만, discrete는 fallback.
 - Fading `signal_scale`/step-matching은 AWGN 공식을 재사용(fading에선 근사).
-</content>

@@ -43,4 +43,3 @@ ETRI 과제 초점은 최대 `PSNR`이 아니라 **무선 전송 후 시맨틱 �
 | 의미 충실도 평가 체계 | SRS 계열, 객체 보존율, 누락률, 추가 객체율, 의미 일치 기반 최종 선택 |
 | 시간축 확장 | keyframe/scene change 처리, temporal evaluator, temporal SRS |
 | 보조 최적화 | 가이드 손상 모델, 저지연 샘플링, 채널 조건화, 이후 MIMO/OFDM |
-</content>

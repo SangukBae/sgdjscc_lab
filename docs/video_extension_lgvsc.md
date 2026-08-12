@@ -500,7 +500,7 @@ bidirectional 실제 GPU 문제 해결" 참조.
 **1C 재현 준비 (2026-07)**: 1B가 검증한 real backend들을 그대로 재사용해
 LGVSC 재현선을 "실행 준비된" 상태로 만들었다 — **실제 검증 실행은 사용자가
 한다.** 재현 baseline 4모드(`mock_baseline`/`svd_start_only`/
-`wan_skim_sfa`/`wan_skem_dsa`)의 config(`configs/etri_lgvsc_1c_*.yaml`,
+`wan_skim_sfa`/`wan_skem_dsa`)의 config(`configs/experiments/lgvsc_1c/etri_lgvsc_1c_*.yaml`,
 `wan_skim_sfa`/`wan_skem_dsa`는 각각 검증된 `..._wan_start_only.yaml`/
 `..._wan_bidirectional_fixed.yaml` 기반), batch driver
 (`scripts/batch_lgvsc_1c_reproduce.py` — mode/video 선택, smoke/dry-run,

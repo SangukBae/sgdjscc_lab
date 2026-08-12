@@ -219,7 +219,7 @@ semantic-diffusers/.../huggingface_hub/__init__.py` → `0`), user-site의
 **user-site 패키지를 포함해야** `from diffusers import
 WanImageToVideoPipeline` / `StableVideoDiffusionPipeline` 모두 import에
 성공한다 — 제외하면 `ImportError: cannot import name 'is_offline_mode'`로
-실패한다(둘 다 실측 확인됨). 그래서 `configs/etri_video_eval_lgvsc_worker_{svd,wan}.yaml`은
+실패한다(둘 다 실측 확인됨). 그래서 `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_{svd,wan}.yaml`은
 이제 `PYTHONNOUSERSITE: "0"`을 쓴다. **이 결론은 이 머신의 이 환경에만
 해당한다** — 다른 환경/머신에서는 반대로 필요할 수 있으니, 새 환경에서
 `ImportError`가 나면 이 플래그부터 뒤집어서 재시도할 것.

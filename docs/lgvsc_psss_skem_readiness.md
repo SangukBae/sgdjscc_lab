@@ -30,7 +30,7 @@ Eq.1-2 그대로의 **PSSS 수식**(yes/no 최종 텍스트 비교가 아니라 
 | SKEM selector | `src/sgdjscc_lab/video/skem_selector.py` | `PsssKeyframeSelector` — PSSS 임계값(`eta_th`, 기본 0.35) 기반 자동회귀 keyframe 삽입. 기존 `KeyframeExtractor`와 동일한 `.extract(frames) -> Dict` 인터페이스를 구현해 `TemporalPipeline`에 그대로 꽂힌다 |
 | Selector factory | `src/sgdjscc_lab/video/keyframe_extractor.py::build_keyframe_extractor` / `build_caption_fn` | `keyframe.selector: fixed`(기본, 기존 동작 불변) \| `fixed_interval`(논문 문자 그대로의 SKIM, `FixedIntervalKeyframeSelector`) \| `psss`(SKEM)로 선택. 캡션 소스(`captions_file`/`model`/`mock`)도 함께 선택 |
 | Segment 메타데이터 | `src/sgdjscc_lab/video/segment.py::SegmentRecord.keyframe_selection` | segment별 selector/backend/threshold/PSSS score(raw_logits/evidence 포함)/reason 저장. **`fixed`(기존 `KeyframeExtractor`, scene-change 기반) selector에서만** 이 키 자체가 `to_dict()` 출력에서 생략됨(기존 출력과 스키마까지 100% 동일) — `fixed_interval`도 `structure["selector"]`를 채우므로 `keyframe_selection`이 실제로 붙는다(`backend_kind: "not_applicable"`, `psss_score`/`reason`은 `None` — PSSS 근거가 없다는 뜻을 명시하는 provenance이지, 생략 대상이 아니다). |
-| 비교 config 4종 | `configs/etri_lgvsc_1c_{skim_sfa_fixed,skem_dsa_psss,skem_dsa_mock_psss,skem_dsa_proxy_psss}.yaml` | 아래 "config 4종" 참조 |
+| 비교 config 4종 | `configs/experiments/lgvsc_1c/etri_lgvsc_1c_{skim_sfa_fixed,skem_dsa_psss,skem_dsa_mock_psss,skem_dsa_proxy_psss}.yaml` | 아래 "config 4종" 참조 |
 | batch driver 확장 | `scripts/batch_lgvsc_1c_reproduce.py` | 새 4개 모드 등록 + `selector_backend`/`psss_backend_kind`/segment 길이 통계/PSSS score 통계/`n_start_only`·`n_bidirectional`·`n_fallback` segment 수/worker model_id 등 summary 컬럼 확장 + `build_aggregate_comparison()`(SKIM/SFA vs SKEM/DSA per-video + MEAN 표) |
 
 ## 코드 리뷰에서 발견·수정된 문제 (2026-07 후속)

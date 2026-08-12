@@ -73,7 +73,8 @@
 
 ```text
 src/sgdjscc_lab/
-├── config.py, runtime.py, io.py, phase_gates.py, paper_mode.py, distributed.py
+├── config.py, paths.py, runtime.py, io.py, phase_gates.py, paper_mode.py
+├── core/           stage definitions · noise schedule · semantic vocabulary
 ├── channels/       awgn · rayleigh · fast_fading · packet_drop · measurement · complex_ops
 ├── guidance/       text · edge · depth · segmentation · semantic_packet · object · relation
 ├── models/         jscc_model · diffusion_wrapper(_channel) · edge_jscc · csi_estimation
@@ -82,8 +83,8 @@ src/sgdjscc_lab/
 │                   · semantic_reliability(_v2) · packet_matcher · temporal_consistency · fid
 ├── controllers/    adaptive_guidance · snr_guidance · regeneration · channel_condition · search
 ├── acceleration/   ddim_sampler · consistency_decoder · early_exit · latency_profiler · water_filling
-├── video/          keyframe · scene_change · semantic_delta · motion_residual · temporal_pipeline
-├── training/       stages · stage_runners · losses · freeze · noise_schedule · interrupt · perf
+├── video/          keyframe · temporal_pipeline · generation contracts/backends/worker/factory
+├── training/       stage validation · stage_runners · losses · freeze · interrupt · perf
 ├── data/           datasets · image_dataset · transforms
 └── utils/          preprocessing · csv_logger · metrics_io · metric_profiles · packet_io · seed
 ```
@@ -95,5 +96,3 @@ Phase 4/5는 `controllers/acceleration/video` + 확장 채널·평가기다. 자
 ## 관련 문서
 
 - [../README.md](../README.md) — 사용자 대상 패키지 사용법
-</content>
-</invoke>

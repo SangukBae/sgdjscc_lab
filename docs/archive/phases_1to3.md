@@ -66,4 +66,3 @@ SRS = 0.30 × clip_image_image
 
 이후 phase가 패킷 인식 검증, 시간적 지표, VQA 할루시네이션, SRS-v2, 채널 조건화,
 저지연/early-exit를 추가한다.
-</content>

@@ -518,7 +518,7 @@ segment 0(`conditioning_mode=bidirectional`, `end_keyframe_index=12`,
   선택) 자체는 네 모드 전부 이 저장소의 동일한 고정-간격+scene-change
   추출기를 쓴다 — 별도 재현하지 않았다**는 것을 문서와 config 헤더 모두에
   명시했다(과장 방지, 사용자 지시사항).
-- **Config 4종**: `configs/etri_lgvsc_1c_{mock_baseline,svd_start_only,
+- **Config 4종**: `configs/experiments/lgvsc_1c/etri_lgvsc_1c_{mock_baseline,svd_start_only,
   wan_skim_sfa,wan_skem_dsa}.yaml` — `wan_skim_sfa`/`wan_skem_dsa`는
   각각 1B에서 실제 GPU 검증된 `..._wan_start_only.yaml`/
   `..._wan_bidirectional_fixed.yaml`의 `video_generator.worker` 블록을

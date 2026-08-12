@@ -155,7 +155,7 @@ outputs/etri_video_eval/lgvsc_1c_reproduce/
 ## 결과 해석 시 주의사항
 
 1. **네 모드를 그대로 비교하려면 `temporal.reuse_threshold`를 통일하라.**
-   각 `configs/etri_lgvsc_1c_*.yaml`은 `reuse_threshold: 0.0`으로 기본
+   각 `configs/experiments/lgvsc_1c/etri_lgvsc_1c_*.yaml`은 `reuse_threshold: 0.0`으로 기본
    설정돼 있다 — smoke 테스트가 짧은 `--max-frames`에서도 generate 분기를
    반드시 거치게 하려는 것이다. 품질 비교표를 만들 때는 네 config 모두
    같은 (0이 아닌) 값으로 맞춰야 "같은 프레임이 reuse/recompute/generate로

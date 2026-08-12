@@ -62,7 +62,7 @@ Semantic/
 ## 실행 명령
 
 ```bash
-cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
+cd /path/to/sgdjscc_lab
 conda activate ptest   # Python 3.9, PyTorch 2.1.0, CUDA 11.8
 
 # 추론 (AWGN, 단일 이미지/폴더)
@@ -100,4 +100,3 @@ python -m pytest tests/ -v
 ## 관련 문서
 - [archive/phases_1to3.md](./archive/phases_1to3.md) · [phase4.md](./phase4.md) · [phase5.md](./phase5.md)
 - [etri_strategy.md](./etri_strategy.md)
-</content>

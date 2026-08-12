@@ -116,4 +116,3 @@ python scripts/evaluate_video.py --config configs/recipes/video/composed_video.y
 
 ### 관련 문서
 - [training_scaffold.md](./training_scaffold.md) · [paper_alignment.md](./paper_alignment.md) · [phase5.md](./phase5.md)
-</content>

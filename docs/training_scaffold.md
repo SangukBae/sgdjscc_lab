@@ -27,7 +27,7 @@ epoch·step 두 모드를 모두 지원하는 통합 루프(global-step 기준)�
 ## 빠른 시작
 
 ```bash
-cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab && conda activate ptest
+cd /path/to/sgdjscc_lab && conda activate ptest
 
 # Stage 1 — JSCC (이미지 전용, 고정 SNR=10dB, MSE[+patch-GAN])
 python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \
@@ -241,4 +241,3 @@ export·evaluation은 single-process다(DDP는 학습 전용).
 ## 관련 문서
 - [dev/smoke_training.md](./dev/smoke_training.md) · [paper_alignment.md](./paper_alignment.md) · [dataset_status.md](./dataset_status.md) · [phase5.md](./phase5.md)
 - `python scripts/report_datasets.py` — 현재 머신 데이터 보유 상태 리포트
-</content>

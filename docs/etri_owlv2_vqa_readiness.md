@@ -99,7 +99,7 @@ python scripts/remeasure_video_metrics.py --config configs/experiments/etri_vide
 ### 10개 영상 OWLv2/VQA/ensemble 배치 재측정 — `scripts/batch_remeasure_owlv2_vqa_10videos.py`
 
 `scripts/run_etri_video_eval.py`의 `heldout` stage는 항상 `--from-run`(재구성)
-경로만 쓰고, `configs/etri_video_eval_{owlv2,vqa,ensemble}.yaml`은 영상마다
+경로만 쓰고, `configs/experiments/etri_video_eval/etri_video_eval_{owlv2,vqa,ensemble}.yaml`은 영상마다
 직접 `--config`/heldout 출력 경로를 바꿔주지 않으면 모든 영상이 같은
 `outputs/etri_video_eval/manual_{owlv2,vqa,ensemble}/heldout/`을 덮어쓴다.
 이 문제를 해결하는 전용 배치 드라이버가 준비돼 있다:
@@ -329,7 +329,7 @@ conda run -n ptest pytest tests/test_presence_backends.py \
 2. diffusion 샘플링이 확률적이면(고정 seed가 없으면) 같은 config라도 매번
    다른 픽셀이 나올 수 있다.
 3. `outputs/etri_video_eval_real_full_step50`가 만든 config.yaml은 원격
-   GPU 서버(`/home/wilco/SangukBae/Semantic/sgdjscc_lab/...`) 경로를
+   GPU 서버(`$SGDJSCC_LAB_ROOT/...`) 경로를
    담고 있어, 이 로컬 환경에서 그 config.yaml을 그대로 다시 로드해도
    `model_root`/`input_path` 같은 절대경로가 이 머신의 실제 위치와 다르다
    (재구성 자체가 그대로 되지 않는다 — 새 config로 다시 잡아줘야 한다).

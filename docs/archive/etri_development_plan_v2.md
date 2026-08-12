@@ -159,7 +159,7 @@ flowchart LR
 `runtime.build_models()`가 위 core 구성요소를 `ModelBundle`(jscc_model · sem_pipeline ·
 text_extractor · edge_extractor)로 묶고, `pipelines/infer_pipeline.py`가 128×128 패치
 단위로 forward를 조율한다. 파일별 실행 흐름 상세는
-[framework_file_roles.md](./framework_file_roles.md) 참조.
+[framework_file_roles.md](../framework_file_roles.md) 참조.
 
 ---
 
@@ -219,7 +219,7 @@ MIMO/OFDM/다중사용자 확장은 핵심 3축 위에서 다루는 후속 트�
 | CelebA | image-only | 도메인 특화(text stage 시 캡션 자동 생성, paper-like) |
 
 **평가 축** — COCO val2017 / Kodak / ADE20K, 입력은 128×128 패치 타일링(H·W 128 배수).
-데이터셋 역할·stage 매핑·변환 상세는 [dataset_status.md](./dataset_status.md).
+데이터셋 역할·stage 매핑·변환 상세는 [dataset_status.md](../dataset_status.md).
 
 **규모·지표 한계(정직 공개)**: 논문 ~1,400만 pair·250k-step 스케줄은 미포함(로컬은 소규모
 subset). CLIP text-image는 캡션 공급 시 동작하는 확장 지표, 정식 mIoU는
@@ -371,4 +371,3 @@ Phase 1~3(베이스라인 재현 → 모듈화 → 시맨틱 우선 평가) 완�
 
 ## 참고 링크
 - SGD-JSCC: https://arxiv.org/abs/2501.01138 · DiffJSCC: https://arxiv.org/abs/2404.17736 · DeepJSCC: https://arxiv.org/abs/1809.01733
-</content>
