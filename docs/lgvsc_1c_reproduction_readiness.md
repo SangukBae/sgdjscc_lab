@@ -99,6 +99,7 @@ export SGDJSCC_LGVSC_WORKER_PYTHON=/home/wilco/SangukBae/Semantic/.venvs/lgvsc_g
 python scripts/batch_lgvsc_1c_reproduce.py \
     --modes skem_dsa_psss --videos 01_person_walk \
     --max-frames 14 --device cuda:0 \
+    --output-root outputs/etri_video_eval/lgvsc_1c_smoke_3gpu \
     --worker-device-map balanced \
     --worker-max-memory '{"0":"8GiB","1":"22GiB","2":"22GiB","cpu":"40GiB"}'
 ```
@@ -114,11 +115,13 @@ keyframe 수에 맞춰 `skim_sfa_fixed`를 실행한다.
 ```bash
 python scripts/batch_lgvsc_1c_reproduce.py \
     --modes skem_dsa_psss --device cuda:0 --skip-existing \
+    --output-root outputs/etri_video_eval/lgvsc_1c_full_3gpu \
     --worker-device-map balanced \
     --worker-max-memory '{"0":"8GiB","1":"22GiB","2":"22GiB","cpu":"40GiB"}'
 
 python scripts/batch_lgvsc_1c_reproduce.py \
     --modes skim_sfa_fixed --device cuda:0 --skip-existing \
+    --output-root outputs/etri_video_eval/lgvsc_1c_full_3gpu \
     --keyframe-count-match-from skem_dsa_psss \
     --worker-device-map balanced \
     --worker-max-memory '{"0":"8GiB","1":"22GiB","2":"22GiB","cpu":"40GiB"}'
