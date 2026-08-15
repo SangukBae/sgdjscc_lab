@@ -125,6 +125,26 @@ class TestOutputPathIsolation:
         p3 = driver.generated_config_path(output_root, "wan_skem_dsa", "01_person_walk")
         assert len({p1, p2, p3}) == 3
 
+    def test_hq_worker_overrides_are_recorded_without_mutating_static_template(self, tmp_path):
+        static = driver.build_run_config("wan_skem_dsa", tmp_path / "before")
+        hq = driver.build_run_config(
+            "wan_skem_dsa", tmp_path / "hq",
+            worker_height=256, worker_width=512,
+            worker_num_inference_steps=30, worker_decode_chunk_size=2,
+        )
+        assert static["video_generator"]["worker"]["height"] == 64
+        worker = hq["video_generator"]["worker"]
+        assert worker["height"] == 256
+        assert worker["width"] == 512
+        assert worker["num_inference_steps"] == 30
+        assert worker["decode_chunk_size"] == 2
+
+    def test_hq_worker_overrides_must_be_positive(self, tmp_path):
+        with pytest.raises(ValueError, match="worker height must be positive"):
+            driver.build_run_config(
+                "svd_start_only", tmp_path / "bad", worker_height=0,
+            )
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 3) dry-run never touches subprocess

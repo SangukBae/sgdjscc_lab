@@ -18,6 +18,7 @@
 | [etri_strategy.md](./etri_strategy.md) | 핵심 한계 3가지, 개발 순서, 현재 구현 상태를 합친 전략 문서 |
 | [etri_stage1_validation.md](./etri_stage1_validation.md) | 1차 구현(순서 0~4) 검증 리포트 — 기준 커밋, 테스트/실행 결과, 산출물, 후속 항목 |
 | [etri_video_speed_optimization.md](./etri_video_speed_optimization.md) | 10-영상 실모델 검증 속도 병목 분석 + 가속화 옵션(keyframe-only, step sweep, 캐싱, 병렬) + 원격 GPU 검증 결과 |
+| [remote_hq_validation.md](./remote_hq_validation.md) | 3×RTX 4090 원격 서버 최종 고품질 검증 — 전체 실행·재개 명령, 512×256 Wan/SVD 설정, paired-frame 품질 산출물 |
 | [etri_owlv2_vqa_readiness.md](./etri_owlv2_vqa_readiness.md) | 실제 OWLv2/VQA presence calibration 준비 및 완료 결과 — config 배선 점검, 예시 config 3종, `--from-recon-frames`, 10개 영상 × 5개 모드 batch 재측정 summary |
 | [paper_alignment.md](./paper_alignment.md) | 논문 정합성, `paper_mode`, 하이퍼파라미터 출처를 합친 정리 문서 |
 | [framework_file_roles.md](./framework_file_roles.md) | 파일별 실행 흐름과 역할 지도 |

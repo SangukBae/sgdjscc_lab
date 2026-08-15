@@ -412,7 +412,11 @@ def resolve_cbr_match(
 
 def build_run_config(mode: str, out_dir: Path, cbr_match: dict = None, *,
                      worker_device_map: str = None,
-                     worker_max_memory: dict = None) -> dict:
+                     worker_max_memory: dict = None,
+                     worker_height: int = None,
+                     worker_width: int = None,
+                     worker_num_inference_steps: int = None,
+                     worker_decode_chunk_size: int = None) -> dict:
     """Load ``configs/experiments/lgvsc_1c/etri_lgvsc_1c_<mode>.yaml`` and rewrite it into a
     per-video-ready config dict.
 
@@ -435,7 +439,10 @@ def build_run_config(mode: str, out_dir: Path, cbr_match: dict = None, *,
 
     Everything else — most importantly ``video_generator.backend``/
     ``conditioning_mode``/``worker.*`` — is carried over UNCHANGED from the
-    base template unless a worker placement override is explicitly supplied.
+    base template unless a worker placement or quality override is explicitly
+    supplied. Quality overrides are intentionally CLI-only so the verified
+    low-cost smoke templates remain unchanged while remote high-quality runs
+    record their exact resolution/step settings in the generated config.
     A placement override preserves backend/model-specific extra JSON (such as
     ``bidirectional_model_id``), replaces CPU offload with Diffusers' pipeline
     ``device_map``, and optionally supplies per-device memory limits.
@@ -487,6 +494,20 @@ def build_run_config(mode: str, out_dir: Path, cbr_match: dict = None, *,
     }
     vg = dict(cfg.get("video_generator") or {})
     vg["generated_frames_dir"] = str(out_dir / "generated_frames")
+    worker = dict(vg.get("worker") or {})
+    quality_overrides = {
+        "height": worker_height,
+        "width": worker_width,
+        "num_inference_steps": worker_num_inference_steps,
+        "decode_chunk_size": worker_decode_chunk_size,
+    }
+    for key, value in quality_overrides.items():
+        if value is not None:
+            if int(value) <= 0:
+                raise ValueError(f"worker {key} must be positive, got {value}")
+            worker[key] = int(value)
+    if any(value is not None for value in quality_overrides.values()):
+        vg["worker"] = worker
     if worker_device_map is not None or worker_max_memory is not None:
         worker = dict(vg.get("worker") or {})
         if worker_device_map is None:
@@ -625,7 +646,9 @@ def verify_keyframe_count_match(out_dir: Path, plan: dict) -> dict:
 def run_job(mode: str, entry: dict, output_root: Path, *, device=None, max_frames=None,
             no_models: bool = False, skip_existing: bool = False, dry_run: bool = False,
             cbr_match_from: str = None, worker_device_map: str = None,
-            worker_max_memory: dict = None) -> dict:
+            worker_max_memory: dict = None, worker_height: int = None,
+            worker_width: int = None, worker_num_inference_steps: int = None,
+            worker_decode_chunk_size: int = None) -> dict:
     """Generate the per-video config, then either print (dry_run) or actually
     run the evaluate_video.py subprocess for one (mode, video) job.
 
@@ -655,6 +678,10 @@ def run_job(mode: str, entry: dict, output_root: Path, *, device=None, max_frame
         mode, out_dir, cbr_match=cbr_match,
         worker_device_map=worker_device_map,
         worker_max_memory=worker_max_memory,
+        worker_height=worker_height,
+        worker_width=worker_width,
+        worker_num_inference_steps=worker_num_inference_steps,
+        worker_decode_chunk_size=worker_decode_chunk_size,
     )
 
     match_plan = cfg.get("_keyframe_count_match")
@@ -1191,6 +1218,14 @@ def _parse_args(argv=None) -> argparse.Namespace:
         help='JSON memory map for the worker, e.g. {"0":"8GiB","1":"22GiB",'
              '"2":"22GiB","cpu":"40GiB"}; requires --worker-device-map.',
     )
+    p.add_argument("--worker-height", type=int, default=None,
+                   help="Override video_generator.worker.height in every generated real-worker config.")
+    p.add_argument("--worker-width", type=int, default=None,
+                   help="Override video_generator.worker.width in every generated real-worker config.")
+    p.add_argument("--worker-num-inference-steps", type=int, default=None,
+                   help="Override video_generator.worker.num_inference_steps for HQ runs.")
+    p.add_argument("--worker-decode-chunk-size", type=int, default=None,
+                   help="Override SVD decode_chunk_size (ignored by backends that do not use it).")
     p.add_argument("--no-models", action="store_true",
                    help="Forwarded to evaluate_video.py's --no-models — disables SGD-JSCC Rx "
                         "reconstruction ONLY; svd_start_only/wan_* worker backends still run for "
@@ -1290,6 +1325,10 @@ def main(argv=None) -> int:
                 cbr_match_from=keyframe_count_match_from,
                 worker_device_map=args.worker_device_map,
                 worker_max_memory=args.worker_max_memory,
+                worker_height=args.worker_height,
+                worker_width=args.worker_width,
+                worker_num_inference_steps=args.worker_num_inference_steps,
+                worker_decode_chunk_size=args.worker_decode_chunk_size,
             )
             runs.append(status)
             tag = "DRY-RUN" if status["status"] == "dry_run" else status["status"].upper()
