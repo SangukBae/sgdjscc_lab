@@ -85,7 +85,10 @@ CODECS: Dict[str, CodecSpec] = {
     "h265": CodecSpec(
         "h265", "libx265", ".mp4", (18, 23, 28, 33),
         ("-preset", "medium", "-pix_fmt", "yuv420p", "-tag:v", "hvc1",
-         "-x265-params", "log-level=error"),
+         # Docker commonly blocks NUMA set_mempolicy(2). Disabling x265 NUMA
+         # pools removes the repeated harmless warning without changing CRF,
+         # preset, frame threads, or the encoded comparison target.
+         "-x265-params", "log-level=error:numa-pools=0"),
     ),
     "av1": CodecSpec(
         "av1", "libaom-av1", ".mkv", (20, 30, 40, 50),

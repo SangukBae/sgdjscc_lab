@@ -60,6 +60,9 @@ apt-get install -y ffmpeg
 특정 실행 파일을 고정하려면 `--ffmpeg /usr/bin/ffmpeg --ffprobe
 /usr/bin/ffprobe`를 추가한다.
 
+H.265에는 `numa-pools=0`을 적용한다. Docker가 `set_mempolicy(2)`를 허용하지 않을
+때 반복되는 경고를 없애기 위한 설정이며 CRF·preset·영상 품질 조건은 바꾸지 않는다.
+
 기본 인코딩 지점은 다음과 같다.
 
 - H.264/libx264: CRF 18, 23, 28, 33

@@ -41,6 +41,11 @@ def test_parse_crf_overrides_and_encode_command(tmp_path):
     assert cmd[cmd.index("-crf") + 1] == "27"
     assert cmd[-1].endswith("out.mp4")
 
+    h265_cmd = bench.build_encode_command(
+        tmp_path / "in.mp4", tmp_path / "out.mp4", bench.CODECS["h265"], 28,
+    )
+    assert "log-level=error:numa-pools=0" in h265_cmd
+
 
 def test_explicit_ffmpeg_pair_resolution(monkeypatch):
     monkeypatch.setattr(bench, "available_encoders", lambda executable: {"libx264", "libx265"})
