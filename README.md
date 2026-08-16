@@ -118,6 +118,7 @@ export SGDJSCC_CACHE_ROOT=/legend/sgdjscc_workspace/cache
 전체 문서 맵은 [docs/README.md](./docs/README.md) 참조. 주요 항목:
 
 - [docs/etri_overview.md](./docs/etri_overview.md) — 프로젝트 목표, pipeline, SRS, 실험 설정
+- [docs/etri_video_rate_benchmark.md](./docs/etri_video_rate_benchmark.md) — 10개 영상 의미 payload와 H.264/H.265/AV1 크기·품질 비교
 - [docs/phase4.md](./docs/phase4.md) / [docs/phase5.md](./docs/phase5.md) — 확장 설계 & 상태
 - [docs/training_scaffold.md](./docs/training_scaffold.md) — stage-aware training
 - [docs/archive/framework_comparison.md](./docs/archive/framework_comparison.md) — 원본 vs lab 구조 + 논문 충실도
