@@ -42,6 +42,17 @@ def test_parse_crf_overrides_and_encode_command(tmp_path):
     assert cmd[-1].endswith("out.mp4")
 
 
+def test_explicit_ffmpeg_pair_resolution(monkeypatch):
+    monkeypatch.setattr(bench, "available_encoders", lambda executable: {"libx264", "libx265"})
+    monkeypatch.setattr(bench.shutil, "which", lambda executable: executable)
+    ffmpeg, ffprobe, encoders = bench.resolve_ffmpeg_tools(
+        "custom-ffmpeg", "custom-ffprobe", ["libx264", "libx265"],
+    )
+    assert ffmpeg == "custom-ffmpeg"
+    assert ffprobe == "custom-ffprobe"
+    assert {"libx264", "libx265"} <= encoders
+
+
 def test_reference_payload_and_symbol_proxy(tmp_path):
     frames = tmp_path / "frames"
     frames.mkdir()

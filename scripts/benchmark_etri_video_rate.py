@@ -127,8 +127,14 @@ def _parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--skip-unavailable-codecs", action="store_true")
     parser.add_argument("--dry-run", action="store_true",
                         help="Validate inputs and write the plan without encoding or metrics.")
-    parser.add_argument("--ffmpeg", default="ffmpeg")
-    parser.add_argument("--ffprobe", default="ffprobe")
+    parser.add_argument(
+        "--ffmpeg", default="auto",
+        help="FFmpeg executable or 'auto'. Auto skips Conda builds missing requested encoders.",
+    )
+    parser.add_argument(
+        "--ffprobe", default="auto",
+        help="FFprobe executable or 'auto' (paired with the selected FFmpeg when possible).",
+    )
     return parser.parse_args(argv)
 
 
@@ -283,6 +289,75 @@ def available_encoders(ffmpeg: str = "ffmpeg") -> set:
         if len(parts) >= 2 and parts[0].startswith("V"):
             names.add(parts[1])
     return names
+
+
+def resolve_ffmpeg_tools(
+    ffmpeg: str,
+    ffprobe: str,
+    required_encoders: Sequence[str],
+) -> Tuple[str, str, set]:
+    """Select an FFmpeg/FFprobe pair that provides all requested encoders.
+
+    The research container prepends ``/opt/ptest/bin`` to ``PATH``.  Its Conda
+    FFmpeg build is non-GPL and therefore lacks libx264/libx265, while the
+    Ubuntu system build under ``/usr/bin`` provides both.  ``auto`` tests the
+    PATH pair first and then common system/Conda locations instead of failing
+    on the first executable found.
+    """
+    required = set(required_encoders)
+    candidates: List[Tuple[str, str]] = []
+
+    if ffmpeg != "auto":
+        if ffprobe == "auto":
+            executable = Path(ffmpeg)
+            sibling = executable.with_name("ffprobe") if executable.parent != Path(".") else None
+            selected_probe = str(sibling) if sibling is not None and sibling.is_file() else "ffprobe"
+        else:
+            selected_probe = ffprobe
+        candidates.append((ffmpeg, selected_probe))
+    else:
+        path_ffmpeg = shutil.which("ffmpeg")
+        path_ffprobe = shutil.which("ffprobe")
+        if path_ffmpeg and path_ffprobe:
+            candidates.append((path_ffmpeg, path_ffprobe))
+        for base in (Path("/usr/bin"), Path("/usr/local/bin"), Path("/opt/ptest/bin")):
+            executable = base / "ffmpeg"
+            probe = base / "ffprobe"
+            if executable.is_file() and probe.is_file():
+                candidates.append((str(executable), str(probe)))
+
+    unique: List[Tuple[str, str]] = []
+    seen = set()
+    for pair in candidates:
+        resolved = tuple(str(Path(value).resolve()) if Path(value).exists() else value for value in pair)
+        if resolved not in seen:
+            seen.add(resolved)
+            unique.append(pair)
+
+    inspected = []
+    for executable, probe in unique:
+        try:
+            encoders = available_encoders(executable)
+        except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+            inspected.append(f"{executable}: unavailable ({exc})")
+            continue
+        missing = sorted(required - encoders)
+        inspected.append(
+            f"{executable}: " + ("compatible" if not missing else f"missing {','.join(missing)}")
+        )
+        if not missing:
+            if shutil.which(probe) is None and not Path(probe).is_file():
+                inspected[-1] += f"; ffprobe unavailable: {probe}"
+                continue
+            return executable, probe, encoders
+
+    details = "; ".join(inspected) if inspected else "no FFmpeg candidates found"
+    raise RuntimeError(
+        "No FFmpeg build provides all requested encoders "
+        f"({', '.join(sorted(required))}). Inspected: {details}. "
+        "On Ubuntu install the GPL-enabled system build with: apt-get update && "
+        "apt-get install -y ffmpeg"
+    )
 
 
 def build_encode_command(
@@ -725,7 +800,6 @@ def run(args: argparse.Namespace) -> dict:
     all_crfs = parse_crf_overrides(args.crf)
     codec_crfs = {name: all_crfs[name] for name in codec_names}
     output_root.mkdir(parents=True, exist_ok=True)
-    _write_methodology(output_root / "README.md", args, codec_crfs)
 
     plan = {
         "videos": [entry["video_id"] for entry in entries],
@@ -736,9 +810,23 @@ def run(args: argparse.Namespace) -> dict:
     }
     (output_root / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
     if args.dry_run:
+        _write_methodology(output_root / "README.md", args, codec_crfs)
         return plan
 
-    encoders = available_encoders(args.ffmpeg)
+    required_encoders = (
+        [] if args.skip_unavailable_codecs
+        else [CODECS[name].encoder for name in codec_names]
+    )
+    selected_ffmpeg, selected_ffprobe, encoders = resolve_ffmpeg_tools(
+        args.ffmpeg, args.ffprobe, required_encoders,
+    )
+    args.ffmpeg = selected_ffmpeg
+    args.ffprobe = selected_ffprobe
+    plan["ffmpeg"] = selected_ffmpeg
+    plan["ffprobe"] = selected_ffprobe
+    (output_root / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
+    _write_methodology(output_root / "README.md", args, codec_crfs)
+
     unavailable = [name for name in codec_names if CODECS[name].encoder not in encoders]
     if unavailable and not args.skip_unavailable_codecs:
         details = ", ".join(f"{name}({CODECS[name].encoder})" for name in unavailable)

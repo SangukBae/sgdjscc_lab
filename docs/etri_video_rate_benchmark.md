@@ -47,6 +47,19 @@ python scripts/benchmark_etri_video_rate.py \
   --lpips-device cuda:0
 ```
 
+스크립트는 요청한 코덱이 모두 들어 있는 FFmpeg를 자동 탐색한다. 연구 Conda 환경의
+`/opt/ptest/bin/ffmpeg`에 `libx264`/`libx265`가 없고 Ubuntu 시스템 FFmpeg가
+설치돼 있다면 `/usr/bin/ffmpeg`와 `/usr/bin/ffprobe`를 자동 선택한다. 시스템
+FFmpeg가 없다면 컨테이너에서 한 번 설치한다.
+
+```bash
+apt-get update
+apt-get install -y ffmpeg
+```
+
+특정 실행 파일을 고정하려면 `--ffmpeg /usr/bin/ffmpeg --ffprobe
+/usr/bin/ffprobe`를 추가한다.
+
 기본 인코딩 지점은 다음과 같다.
 
 - H.264/libx264: CRF 18, 23, 28, 33
