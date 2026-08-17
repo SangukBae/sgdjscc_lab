@@ -9,6 +9,7 @@ from .awgn import AWGNChannel
 from .rayleigh import RayleighChannel
 from .fast_fading import FastFadingChannel
 from .packet_drop import PacketDropChannel
+from .digital_packet import DigitalPacketChannel
 from .measurement import MeasurementBundle, awgn_noise_like
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "RayleighChannel",
     "FastFadingChannel",
     "PacketDropChannel",
+    "DigitalPacketChannel",
     "MeasurementBundle",
     "awgn_noise_like",
     "build_channel",
@@ -26,11 +28,12 @@ def build_channel(cfg=None, **kwargs):
     """Build a channel from a config block (or kwargs).
 
     Recognised keys (all optional):
-        ``channel`` / ``channel_type`` : "awgn" | "rayleigh" | "fast_fading" | "packet_drop"
+        ``channel`` / ``channel_type`` : "awgn" | "rayleigh" | "fast_fading" | "packet_drop" | "digital_packet"
         ``csi``                        : "perfect" | "imperfect" | "none"
         ``csi_error_std``              : float (imperfect CSI)
         ``block_length``               : int (fast fading)
         ``drop_prob`` / ``packet_length`` : packet drop params
+        ``bit_depth`` / ``granularity`` / ``channel_dim`` / ``compress_metadata`` : digital_packet params
 
     A ``cfg`` mapping (e.g. OmegaConf) is read via ``.get``; explicit *kwargs*
     override it.  Unknown channel names fall back to AWGN.
@@ -62,5 +65,12 @@ def build_channel(cfg=None, **kwargs):
         return PacketDropChannel(
             drop_prob=float(_get("drop_prob", 0.1)),
             packet_length=int(_get("packet_length", 256)),
+        )
+    if name in ("digital_packet", "digital", "quantized_packet"):
+        return DigitalPacketChannel(
+            bit_depth=int(_get("bit_depth", 8)),
+            granularity=str(_get("granularity", "per_tensor")),
+            channel_dim=int(_get("channel_dim", 1)),
+            compress_metadata=bool(_get("compress_metadata", True)),
         )
     return AWGNChannel()

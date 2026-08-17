@@ -1,0 +1,3 @@
+# configs/base/channel/digital_packet_int6.yaml – 6-bit digital packet preset
+_defaults_: [channel/digital_packet]
+bit_depth: 6

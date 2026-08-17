@@ -1,0 +1,12 @@
+# configs/base/channel/digital_packet.yaml – Real binary-packet digital transport
+#
+# Replaces the analog AWGN channel with quantize -> bit-pack -> binary packet ->
+# parse -> dequantize (channels/digital_packet.py::DigitalPacketChannel). Opt-in:
+# the original AWGN path is untouched unless `channel: digital_packet` is selected
+# (e.g. via one of the bit-depth presets below, composed on top of this fragment).
+
+channel: digital_packet
+bit_depth: 8              # 8 | 6 | 4
+granularity: per_tensor   # per_tensor | per_channel
+channel_dim: 1
+compress_metadata: true
