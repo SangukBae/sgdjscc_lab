@@ -71,7 +71,26 @@ class DigitalPacketChannel(ChannelTape):
         self.last_packets: list = []                       # every sample's raw bytes this call
         self.last_breakdowns: list = []                     # every sample's byte breakdown this call
         self.last_total_bytes: Optional[int] = None         # exact sum across all samples this call
+        # Cross-call accumulator: some callers (e.g. pipelines/eval_pipeline.py's
+        # _reconstruct_with_cfg -> _process_patches) invoke transmit() once PER
+        # PATCH (bsz=1 each) rather than once per frame with all patches batched
+        # (bsz=n_patches). last_packets/last_breakdowns above only ever reflect
+        # the most recent transmit() call, so a per-patch-looping caller would
+        # silently undercount by (n_patches - 1)/n_patches — exactly the bug
+        # already fixed for the batched case. reset_accumulation() +
+        # all_packets/all_breakdowns/all_total_bytes give an exact total
+        # regardless of how many transmit() calls a single frame reconstruction
+        # makes internally.
+        self.all_packets: list = []
+        self.all_breakdowns: list = []
+        self.all_total_bytes: int = 0
         self._init_tape()
+
+    def reset_accumulation(self) -> None:
+        """Clear the cross-call accumulator before reconstructing one new frame."""
+        self.all_packets = []
+        self.all_breakdowns = []
+        self.all_total_bytes = 0
 
     def transmit(self, latent: torch.Tensor, snr_db: float) -> torch.Tensor:
         return self._taped_transmit(latent, snr_db)
@@ -113,6 +132,10 @@ class DigitalPacketChannel(ChannelTape):
         self.last_packet_bytes = packets_data[-1] if packets_data else None
         self.last_breakdown = breakdowns[-1] if breakdowns else None
         self.last_total_bytes = total_bytes
+
+        self.all_packets.extend(packets_data)
+        self.all_breakdowns.extend(breakdowns)
+        self.all_total_bytes += total_bytes
 
         return MeasurementBundle(
             received=received,

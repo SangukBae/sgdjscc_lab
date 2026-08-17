@@ -397,6 +397,15 @@ def build_keyframe_extractor(
                 "build_caption_fn(keyframe.psss.caption_source, ...)."
             )
         max_len = OmegaConf.select(cfg, p + "max_segment_length", default=None)
+        # Default False preserves the original PSSS-only selector exactly (no
+        # scene_detector passed unless explicitly requested) — combining real
+        # scene-change detection with PSSS is opt-in via this flag.
+        use_scene_detector = bool(OmegaConf.select(cfg, p + "use_scene_detector", default=False))
+        if use_scene_detector and scene_detector is None:
+            raise ValueError(
+                "keyframe.psss.use_scene_detector=true requires a scene_detector "
+                "(e.g. build_keyframe_extractor(cfg, scene_detector=SceneChangeDetector(), ...))."
+            )
         return PsssKeyframeSelector(
             caption_fn=caption_fn,
             psss_backend=psss_backend,
@@ -405,6 +414,7 @@ def build_keyframe_extractor(
             min_segment_length=int(OmegaConf.select(cfg, p + "min_segment_length", default=1)),
             max_segment_length=(None if max_len is None else int(max_len)),
             seed=OmegaConf.select(cfg, p + "seed", default=None),
+            scene_detector=(scene_detector if use_scene_detector else None),
         )
 
     raise NotImplementedError(

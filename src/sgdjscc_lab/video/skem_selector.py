@@ -96,6 +96,20 @@ class PsssKeyframeSelector:
         ETRI additions — see module docstring. ``min_segment_length`` must be
         >= 1 (a keyframe's own frame counts as position 0 of its segment).
         ``max_segment_length`` (if given) must be >= ``min_segment_length``.
+    scene_detector:
+        Optional ``SceneChangeDetector`` (or any object exposing
+        ``detect(frames) -> {"boundaries": [...], ...}``). When supplied,
+        ``extract()`` runs it once up front and forces a keyframe at any
+        detected scene boundary — the same way ``max_segment_length`` forces
+        one — *in addition to* the PSSS-driven decisions, so a hard scene cut
+        is never missed just because the caption/PSSS score happened to stay
+        below ``threshold``. ``None`` (default) preserves the original
+        PSSS-only behaviour exactly (no scene-change signal consulted).
+        Every forced/PSSS decision is also recorded in the returned
+        ``force_reason`` dict as one of the categorical values
+        ``"first_frame"|"scene_change"|"max_segment_length"|"psss"`` —
+        callers should read that field rather than pattern-matching the
+        human-readable ``keyframe_reasons`` prose string.
     """
 
     selector_name = "psss"
@@ -109,6 +123,7 @@ class PsssKeyframeSelector:
         min_segment_length: int = 1,
         max_segment_length: Optional[int] = None,
         seed: Optional[int] = None,
+        scene_detector=None,
     ) -> None:
         if min_segment_length < 1:
             raise ValueError(f"min_segment_length must be >= 1; got {min_segment_length}.")
@@ -124,6 +139,7 @@ class PsssKeyframeSelector:
         self.min_segment_length = int(min_segment_length)
         self.max_segment_length = None if max_segment_length is None else int(max_segment_length)
         self.seed = seed
+        self.scene_detector = scene_detector
 
     def _empty_result(self) -> Dict:
         return {
@@ -138,6 +154,8 @@ class PsssKeyframeSelector:
             "psss_max_segment_length": self.max_segment_length,
             "psss_scores": [],
             "keyframe_reasons": {},
+            "force_reason": {},
+            "scene_change_used": self.scene_detector is not None,
         }
 
     def extract(self, frames: List) -> Dict:
@@ -152,6 +170,12 @@ class PsssKeyframeSelector:
                 captions[i] = self.caption_fn(frames[i], i)
             return captions[i]
 
+        # Real scene-change signal, computed once up front (not inferred from
+        # any reason string later) — see class docstring's scene_detector param.
+        scene_boundaries: List[bool] = [False] * n
+        if self.scene_detector is not None:
+            scene_boundaries = list(self.scene_detector.detect(frames)["boundaries"])
+
         keyframes: List[int] = [0]
         boundaries = [False] * n
         boundaries[0] = True
@@ -162,6 +186,7 @@ class PsssKeyframeSelector:
         keyframe_reasons: Dict[int, str] = {
             0: "first frame (K_1 = 1) — always a keyframe, no PSSS evaluated."
         }
+        force_reason: Dict[int, str] = {0: "first_frame"}
 
         current_kf = 0
         _caption(0)
@@ -169,6 +194,28 @@ class PsssKeyframeSelector:
         i = 1
         while i < n:
             span = i - current_kf
+
+            # Scene-change forcing takes priority over max_segment_length: a
+            # detected hard cut is a stronger, content-derived signal than an
+            # arbitrary length cap, and checking it first means a scene change
+            # that happens to also land past max_segment_length is correctly
+            # attributed to "scene_change" rather than the length cap.
+            if scene_boundaries[i]:
+                reason = (
+                    "scene_change detected by scene_detector "
+                    f"(segment length {span} since keyframe {current_kf}) — forced "
+                    "keyframe; NOT a PSSS decision (real scene-change signal, "
+                    "combined with SKEM/PSSS per the ETRI scene_detector integration)."
+                )
+                keyframes.append(i)
+                boundaries[i] = True
+                frame_roles[i] = "keyframe"
+                keyframe_reasons[i] = reason
+                force_reason[i] = "scene_change"
+                current_kf = i
+                _caption(i)
+                i += 1
+                continue
 
             if self.max_segment_length is not None and span >= self.max_segment_length:
                 reason = (
@@ -181,6 +228,7 @@ class PsssKeyframeSelector:
                 boundaries[i] = True
                 frame_roles[i] = "keyframe"
                 keyframe_reasons[i] = reason
+                force_reason[i] = "max_segment_length"
                 current_kf = i
                 _caption(i)
                 i += 1
@@ -217,6 +265,7 @@ class PsssKeyframeSelector:
                 boundaries[i] = True
                 frame_roles[i] = "keyframe"
                 keyframe_reasons[i] = reason
+                force_reason[i] = "psss"
                 current_kf = i
             else:
                 record["decision"] = "continue_segment"
@@ -245,6 +294,8 @@ class PsssKeyframeSelector:
             "psss_max_segment_length": self.max_segment_length,
             "psss_scores": psss_scores,
             "keyframe_reasons": {str(k): v for k, v in keyframe_reasons.items()},
+            "force_reason": {str(k): v for k, v in force_reason.items()},
+            "scene_change_used": self.scene_detector is not None,
         }
 
     @staticmethod

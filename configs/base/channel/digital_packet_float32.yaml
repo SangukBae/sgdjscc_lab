@@ -1,0 +1,12 @@
+# configs/base/channel/digital_packet_float32.yaml – lossless digital packet preset
+#
+# "Reliable digital" lossless baseline: bit_depth=32 bypasses affine
+# quantization entirely and transports the raw IEEE-754 float32 bytes
+# (byte-exact round trip, see transmission/quantization.py). This is the
+# fairest reference point for what int8/int6/int4 give up in exchange for
+# smaller packets — a real digital transport with zero quantization error,
+# as opposed to the analog AWGN baseline which degrades for an unrelated
+# reason (channel noise, not quantization) and should never be used as the
+# "digital" Pareto baseline.
+_defaults_: [digital_packet]
+bit_depth: 32

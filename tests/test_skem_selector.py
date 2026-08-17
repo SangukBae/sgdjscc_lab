@@ -179,6 +179,95 @@ class TestMinMaxSegmentLength:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Real scene-change signal combined with PSSS (not inferred from reason text)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class _ScriptedSceneDetector:
+    """Returns a pre-scripted boundaries list — lets a test dictate exactly
+    which frames are scene cuts without depending on real pixel content."""
+
+    def __init__(self, boundaries):
+        self._boundaries = list(boundaries)
+
+    def detect(self, frames):
+        assert len(frames) == len(self._boundaries)
+        return {"boundaries": list(self._boundaries), "distances": [0.0] * len(frames)}
+
+
+class TestSceneChangeIntegration:
+    def test_default_no_scene_detector_preserves_original_behaviour(self):
+        # scene_detector=None (default) — a scene-cut-like scripted PSSS score
+        # sequence behaves exactly as before this feature existed.
+        backend = _ScriptedPsssBackend([-1.0, -1.0, -1.0])
+        sel = PsssKeyframeSelector(
+            caption_fn=_caption_by_index(["x"] * 4), psss_backend=backend, threshold=0.3,
+        )
+        out = sel.extract([torch.zeros(1) for _ in range(4)])
+        assert out["keyframes"] == [0]
+        assert out["scene_change_used"] is False
+        assert out["force_reason"] == {"0": "first_frame"}
+
+    def test_scene_boundary_forces_keyframe_even_when_psss_score_stays_low(self):
+        # PSSS never fires (-1.0 everywhere, always "continue_segment"), but a
+        # real scene cut at frame 2 must still force a keyframe there.
+        backend = _ScriptedPsssBackend([-1.0, -1.0, -1.0])
+        scene_detector = _ScriptedSceneDetector([True, False, True, False])
+        sel = PsssKeyframeSelector(
+            caption_fn=_caption_by_index(["x"] * 4), psss_backend=backend, threshold=0.3,
+            scene_detector=scene_detector,
+        )
+        out = sel.extract([torch.zeros(1) for _ in range(4)])
+        assert 2 in out["keyframes"]
+        assert out["scene_change_used"] is True
+        # structured field, not a reason-string substring check
+        assert out["force_reason"]["2"] == "scene_change"
+        assert "scene_change" in out["keyframe_reasons"]["2"]
+
+    def test_force_reason_distinguishes_every_forcing_cause(self):
+        # 5 frames, max_segment_length=2 (leaves room for one PSSS-scored
+        # frame per segment before the length cap would fire):
+        #   frame 1: scene_change (scene wins even though span(1) < cap)
+        #   frame 2: PSSS decision (S_rel > threshold vs keyframe 1)
+        #   frame 3: PSSS decision (S_rel <= threshold -> continue_segment, no keyframe)
+        #   frame 4: max_segment_length reached (span=2 since keyframe 2)
+        backend = _ScriptedPsssBackend([0.9, -1.0])
+        scene_detector = _ScriptedSceneDetector([True, True, False, False, False])
+        sel = PsssKeyframeSelector(
+            caption_fn=_caption_by_index(["x"] * 5), psss_backend=backend, threshold=0.3,
+            min_segment_length=1, max_segment_length=2, scene_detector=scene_detector,
+        )
+        out = sel.extract([torch.zeros(1) for _ in range(5)])
+        assert out["keyframes"] == [0, 1, 2, 4]
+        assert out["force_reason"]["0"] == "first_frame"
+        assert out["force_reason"]["1"] == "scene_change"
+        assert out["force_reason"]["2"] == "psss"
+        assert out["force_reason"]["4"] == "max_segment_length"
+        assert "3" not in out["force_reason"]  # frame 3 stayed in the segment, never a keyframe
+        # every distinct category actually appears — proves all four real
+        # forcing paths are exercised, not just string-matched after the fact
+        assert set(out["force_reason"].values()) == {"first_frame", "scene_change", "max_segment_length", "psss"}
+
+    def test_scene_change_scored_call_count_unaffected_by_psss_backend(self):
+        # scene_detector.detect() is called exactly once regardless of n frames
+        # (not once per frame) — proves it's a single upfront pass, not folded
+        # into the per-frame PSSS loop.
+        calls = []
+
+        class _CountingSceneDetector(_ScriptedSceneDetector):
+            def detect(self, frames):
+                calls.append(len(frames))
+                return super().detect(frames)
+
+        backend = _ScriptedPsssBackend([-1.0, -1.0, -1.0])
+        sel = PsssKeyframeSelector(
+            caption_fn=_caption_by_index(["x"] * 4), psss_backend=backend, threshold=0.3,
+            scene_detector=_CountingSceneDetector([True, False, False, False]),
+        )
+        sel.extract([torch.zeros(1) for _ in range(4)])
+        assert calls == [4]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Edge cases: empty/tiny/truncated input
 # ─────────────────────────────────────────────────────────────────────────────
 

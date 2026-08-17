@@ -33,9 +33,24 @@ from sgdjscc_lab.transmission.wire_packet import (
 )
 from sgdjscc_lab.transmission.byte_accounting import (
     PacketByteBreakdown,
+    TransmissionMeasurement,
     estimate_channel_symbols,
     estimate_wire_bytes,
+    measure_frame_transmission,
     packet_byte_breakdown,
+)
+from sgdjscc_lab.transmission.packet_bundle import (
+    BundleChecksumError,
+    BundleError,
+    BundleItem,
+    BundleLengthError,
+    BundleMagicError,
+    BundleVersionError,
+    TransmissionBundle,
+    build_frame_bundle,
+    decode_frame_bundle,
+    parse_bundle,
+    serialize_bundle,
 )
 
 __all__ = [
@@ -56,7 +71,20 @@ __all__ = [
     "parse",
     "serialize",
     "PacketByteBreakdown",
+    "TransmissionMeasurement",
     "estimate_channel_symbols",
     "estimate_wire_bytes",
+    "measure_frame_transmission",
     "packet_byte_breakdown",
+    "BundleChecksumError",
+    "BundleError",
+    "BundleItem",
+    "BundleLengthError",
+    "BundleMagicError",
+    "BundleVersionError",
+    "TransmissionBundle",
+    "build_frame_bundle",
+    "decode_frame_bundle",
+    "parse_bundle",
+    "serialize_bundle",
 ]

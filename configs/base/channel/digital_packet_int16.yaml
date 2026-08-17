@@ -1,0 +1,9 @@
+# configs/base/channel/digital_packet_int16.yaml – 16-bit digital packet preset
+#
+# "Reliable digital" high-precision baseline: real affine quantization at
+# 16-bit, negligible quantization error. Compare int8/int6/int4 against this
+# (and the lossless bit_depth=32 preset) — not against the analog AWGN
+# baseline — to isolate quantization-induced quality loss from the AWGN
+# channel's own noise, which is a different degradation source entirely.
+_defaults_: [digital_packet]
+bit_depth: 16

@@ -5,7 +5,7 @@ Wire layout (all multi-byte integers big-endian ``>``, fixed field widths via
 
     magic                4s      b"SGDW"
     version               B      packet format version (currently 1)
-    bit_depth             B      4 | 6 | 8
+    bit_depth             B      4 | 6 | 8 | 16 | 32 (32 = lossless raw float32)
     granularity           B      0 = per_tensor, 1 = per_channel
     channel_dim           b      signed axis index used for per_channel quant
     ndim                  B      number of tensor dims
@@ -47,6 +47,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from sgdjscc_lab.transmission.quantization import (
+    SUPPORTED_BIT_DEPTHS,
     QuantizedTensor,
     dequantize_tensor,
     quantize_tensor,
@@ -124,7 +125,7 @@ def _dumps_metadata(metadata: Dict[str, Any]) -> bytes:
 
 def serialize(packet: WirePacket, compress_metadata: bool = True) -> bytes:
     """Deterministically serialize a :class:`WirePacket` to bytes."""
-    if packet.bit_depth not in (4, 6, 8):
+    if packet.bit_depth not in SUPPORTED_BIT_DEPTHS:
         raise PacketError(f"unsupported bit_depth={packet.bit_depth!r}")
     granularity_code = _GRANULARITY_CODE.get(packet.granularity)
     if granularity_code is None:
@@ -190,7 +191,7 @@ def parse(data: bytes) -> WirePacket:
         raise PacketMagicError(f"bad magic {magic!r}, expected {PACKET_MAGIC!r}")
     if version != PACKET_VERSION:
         raise PacketVersionError(f"unsupported packet version {version}, expected {PACKET_VERSION}")
-    if bit_depth not in (4, 6, 8):
+    if bit_depth not in SUPPORTED_BIT_DEPTHS:
         raise PacketError(f"unsupported bit_depth={bit_depth}")
     if granularity_code not in _GRANULARITY_NAME:
         raise PacketError(f"unsupported granularity code={granularity_code}")

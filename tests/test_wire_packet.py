@@ -41,8 +41,10 @@ from sgdjscc_lab.transmission.wire_packet import (
 from sgdjscc_lab.transmission.byte_accounting import (
     estimate_channel_symbols,
     estimate_wire_bytes,
+    measure_frame_transmission,
     packet_byte_breakdown,
 )
+from sgdjscc_lab.transmission.packet_bundle import build_frame_bundle
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,8 +100,44 @@ class TestBitPackingRoundTrip:
 # 2. Tensor quantize/dequantize round trip
 # ─────────────────────────────────────────────────────────────────────────────
 
+class TestReliableDigitalBaselines:
+    """16-bit (high-precision quantized) and 32-bit (lossless raw float32)
+    baselines — the fair "digital but not lossy" comparison points int8/6/4
+    should be measured against (never AWGN, which is a different, analog
+    degradation source entirely)."""
+
+    def test_bit_depth_32_is_byte_exact_lossless(self):
+        torch.manual_seed(0)
+        x = torch.randn(1, 16, 16, 16)
+        q = quantize_tensor(x, bit_depth=32)
+        recon = dequantize_tensor(q)
+        assert torch.equal(recon, x)  # exact, not just close
+        assert q.payload_bytes == x.numel() * 4  # raw float32, no compression
+
+    def test_bit_depth_32_round_trips_through_wire_packet(self):
+        torch.manual_seed(0)
+        x = torch.randn(1, 16, 16, 16)
+        data = encode_latent_packet(x, bit_depth=32)
+        recon = decode_latent_packet(data)
+        assert torch.equal(recon, x)
+
+    def test_bit_depth_16_error_far_smaller_than_bit_depth_8(self):
+        torch.manual_seed(0)
+        x = torch.randn(1, 16, 16, 16)
+        err16 = (dequantize_tensor(quantize_tensor(x, bit_depth=16)) - x).abs().max().item()
+        err8 = (dequantize_tensor(quantize_tensor(x, bit_depth=8)) - x).abs().max().item()
+        assert err16 < err8 / 100  # ~256x finer step size
+
+    def test_byte_size_ordering_across_all_baselines(self):
+        torch.manual_seed(0)
+        x = torch.randn(1, 16, 16, 16)
+        sizes = {bd: len(encode_latent_packet(x, bit_depth=bd, compress_metadata=False))
+                  for bd in (4, 6, 8, 16, 32)}
+        assert sizes[4] < sizes[6] < sizes[8] < sizes[16] < sizes[32]
+
+
 class TestTensorQuantization:
-    @pytest.mark.parametrize("bit_depth", [8, 6, 4])
+    @pytest.mark.parametrize("bit_depth", [8, 6, 4, 16, 32])
     @pytest.mark.parametrize("granularity", ["per_tensor", "per_channel"])
     def test_round_trip_error_bounded_by_quantization_step(self, bit_depth, granularity):
         torch.manual_seed(0)
@@ -268,6 +306,41 @@ class TestExactByteAccounting:
             data = encode_latent_packet(x, bit_depth=bd, compress_metadata=False)
             sizes[bd] = len(data)
         assert sizes[4] < sizes[6] < sizes[8]
+
+    def test_measurement_fields_separated_for_analog_frame(self):
+        m = measure_frame_transmission(
+            bundle=None, latent_elements=32768, visual_is_analog=True,
+        )
+        d = m.as_dict()
+        assert d["latent_elements"] == 32768
+        assert d["analog_channel_symbols"] == 32768   # exact, equals latent_elements
+        assert d["source_packet_bits"] == 0            # no digital bundle for this frame
+        assert d["estimated_digital_channel_symbols"] == "unavailable"  # no bits_per_symbol given
+        assert d["digital_symbols_status"] == "unavailable"
+
+    def test_measurement_fields_separated_for_digital_frame(self):
+        torch.manual_seed(0)
+        bundle = build_frame_bundle(
+            visual_latent_patches=torch.randn(2, 16, 16, 16), visual_is_analog=False,
+            visual_bit_depth=8, visual_granularity="per_tensor", visual_channel_dim=1,
+            visual_channel_symbols=2 * 4096, caption="x", edge_tensor=None,
+            edge_bit_depth=8, keyframe_index=0, manifest={},
+        )
+        m = measure_frame_transmission(
+            bundle=bundle, latent_elements=2 * 4096, visual_is_analog=False,
+            bits_per_symbol=2.0, code_rate=0.8,
+        )
+        d = m.as_dict()
+        assert d["latent_elements"] == 2 * 4096
+        assert d["analog_channel_symbols"] == ""       # never fabricated as 0 for a digital frame
+        assert d["source_packet_bits"] == bundle.total_exact_bytes() * 8
+        assert d["estimated_digital_channel_symbols"] == d["source_packet_bits"] / 2.0
+        assert d["digital_symbols_status"] == "proxy"
+        assert d["wire_bytes_status"] == "proxy"       # code_rate < 1.0
+
+    def test_wire_bytes_status_exact_when_no_fec_modeled(self):
+        m = measure_frame_transmission(bundle=None, latent_elements=100, visual_is_analog=True, code_rate=1.0)
+        assert m.wire_bytes_status == "exact"
 
     def test_channel_symbol_and_wire_byte_estimates_are_labeled_proxy(self):
         sym = estimate_channel_symbols(1000, bits_per_symbol=2.0)

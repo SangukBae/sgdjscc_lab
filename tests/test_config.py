@@ -211,3 +211,43 @@ class TestFragmentComposition:
     def test_legacy_config_paths_remain_loadable(self, legacy_path):
         cfg = load_config(legacy_path)
         assert cfg is not None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# digital_packet channel presets — regression for a broken _defaults_ path
+# (digital_packet_int4/int6.yaml previously pointed at
+# "channel/digital_packet", which resolves relative to their OWN directory
+# (configs/base/channel/) to the nonexistent configs/base/channel/channel/
+# digital_packet.yaml — load_config() would raise FileNotFoundError).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDigitalPacketChannelConfigs:
+    @pytest.mark.parametrize(
+        "config_path,expected_bit_depth",
+        [
+            ("configs/base/channel/digital_packet.yaml", 8),
+            ("configs/base/channel/digital_packet_int4.yaml", 4),
+            ("configs/base/channel/digital_packet_int6.yaml", 6),
+            ("configs/base/channel/digital_packet_int16.yaml", 16),
+            ("configs/base/channel/digital_packet_float32.yaml", 32),
+        ],
+    )
+    def test_digital_packet_preset_loads_and_composes(self, config_path, expected_bit_depth):
+        cfg = load_config(config_path)
+        assert cfg.channel == "digital_packet"
+        assert cfg.bit_depth == expected_bit_depth
+        assert cfg.granularity == "per_tensor"
+        assert cfg.channel_dim == 1
+        assert cfg.compress_metadata is True
+
+    def test_bit_depth_presets_are_pairwise_distinct(self):
+        paths = [
+            "configs/base/channel/digital_packet_int4.yaml",
+            "configs/base/channel/digital_packet_int6.yaml",
+            "configs/base/channel/digital_packet.yaml",
+            "configs/base/channel/digital_packet_int16.yaml",
+            "configs/base/channel/digital_packet_float32.yaml",
+        ]
+        bit_depths = [load_config(p).bit_depth for p in paths]
+        assert bit_depths == sorted(bit_depths)
+        assert len(set(bit_depths)) == len(bit_depths)

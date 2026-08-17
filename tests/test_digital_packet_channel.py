@@ -86,6 +86,32 @@ class TestDigitalPacketChannelTransmit:
         # a naive "only look at last_breakdown" total would undercount by ~5x
         assert ch.last_total_bytes > ch.last_breakdown.total_bytes * (n_patches - 1)
 
+    def test_accumulator_sums_across_multiple_per_patch_transmit_calls(self):
+        # Regression: pipelines/eval_pipeline.py::_reconstruct_with_cfg calls
+        # transmit() once PER PATCH (bsz=1 each), not once per frame with all
+        # patches batched. last_total_bytes alone would only reflect the last
+        # such call; the cross-call accumulator must sum all of them.
+        torch.manual_seed(0)
+        ch = DigitalPacketChannel(bit_depth=8)
+        ch.reset_accumulation()
+        n_patches = 6
+        expected_total = 0
+        for _ in range(n_patches):
+            x = torch.randn(1, 16, 16, 16)
+            ch.transmit(x, snr_db=10.0)
+            expected_total += ch.last_total_bytes
+        assert len(ch.all_packets) == n_patches
+        assert len(ch.all_breakdowns) == n_patches
+        assert ch.all_total_bytes == expected_total
+
+    def test_reset_accumulation_clears_prior_frame_state(self):
+        torch.manual_seed(0)
+        ch = DigitalPacketChannel(bit_depth=8)
+        ch.transmit(torch.randn(1, 16, 16, 16), snr_db=10.0)
+        assert ch.all_total_bytes > 0
+        ch.reset_accumulation()
+        assert ch.all_packets == [] and ch.all_breakdowns == [] and ch.all_total_bytes == 0
+
     def test_each_patch_in_batch_decodes_independently(self):
         torch.manual_seed(0)
         x = torch.randn(4, 16, 16, 16)

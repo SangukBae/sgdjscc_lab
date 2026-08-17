@@ -71,6 +71,13 @@ keyframe:
                                        # requires running without --no-models) | "mock"
                                        # (deterministic frame-statistics placeholder, no
                                        # real captioning at all — structural tests only)
+    use_scene_detector: false          # when true, PsssKeyframeSelector also forces a
+                                       # keyframe at every real scene_detector-detected
+                                       # boundary (in addition to PSSS/max_segment_length),
+                                       # using the same scene_detector the "fixed" selector
+                                       # already builds — see skem_selector.py's
+                                       # scene_detector param. false (default) preserves
+                                       # the original PSSS-only behaviour exactly.
     mock: {}                           # MockPsssBackend has no extra kwargs
     proxy:
       model_name: ViT-B/32             # ClipTextProxyPsssBackend's CLIP model

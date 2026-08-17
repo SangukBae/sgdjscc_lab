@@ -1,13 +1,23 @@
 """transmission/quantization.py – Uniform affine quantization + real bit packing.
 
-Quantizes a float32 JSCC latent tensor to 8/6/4-bit unsigned integer codes
+Quantizes a float32 JSCC latent tensor to 4/6/8/16-bit unsigned integer codes
 (uniform affine: ``code = round((x - zero_point) / scale)``) and packs the
 codes into a dense bitstream (no byte padding per element — 4-bit and 6-bit
 codes are bit-packed, not stored one-per-byte). This is real compression: a
 4-bit tensor occupies ~4/32 of the original float32 storage, not merely a
 narrowed-but-still-byte-aligned representation.
 
-Two quantization granularities:
+``bit_depth=32`` is a distinct, **lossless** mode: it bypasses affine
+quantization entirely and stores the tensor's raw IEEE-754 float32 bytes
+verbatim (byte-exact round trip, no quantization error at all). This is the
+"reliable digital" baseline a lossy int8/int6/int4 packet should be compared
+against — it is real compression relative to nothing (same bytes as float32
+storage) but real *bit-exact reliability* relative to int8/6/4, so int8/6/4's
+quality loss can be attributed to quantization alone, not conflated with a
+transport that was never bit-exact to begin with.
+
+Two quantization granularities (n/a to bit_depth=32, which is always
+per-tensor since there is no scale/zero-point to speak of):
   - ``per_tensor``:  one (scale, zero_point) pair for the whole tensor.
   - ``per_channel``: one (scale, zero_point) pair per slice along
     ``channel_dim`` (dim 1 for a JSCC latent ``[B, C, H, W]``).
@@ -26,7 +36,11 @@ from typing import List, Sequence
 import numpy as np
 import torch
 
-SUPPORTED_BIT_DEPTHS = (8, 6, 4)
+# 16 = a "reliable digital" high-precision quantized baseline (real affine
+# quantization, negligible error). 32 = lossless raw float32 passthrough (no
+# quantization at all) — see module docstring.
+SUPPORTED_BIT_DEPTHS = (4, 6, 8, 16, 32)
+LOSSLESS_BIT_DEPTH = 32
 
 
 class QuantizationError(ValueError):
@@ -129,14 +143,42 @@ def _per_channel_scale_zp(
     return scale.reshape(-1).tolist(), tmin.reshape(-1).tolist()
 
 
+def _quantize_lossless_float32(tensor: torch.Tensor) -> QuantizedTensor:
+    """bit_depth=32: no affine quantization — raw IEEE-754 float32 bytes."""
+    arr = tensor.detach().cpu().contiguous().to(torch.float32).numpy()
+    packed = arr.tobytes()
+    return QuantizedTensor(
+        packed=packed,
+        shape=list(tensor.shape),
+        bit_depth=LOSSLESS_BIT_DEPTH,
+        granularity="per_tensor",
+        channel_dim=1,
+        scale=[1.0],
+        zero_point=[0.0],
+        pad_bits=0,
+        n_elements=int(tensor.numel()),
+    )
+
+
+def _dequantize_lossless_float32(q: QuantizedTensor, dtype, device) -> torch.Tensor:
+    arr = np.frombuffer(q.packed, dtype=np.float32).reshape(q.shape)
+    return torch.from_numpy(arr.copy()).to(dtype=dtype, device=device)
+
+
 def quantize_tensor(
     tensor: torch.Tensor,
     bit_depth: int,
     granularity: str = "per_tensor",
     channel_dim: int = 1,
 ) -> QuantizedTensor:
-    """Quantize a float tensor to ``bit_depth``-bit unsigned codes and bit-pack them."""
+    """Quantize a float tensor to ``bit_depth``-bit unsigned codes and bit-pack them.
+
+    ``bit_depth=32`` is lossless (see module docstring) and ignores
+    ``granularity``/``channel_dim`` — there is no scale/zero-point to compute.
+    """
     _validate_bit_depth(bit_depth)
+    if bit_depth == LOSSLESS_BIT_DEPTH:
+        return _quantize_lossless_float32(tensor)
     if granularity not in ("per_tensor", "per_channel"):
         raise QuantizationError(f"unsupported granularity={granularity!r}")
 
@@ -181,6 +223,8 @@ def dequantize_tensor(
 ) -> torch.Tensor:
     """Invert :func:`quantize_tensor`. Reconstructs a fresh tensor from packed bytes only."""
     _validate_bit_depth(q.bit_depth)
+    if q.bit_depth == LOSSLESS_BIT_DEPTH:
+        return _dequantize_lossless_float32(q, dtype, device)
     codes = unpack_bits(q.packed, q.bit_depth, q.n_elements, q.pad_bits)
     codes_t = torch.from_numpy(codes.astype(np.float32)).to(dtype=dtype, device=device)
 

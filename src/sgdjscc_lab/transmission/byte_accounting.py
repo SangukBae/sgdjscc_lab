@@ -114,3 +114,109 @@ def estimate_wire_bytes(total_bytes: int, code_rate: float = 1.0) -> Dict[str, o
         "code_rate": code_rate,
         "proxy": code_rate != 1.0,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TransmissionMeasurement — the 5 explicitly-separated accounting fields
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass
+class TransmissionMeasurement:
+    """Exactly the 5 separated measurement fields a transmission-reduction
+    comparison needs, each with an unambiguous exactness label:
+
+    ``latent_elements``
+        Exact. Total JSCC latent elements actually presented to
+        ``channel.transmit()`` for this frame (visual patches only — a fixed
+        architecture constant per patch times patch count), regardless of
+        whether the channel used was analog or digital.
+    ``analog_channel_symbols``
+        Exact when the visual latent went over the analog AWGN channel
+        (equals ``latent_elements`` — one real-valued channel use per latent
+        element); ``None`` when the visual latent was sent digitally (no
+        analog symbols were used at all — never reported as 0, which would
+        wrongly imply "zero symbols were needed").
+    ``source_packet_bits``
+        Exact. Total bits of the real serialized transmission bundle
+        (visual-if-digital + caption + edge + manifest — see
+        :mod:`packet_bundle`). 0 when the bundle has no digital components
+        (e.g. an all-analog frame with no caption/edge/manifest supplied).
+    ``estimated_digital_channel_symbols``
+        Labeled estimate (never exact — no real modulator exists in this
+        codebase): ``source_packet_bits / bits_per_symbol`` when a
+        *bits_per_symbol* modulation assumption is supplied; otherwise the
+        literal string ``"unavailable"`` (never a fabricated number when no
+        modulation assumption was given).
+    ``estimated_wire_bytes``
+        Labeled estimate: ``source_packet_bits/8`` under FEC ``code_rate``
+        (default 1.0 = no FEC modeled, in which case this equals the exact
+        byte count but is still reported through the "estimated" field name
+        for schema consistency).
+    """
+
+    latent_elements: int
+    analog_channel_symbols: Optional[int]
+    source_packet_bits: int
+    estimated_digital_channel_symbols: "float | str | None"
+    estimated_wire_bytes: Optional[float]
+    digital_symbols_status: str  # "proxy" | "unavailable" — never "exact"
+    wire_bytes_status: str       # "exact" (code_rate=1.0) | "proxy" (code_rate<1.0)
+
+    def as_dict(self) -> Dict[str, object]:
+        return {
+            "latent_elements": self.latent_elements,
+            "analog_channel_symbols": (
+                "" if self.analog_channel_symbols is None else self.analog_channel_symbols
+            ),
+            "source_packet_bits": self.source_packet_bits,
+            "estimated_digital_channel_symbols": (
+                self.estimated_digital_channel_symbols
+                if self.estimated_digital_channel_symbols is not None else "unavailable"
+            ),
+            "estimated_wire_bytes": (
+                "" if self.estimated_wire_bytes is None else self.estimated_wire_bytes
+            ),
+            "digital_symbols_status": self.digital_symbols_status,
+            "wire_bytes_status": self.wire_bytes_status,
+        }
+
+
+def measure_frame_transmission(
+    bundle,
+    latent_elements: int,
+    visual_is_analog: bool,
+    bits_per_symbol: Optional[float] = None,
+    code_rate: float = 1.0,
+) -> TransmissionMeasurement:
+    """Build the 5-field :class:`TransmissionMeasurement` for one frame.
+
+    *bundle* is the frame's :class:`~sgdjscc_lab.transmission.packet_bundle.TransmissionBundle`
+    (or ``None`` if no bundle was built for this frame). *latent_elements* is
+    the exact visual latent element count (always known, independent of
+    analog/digital). *visual_is_analog* determines whether
+    ``analog_channel_symbols`` is populated (never fabricated as 0 for a
+    digital frame).
+    """
+    analog_channel_symbols = latent_elements if visual_is_analog else None
+    source_packet_bits = (bundle.total_exact_bytes() * 8) if bundle is not None else 0
+
+    if bits_per_symbol is None:
+        estimated_digital_channel_symbols = None
+        digital_symbols_status = "unavailable"
+    else:
+        if bits_per_symbol <= 0:
+            raise ValueError("bits_per_symbol must be > 0")
+        estimated_digital_channel_symbols = source_packet_bits / bits_per_symbol
+        digital_symbols_status = "proxy"
+
+    wire_est = estimate_wire_bytes(source_packet_bits // 8, code_rate=code_rate)
+
+    return TransmissionMeasurement(
+        latent_elements=latent_elements,
+        analog_channel_symbols=analog_channel_symbols,
+        source_packet_bits=source_packet_bits,
+        estimated_digital_channel_symbols=estimated_digital_channel_symbols,
+        estimated_wire_bytes=wire_est["estimated_wire_bytes"],
+        digital_symbols_status=digital_symbols_status,
+        wire_bytes_status=("proxy" if wire_est["proxy"] else "exact"),
+    )
