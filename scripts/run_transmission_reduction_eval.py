@@ -198,7 +198,11 @@ def _select_keyframes(video_key, frames, captions, selector_name, threshold, max
     selector = _build_selector(selector_name, captions, threshold, max_segment_length)
     result = selector.extract(frames)
     keyframes = list(result["keyframes"])
-    reasons = dict(result.get("keyframe_reasons", {}))
+    # PsssKeyframeSelector.extract() serializes keyframe_reasons with str(int)
+    # keys (JSON-compatibility convention shared with keyframes.json elsewhere
+    # in this codebase) — normalize back to int keys so callers can look up by
+    # the plain frame-index ints used everywhere else in this script.
+    reasons = {int(k): v for k, v in dict(result.get("keyframe_reasons", {})).items()}
     forced = []
     for k in keyframes:
         reason = reasons.get(k, "")

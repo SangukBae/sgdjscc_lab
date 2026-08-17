@@ -97,6 +97,29 @@ class TestAggregateAndPareto:
         assert not any(r.get("selected_as_smallest_in_budget") for r in pareto)
 
 
+class TestKeyframeReasonKeyNormalization:
+    def test_select_keyframes_normalizes_string_keyed_reasons(self, monkeypatch):
+        # Regression: video/skem_selector.py::PsssKeyframeSelector.extract()
+        # returns keyframe_reasons keyed by str(int) (a deliberate JSON-
+        # compatibility convention shared with keyframes.json elsewhere in this
+        # codebase), while psss_scores' "index" field stays a plain int.
+        # _select_keyframes must normalize keyframe_reasons back to int keys or
+        # every sel.reasons.get(kf_idx, "") lookup silently misses and reports
+        # an empty reason/forced-flag for every real keyframe.
+        class FakeSelector:
+            def extract(self, frames):
+                return {
+                    "keyframes": [0, 3],
+                    "keyframe_reasons": {"0": "first frame (K_1 = 1)", "3": "max_segment_length forced"},
+                    "psss_scores": [{"index": 3, "s_abs": 0.1, "s_rel": 0.9}],
+                }
+
+        monkeypatch.setattr(mod, "_build_selector", lambda *a, **kw: FakeSelector())
+        sel = mod._select_keyframes("v", [None, None, None, None], None, "skem", 0.35, 16)
+        assert sel.reasons == {0: "first frame (K_1 = 1)", 3: "max_segment_length forced"}
+        assert sel.forced_flags == [True, True]  # frame 0 always forced; frame 3 via max_segment_length
+
+
 class TestCsvWriting:
     def test_write_csv_round_trips(self, tmp_path):
         rows = [{"a": 1, "b": "x"}, {"a": 2, "b": "y"}]
