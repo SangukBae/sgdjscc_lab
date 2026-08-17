@@ -514,12 +514,33 @@ def run(argv=None) -> int:
                 recon_dir = output_root / "recon_videos" / video_key / config_name
                 frame_files = []
                 video_psnr, video_ssim, video_lpips = [], [], []
+                n_nan_frames = 0
                 for rec in records:
                     if rec.recon is None:
                         continue
                     fpath = recon_dir / f"frame_{rec.index:05d}.png"
                     save_tensor_as_image(rec.recon, fpath)
                     frame_files.append(fpath)
+                    if torch.isnan(rec.recon).any() or torch.isinf(rec.recon).any():
+                        # Known, reproducible fragility (not a bug in this
+                        # feature's own code — see README's "Known limitations"):
+                        # jscc.snr_prediction_net (the blind SNR predictor used
+                        # by _compute_step's step_style="continuous" branch) was
+                        # only ever trained on AWGN-shaped degradation. Coarse
+                        # digital quantization (observed with bit_depth=8 on
+                        # some real frames) can push its predicted_signal_scale
+                        # to >= 1, making cur_step <= 0 and
+                        # 10*log10(1/cur_step - 1) evaluate log10 of a
+                        # non-positive number -> NaN, which then propagates
+                        # through the (otherwise correct, untouched per this
+                        # repo's algorithm-preservation invariant) diffusion
+                        # decode. Excluded from the quality average rather than
+                        # silently poisoning mean_psnr/ssim/lpips into "nan",
+                        # and always counted so it's visible, never hidden.
+                        n_nan_frames += 1
+                        log(f"  [{video_key}][{config_name}] frame {rec.index}: NaN/Inf reconstruction "
+                            f"(excluded from quality average, not from byte accounting)")
+                        continue
                     original = frames[rec.index]
                     h = min(rec.recon.shape[-2], original.shape[-2])
                     w = min(rec.recon.shape[-1], original.shape[-1])
@@ -587,7 +608,7 @@ def run(argv=None) -> int:
                     "channel": ch_name, "bit_depth": bit_depth if bit_depth is not None else "",
                     "psss_backend_kind": sel.psss_backend_kind,
                     "n_frames_total": len(frames), "n_transmitting_frames": len(transmitting),
-                    "n_keyframes_selected": n_kf_in_gop,
+                    "n_keyframes_selected": n_kf_in_gop, "n_nan_or_inf_frames": n_nan_frames,
                     "mean_psnr": sum(video_psnr) / n if video_psnr else float("nan"),
                     "mean_ssim": sum(video_ssim) / n if video_ssim else float("nan"),
                     "mean_lpips": (sum(video_lpips) / len(video_lpips)) if video_lpips else "",
@@ -598,8 +619,10 @@ def run(argv=None) -> int:
                     "analog_no_wire_bytes": channel_kind == "awgn",
                     "total_elapsed_s": round(video_elapsed, 3),
                 })
+                nan_note = f" ({n_nan_frames} NaN/Inf frames excluded)" if n_nan_frames else ""
                 log(f"[{video_key}][{config_name}] frames={len(frames)} transmitting={len(transmitting)} "
-                    f"mean_psnr={per_video_rows[-1]['mean_psnr']:.4f} bytes={per_video_rows[-1]['total_bundle_bytes']}")
+                    f"mean_psnr={per_video_rows[-1]['mean_psnr']:.4f}{nan_note} "
+                    f"bytes={per_video_rows[-1]['total_bundle_bytes']}")
 
     _write_csv(output_root / "per_video_metrics.csv", per_video_rows)
     _write_csv(output_root / "keyframe_selection.csv", keyframe_rows)
@@ -653,6 +676,7 @@ def _aggregate(per_video_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "mean_latent_elements": sum(r["latent_elements_total"] for r in rows) / n,
             "mean_total_bundle_bytes": (sum(byte_rows) / len(byte_rows)) if byte_rows else "",
             "analog_no_wire_bytes": rows[0]["analog_no_wire_bytes"],
+            "total_nan_or_inf_frames": sum(r.get("n_nan_or_inf_frames", 0) for r in rows),
         })
     return out
 
@@ -798,6 +822,21 @@ Known limitations:
   for digital configs (deterministic given the input) but worth knowing for
   AWGN's `analog_channel_symbols` (which is an exact *count*, not a captured
   noise sample, so this has no accounting-exactness impact).
+- **Known numerical fragility at coarse digital quantization** (found via GPU
+  verification, not this feature's own bug): `jscc.snr_prediction_net` (the
+  blind SNR predictor `_compute_step()` uses, `pipelines/infer_pipeline.py`,
+  untouched by this feature) was only ever trained on AWGN-shaped
+  degradation. On some real frames, bit_depth=8 quantization pushes its
+  predicted signal scale to >= 1, making `10*log10(1/cur_step - 1)` evaluate
+  `log10` of a non-positive number -> NaN, which then propagates through the
+  (otherwise correct) diffusion decode. This driver detects it
+  (`n_nan_or_inf_frames` in per_video_metrics.csv/aggregate.csv) and excludes
+  those frames from the quality average rather than silently reporting a
+  poisoned `nan` mean — but does not (and, per this repo's algorithm-
+  preservation invariant, should not) alter `_compute_step()` itself. If
+  `n_nan_or_inf_frames > 0` for a config, treat that config's quality numbers
+  as measured over fewer frames than `n_transmitting_frames` and consider a
+  higher bit_depth (16/32) or a different SNR for that content.
 """
     (output_root / "README.md").write_text(readme, encoding="utf-8")
 
