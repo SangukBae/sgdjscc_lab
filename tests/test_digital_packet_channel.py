@@ -68,6 +68,34 @@ class TestDigitalPacketChannelTransmit:
         out = ch.transmit(x, snr_db=10.0)
         assert out.shape == x.shape
 
+    def test_multi_patch_batch_records_every_patchs_packet_not_just_last(self):
+        # Regression: a real video frame is tiled into multiple 128x128 patches
+        # and JSCC batches all of them into one channel.transmit() call (bsz =
+        # n_patches). The exact total bytes must sum every patch's packet, not
+        # only the last one in the batch.
+        torch.manual_seed(0)
+        n_patches = 5
+        x = torch.randn(n_patches, 16, 16, 16)
+        ch = DigitalPacketChannel(bit_depth=8)
+        ch.transmit(x, snr_db=10.0)
+
+        assert len(ch.last_packets) == n_patches
+        assert len(ch.last_breakdowns) == n_patches
+        assert ch.last_total_bytes == sum(len(p) for p in ch.last_packets)
+        assert ch.last_total_bytes == sum(b.total_bytes for b in ch.last_breakdowns)
+        # a naive "only look at last_breakdown" total would undercount by ~5x
+        assert ch.last_total_bytes > ch.last_breakdown.total_bytes * (n_patches - 1)
+
+    def test_each_patch_in_batch_decodes_independently(self):
+        torch.manual_seed(0)
+        x = torch.randn(4, 16, 16, 16)
+        ch = DigitalPacketChannel(bit_depth=8)
+        out = ch.transmit(x, snr_db=10.0)
+        from sgdjscc_lab.transmission.wire_packet import decode_latent_packet
+        for i, data in enumerate(ch.last_packets):
+            recon_i = decode_latent_packet(data)
+            assert torch.allclose(recon_i, out[i:i + 1], atol=1e-5)
+
     def test_keyframe_index_round_trips_through_observe(self, latent):
         ch = DigitalPacketChannel(bit_depth=8)
         ch.keyframe_index = 42

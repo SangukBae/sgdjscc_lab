@@ -268,16 +268,23 @@ def _make_cfg(output_root: Path, model_root: Path, snr_db: float):
     return cfg
 
 
+# Architecture constant (matches accounting/bit_accounting.py and the VAE's
+# fixed z_channels=16 / 8x downsample of a 128x128 patch): one JSCC "patch" ==
+# one 16x16x16 == 4096-element latent actually passed to channel.transmit().
+LATENT_ELEMENTS_PER_PATCH = 16 * 16 * 16
+
+
 def _reconstruct_and_measure(
     frame_tensor, models, cfg, quality_evaluator, channel_kind, bit_depth, granularity, keyframe_index,
 ):
     import torch
-    from sgdjscc_lab.channels import AWGNChannel, DigitalPacketChannel
+    from sgdjscc_lab.channels import DigitalPacketChannel
     from sgdjscc_lab.utils.preprocessing import merge_patches, prepare_patches
 
     device = models.device
     patches, meta = prepare_patches(frame_tensor)
     patches = patches.to(device)
+    n_patches = patches.shape[0]
 
     if channel_kind == "awgn":
         models.jscc_model.channel_model = None  # falls back to the original AWGN path unchanged
@@ -297,17 +304,35 @@ def _reconstruct_and_measure(
     h, w = min(recon.shape[-2], original.shape[-2]), min(recon.shape[-1], original.shape[-1])
     metrics = quality_evaluator.evaluate(original[..., :h, :w], recon[..., :h, :w])
 
-    n_elements = patches.numel()  # exact: elements actually transmitted through the channel
+    # Exact: the latent element count actually presented to channel.transmit()
+    # (a fixed 16x16x16 per 128x128 patch), not the raw pixel-space patch size.
+    n_elements = n_patches * LATENT_ELEMENTS_PER_PATCH
 
-    breakdown = None
+    breakdown_sum = None
     total_bytes = None
+    packets = []
     if channel_kind != "awgn":
         cm = models.jscc_model.channel_model
-        if cm.last_breakdown is not None:
-            breakdown = cm.last_breakdown
-            total_bytes = breakdown.total_bytes
+        # cm.last_bundle is set once per transmit() call within run_single_image();
+        # a single call batches every patch of this frame (bsz == n_patches), so
+        # last_packets/last_breakdowns hold one entry per patch — summing all of
+        # them (not just the last) is required for an exact per-frame total.
+        if cm.last_breakdowns:
+            total_bytes = sum(b.total_bytes for b in cm.last_breakdowns)
+            breakdown_sum = {
+                "header_bytes": sum(b.header_bytes for b in cm.last_breakdowns),
+                "shape_bytes": sum(b.shape_bytes for b in cm.last_breakdowns),
+                "scale_zp_bytes": sum(b.scale_zp_bytes for b in cm.last_breakdowns),
+                "metadata_bytes": sum(b.metadata_bytes for b in cm.last_breakdowns),
+                "payload_bytes": sum(b.payload_bytes for b in cm.last_breakdowns),
+                "checksum_bytes": sum(b.checksum_bytes for b in cm.last_breakdowns),
+                "total_bytes": total_bytes,
+                "n_patches": len(cm.last_breakdowns),
+                "proxy": False,
+            }
+            packets = list(cm.last_packets)
 
-    return metrics, n_elements, breakdown, total_bytes, elapsed, recon
+    return metrics, n_elements, breakdown_sum, total_bytes, elapsed, recon, packets
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -396,8 +421,10 @@ def run(argv=None) -> int:
                 video_bytes = 0
                 video_elapsed = 0.0
 
+                psss_by_index = {r["index"]: r for r in sel.psss_scores}
+
                 for kf_idx in keyframes:
-                    metrics, n_elements, breakdown, total_bytes, elapsed, recon = _reconstruct_and_measure(
+                    metrics, n_elements, breakdown, total_bytes, elapsed, recon, packets = _reconstruct_and_measure(
                         frames[kf_idx], models, cfg, quality_evaluator,
                         channel_kind, bit_depth, args.granularity, kf_idx,
                     )
@@ -410,9 +437,11 @@ def run(argv=None) -> int:
 
                     reason = sel.reasons.get(kf_idx, "")
                     forced = kf_idx == 0 or "max_segment_length" in reason or "scene" in reason.lower()
+                    psss_rec = psss_by_index.get(kf_idx, {})
                     keyframe_rows.append({
                         "video": video_key, "config": config_name, "frame_index": kf_idx,
                         "selector": sel_name, "reason": reason, "forced": forced,
+                        "psss_s_abs": psss_rec.get("s_abs", ""), "psss_s_rel": psss_rec.get("s_rel", ""),
                         "psnr": metrics["psnr"], "ssim": metrics["ssim"], "lpips": metrics["lpips"],
                         "channel_symbols": n_elements,
                         "total_bytes": total_bytes if total_bytes is not None else "",
@@ -421,11 +450,16 @@ def run(argv=None) -> int:
                     })
 
                     if breakdown is not None:
-                        video_bytes += breakdown.total_bytes
-                        d = breakdown.as_dict()
+                        video_bytes += breakdown["total_bytes"]
+                        d = dict(breakdown)
                         d.update({"video": video_key, "config": config_name, "frame_index": kf_idx,
                                    "bit_depth": bit_depth})
                         packet_rows.append(d)
+
+                        packet_dir = output_root / "packets" / video_key / config_name
+                        packet_dir.mkdir(parents=True, exist_ok=True)
+                        for patch_idx, data in enumerate(packets):
+                            (packet_dir / f"frame_{kf_idx:05d}_patch{patch_idx:03d}.sgpk").write_bytes(data)
 
                     from sgdjscc_lab.io import save_tensor_as_image
                     save_tensor_as_image(
@@ -449,6 +483,7 @@ def run(argv=None) -> int:
                     f"bytes={per_video_rows[-1]['total_packet_bytes']}")
 
     _write_csv(output_root / "per_video_metrics.csv", per_video_rows)
+    _write_csv(output_root / "keyframe_selection.csv", keyframe_rows)
     _write_csv(output_root / "packet_components.csv", packet_rows)
     _write_csv(output_root / "keyframe_sweep.csv", keyframe_sweep_rows)
     aggregate_rows = _aggregate(per_video_rows)
@@ -565,8 +600,13 @@ for exact-vs-estimate accounting boundaries.
 
 - `per_video_metrics.csv` — per (video, config) quality + exact bytes/symbols.
 - `aggregate.csv` — per-config means across videos.
+- `keyframe_selection.csv` — per selected keyframe: selector, reason, forced
+  flag, PSSS s_abs/s_rel (when the frame was a PSSS decision), quality, bytes.
 - `packet_components.csv` — exact per-keyframe packet byte breakdown (header/
-  shape/scale/metadata/payload/checksum), `proxy=false` throughout.
+  shape/scale/metadata/payload/checksum, summed across every 128x128 patch in
+  the frame), `proxy=false` throughout.
+- `packets/<video>/<config>/frame_NNNNN_patchNNN.sgpk` — the actual serialized
+  binary packets (one per patch) a receiver would parse to reconstruct.
 - `keyframe_sweep.csv` — PSSS threshold x max_segment_length grid (selection
   only, no reconstruction).
 - `pareto_frontier.csv` — smallest-bytes config meeting the quality gate

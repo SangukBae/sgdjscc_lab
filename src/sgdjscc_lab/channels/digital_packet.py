@@ -32,11 +32,9 @@ import torch
 from sgdjscc_lab.channels.measurement import ChannelTape, MeasurementBundle
 from sgdjscc_lab.transmission.byte_accounting import packet_byte_breakdown
 from sgdjscc_lab.transmission.wire_packet import (
-    WirePacket,
     decode_latent_packet,
     encode_latent_packet,
     parse,
-    serialize,
 )
 
 
@@ -68,8 +66,11 @@ class DigitalPacketChannel(ChannelTape):
         self.channel_dim = int(channel_dim)
         self.compress_metadata = bool(compress_metadata)
         self.keyframe_index: Optional[int] = None
-        self.last_packet_bytes: Optional[bytes] = None
-        self.last_breakdown = None
+        self.last_packet_bytes: Optional[bytes] = None  # last sample's raw bytes (convenience)
+        self.last_breakdown = None                        # last sample's byte breakdown (convenience)
+        self.last_packets: list = []                       # every sample's raw bytes this call
+        self.last_breakdowns: list = []                     # every sample's byte breakdown this call
+        self.last_total_bytes: Optional[int] = None         # exact sum across all samples this call
         self._init_tape()
 
     def transmit(self, latent: torch.Tensor, snr_db: float) -> torch.Tensor:
@@ -77,13 +78,17 @@ class DigitalPacketChannel(ChannelTape):
 
     def observe(self, latent: torch.Tensor, snr_db: float) -> MeasurementBundle:
         bsz = latent.shape[0]
-        # Quantize/serialize/parse/dequantize per-sample so scale/zero_point stay
-        # meaningful per image (matches how the JSCC forward pass calls transmit()
-        # once per patch, batch size 1 in practice, but kept general).
+        # Quantize/serialize/parse/dequantize per-sample (one JSCC "patch" = one
+        # 16x16x16 latent = one packet) so scale/zero_point stay meaningful per
+        # patch. A single transmit() call typically batches every 128x128 patch
+        # of one image (bsz = n_patches, not 1) — every sample's packet is kept
+        # (self.last_packets / self.last_breakdowns), not just the last one, so
+        # callers get the *exact* total, not an undercount from only the final
+        # patch in the batch.
         recon_samples = []
+        packets_data = []
+        breakdowns = []
         total_bytes = 0
-        last_packet: Optional[WirePacket] = None
-        last_data: Optional[bytes] = None
         for i in range(bsz):
             sample = latent[i:i + 1].detach().cpu()
             data = encode_latent_packet(
@@ -96,19 +101,18 @@ class DigitalPacketChannel(ChannelTape):
                 compress_metadata=self.compress_metadata,
             )
             total_bytes += len(data)
-            last_data = data
-            last_packet = parse(data)
+            packets_data.append(data)
+            breakdowns.append(packet_byte_breakdown(parse(data), compress_metadata=self.compress_metadata))
             recon = decode_latent_packet(data, dtype=latent.dtype, device=latent.device)
             recon_samples.append(recon)
 
         received = torch.cat(recon_samples, dim=0)
 
-        self.last_packet_bytes = last_data
-        self.last_breakdown = (
-            packet_byte_breakdown(last_packet, compress_metadata=self.compress_metadata)
-            if last_packet is not None
-            else None
-        )
+        self.last_packets = packets_data
+        self.last_breakdowns = breakdowns
+        self.last_packet_bytes = packets_data[-1] if packets_data else None
+        self.last_breakdown = breakdowns[-1] if breakdowns else None
+        self.last_total_bytes = total_bytes
 
         return MeasurementBundle(
             received=received,
