@@ -27,6 +27,7 @@ from sgdjscc_lab.transmission.packet_bundle import (
     BundleMagicError,
     TransmissionBundle,
     build_frame_bundle,
+    build_side_info_bundle,
     decode_frame_bundle,
     parse_bundle,
     serialize_bundle,
@@ -145,12 +146,28 @@ class TestExactByteAccounting:
             visual_channel_symbols=visual.numel(), caption=["left patch", "right patch"],
             edge_tensor=edge, edge_uncertainty_tensor=uncertainty, edge_bit_depth=8,
             keyframe_index=0, manifest={"selected_keyframes": [0, 12]},
+            semantic_packet={"objects": ["person"], "scene": "street"},
         )
         decoded = decode_frame_bundle(serialize_bundle(bundle))
         assert decoded["captions"] == ["left patch", "right patch"]
         assert decoded["edge"].shape[0] == 2
         assert decoded["edge_uncertainty"].shape == uncertainty.shape
         assert decoded["manifest"]["selected_keyframes"] == [0, 12]
+        assert decoded["semantic_packet"]["objects"] == ["person"]
+
+    def test_visual_free_side_info_bundle_round_trip_and_exact_size(self):
+        bundle = build_side_info_bundle(
+            keyframe_index=1,
+            manifest={"decision": "reuse", "selected_keyframes": [0]},
+            semantic_packet={"objects": ["car"], "scene": "road"},
+        )
+        data = serialize_bundle(bundle)
+        decoded = decode_frame_bundle(data)
+        assert decoded["visual_latents"] is None
+        assert decoded["visual_is_analog"] is False
+        assert decoded["manifest"]["decision"] == "reuse"
+        assert decoded["semantic_packet"]["objects"] == ["car"]
+        assert bundle.total_exact_bytes() == len(data)
 
 
 class TestReceiverBoundary:

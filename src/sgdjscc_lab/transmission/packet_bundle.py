@@ -235,6 +235,7 @@ def build_frame_bundle(
     keyframe_index: int,
     manifest: Dict[str, Any],
     edge_uncertainty_tensor=None,    # torch.Tensor or None
+    semantic_packet: Optional[Dict[str, Any]] = None,
     compress_metadata: bool = True,
 ) -> TransmissionBundle:
     """Build the full transmission bundle for one keyframe.
@@ -313,7 +314,31 @@ def build_frame_bundle(
     manifest_bytes = json.dumps(manifest_full, sort_keys=True, separators=(",", ":")).encode("utf-8")
     items.append(BundleItem(name="manifest", kind="json", data=manifest_bytes))
 
+    if semantic_packet is not None:
+        semantic_bytes = json.dumps(
+            semantic_packet, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        items.append(BundleItem(name="semantic_packet", kind="json", data=semantic_bytes))
+
     return TransmissionBundle(keyframe_index=keyframe_index, items=items)
+
+
+def build_side_info_bundle(
+    *, keyframe_index: int, manifest: Dict[str, Any], semantic_packet: Dict[str, Any]
+) -> TransmissionBundle:
+    """Build a visual-free bundle for a reuse/generate frame's side info."""
+    manifest_full = dict(manifest)
+    manifest_full["keyframe_index"] = int(keyframe_index)
+    manifest_bytes = json.dumps(
+        manifest_full, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    semantic_bytes = json.dumps(
+        semantic_packet, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    ).encode("utf-8")
+    return TransmissionBundle(keyframe_index=keyframe_index, items=[
+        BundleItem(name="manifest", kind="json", data=manifest_bytes),
+        BundleItem(name="semantic_packet", kind="json", data=semantic_bytes),
+    ])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -385,6 +410,10 @@ def decode_frame_bundle(data: bytes, dtype=None, device: str = "cpu") -> Dict[st
 
     manifest_item = bundle.get("manifest")
     manifest = json.loads(manifest_item.data.decode("utf-8")) if manifest_item is not None else {}
+    semantic_item = bundle.get("semantic_packet")
+    semantic_packet = (
+        json.loads(semantic_item.data.decode("utf-8")) if semantic_item is not None else None
+    )
 
     return {
         "visual_latents": visual_latents,
@@ -395,5 +424,6 @@ def decode_frame_bundle(data: bytes, dtype=None, device: str = "cpu") -> Dict[st
         "edge": edge_tensor,
         "edge_uncertainty": edge_uncertainty,
         "manifest": manifest,
+        "semantic_packet": semantic_packet,
         "keyframe_index": bundle.keyframe_index,
     }

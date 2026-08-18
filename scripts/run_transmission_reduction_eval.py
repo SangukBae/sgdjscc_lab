@@ -362,6 +362,7 @@ def _run_temporal_pipeline(
 
     frame_index_by_id = {id(frame): i for i, frame in enumerate(frames)}
     transmitted_bundles = {}
+    transmitted_semantic_packets = {}
 
     def reconstruct_fn(frame, run_cfg):
         resolved_cfg = run_cfg if run_cfg is not None else cfg
@@ -374,6 +375,7 @@ def _run_temporal_pipeline(
             manifest={"video": video_key, "config": config_name},
             selected_keyframes=selected_keyframes,
             caption_override=(captions[index] if captions and index < len(captions) else None),
+            semantic_packet=transmitted_semantic_packets.get(index),
         )
         # This dictionary is sender output storage only.  The receiver call
         # below is deliberately passed bytes, models and config — no frame or
@@ -397,9 +399,22 @@ def _run_temporal_pipeline(
         return captions[idx] if 0 <= idx < len(captions) else None
 
     def packet_fn(frame, frame_id):
-        return packet_extractor.extract(
+        packet = packet_extractor.extract(
             frame, frame_id=str(frame_id), caption=_caption_for(frame_id)
         )
+        fid = str(frame_id)
+        if fid.startswith("frame_"):
+            index = int(fid.split("_")[-1])
+            # Model the actual sender/receiver boundary for temporal decisions:
+            # deterministic JSON bytes cross the link; TemporalPipeline sees
+            # only the freshly parsed receiver-side object.
+            payload = json.dumps(
+                packet, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8")
+            parsed = json.loads(payload.decode("utf-8"))
+            transmitted_semantic_packets[index] = parsed
+            return parsed
+        return packet
 
     from omegaconf import OmegaConf
     reuse_threshold = float(OmegaConf.select(cfg, "temporal.reuse_threshold", default=0.2))
@@ -437,12 +452,13 @@ def _run_temporal_pipeline(
             cfg, "video_generator.conditioning_mode", default="start_only"
         )),
     )
-    return pipeline.run(frames), transmitted_bundles
+    return pipeline.run(frames), transmitted_bundles, transmitted_semantic_packets
 
 
 def _shadow_measure_frame(
     frames, index, models, cfg, channel_kind, bit_depth, granularity,
     video_key, config_name, selected_keyframes=None, caption_override=None,
+    semantic_packet=None,
 ):
     """Build the analog baseline's digital side-information envelope.
 
@@ -458,6 +474,7 @@ def _shadow_measure_frame(
         selected_keyframes=selected_keyframes,
         visual_is_analog=(channel_kind == "awgn"),
         caption_override=caption_override,
+        semantic_packet=semantic_packet,
     )
     return parse_bundle(data), data, n_elements
 
@@ -557,7 +574,7 @@ def run(argv=None) -> int:
 
                 _set_channel(models, channel_kind, bit_depth, args.granularity)
                 start = time.time()
-                result, transmitted_bundles = _run_temporal_pipeline(
+                result, transmitted_bundles, transmitted_semantic_packets = _run_temporal_pipeline(
                     frames, models, cfg, _CachedExtractor(), captions,
                     channel_kind=channel_kind, bit_depth=bit_depth,
                     granularity=args.granularity, video_key=video_key,
@@ -624,8 +641,28 @@ def run(argv=None) -> int:
                 video_symbols_analog = 0
                 video_symbols_latent = 0
                 transmitting = [r for r in records if r.decision in TRANSMITTING_DECISIONS]
-                for rec in transmitting:
-                    if channel_kind == "awgn":
+                for rec in records:
+                    visual_transmitted = rec.decision in TRANSMITTING_DECISIONS
+                    semantic_packet = transmitted_semantic_packets.get(rec.index)
+                    if semantic_packet is None:
+                        raise RuntimeError(f"missing serialized semantic packet for frame {rec.index}")
+
+                    if not visual_transmitted:
+                        from sgdjscc_lab.transmission.packet_bundle import (
+                            build_side_info_bundle, serialize_bundle,
+                        )
+                        bundle = build_side_info_bundle(
+                            keyframe_index=rec.index,
+                            manifest={
+                                "video": video_key, "config": config_name,
+                                "decision": rec.decision,
+                                "selected_keyframes": sel.keyframe_indices,
+                            },
+                            semantic_packet=semantic_packet,
+                        )
+                        serialized = serialize_bundle(bundle)
+                        n_elements = 0
+                    elif channel_kind == "awgn":
                         bundle, serialized, n_elements = _shadow_measure_frame(
                             frames, rec.index, models, cfg, channel_kind, bit_depth,
                             args.granularity, video_key, config_name,
@@ -633,6 +670,7 @@ def run(argv=None) -> int:
                             caption_override=(
                                 captions[rec.index] if captions and rec.index < len(captions) else None
                             ),
+                            semantic_packet=semantic_packet,
                         )
                     else:
                         if rec.index not in transmitted_bundles:
@@ -645,23 +683,27 @@ def run(argv=None) -> int:
                     from sgdjscc_lab.transmission.byte_accounting import measure_frame_transmission
 
                     measurement = measure_frame_transmission(
-                        bundle, latent_elements=n_elements, visual_is_analog=(channel_kind == "awgn"),
+                        bundle, latent_elements=n_elements,
+                        visual_is_analog=(channel_kind == "awgn" and visual_transmitted),
                         bits_per_symbol=args.bits_per_symbol, code_rate=args.code_rate,
                     )
                     video_symbols_latent += n_elements
                     video_bytes += bundle.total_exact_bytes()
-                    if channel_kind == "awgn":
+                    if channel_kind == "awgn" and visual_transmitted:
                         video_symbols_analog += n_elements
 
                     bundle_dir = output_root / "packets" / video_key / config_name
                     bundle_dir.mkdir(parents=True, exist_ok=True)
                     (bundle_dir / f"frame_{rec.index:05d}.sgbundle").write_bytes(serialized)
 
-                    force_reason = sel.force_reason.get(rec.index, "selected")
+                    force_reason = (
+                        sel.force_reason.get(rec.index, "selected") if visual_transmitted else ""
+                    )
                     m_dict = measurement.as_dict()
                     keyframe_rows.append({
                         "video": video_key, "config": config_name, "frame_index": rec.index,
                         "selector": sel_name, "decision": rec.decision, "force_reason": force_reason,
+                        "visual_transmitted": visual_transmitted,
                         "reason": sel.reasons.get(rec.index, ""),
                         "psss_backend_kind": sel.psss_backend_kind,
                         **m_dict,
@@ -677,6 +719,10 @@ def run(argv=None) -> int:
                             if bundle.get("edge_uncertainty") else 0
                         ),
                         "manifest_bytes": bundle.get("manifest").byte_len if bundle.get("manifest") else 0,
+                        "semantic_packet_bytes": (
+                            bundle.get("semantic_packet").byte_len
+                            if bundle.get("semantic_packet") else 0
+                        ),
                         "visual_bytes": sum(it.byte_len for it in bundle.items if it.name.startswith("visual")),
                         "bundle_overhead_bytes": bundle.overhead_exact_bytes(),
                         "total_bundle_bytes": bundle.total_exact_bytes(),
