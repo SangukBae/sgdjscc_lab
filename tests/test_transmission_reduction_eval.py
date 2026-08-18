@@ -149,6 +149,25 @@ class TestAggregateAndPareto:
         assert int4_row["within_quality_gate"] is False
         assert abs(int4_row["lpips_rise"] - 0.10) < 1e-9
 
+    def test_non_finite_frames_always_fail_gate(self):
+        rows = self._rows()
+        for row in rows:
+            row["n_frames_total"] = 12
+            row["n_quality_frames"] = 12
+            row["n_nan_or_inf_frames"] = 0
+        broken = next(r for r in rows if r["config"] == "fixed_int8")
+        # Even excellent finite-frame averages cannot make an incomplete video
+        # a valid Pareto candidate.
+        broken.update({
+            "mean_psnr": 99.0, "mean_ssim": 0.999, "mean_lpips": 0.001,
+            "n_quality_frames": 4, "n_nan_or_inf_frames": 8,
+        })
+        pareto, _ = mod._pareto_frontier(mod._aggregate(rows))
+        int8_row = next(r for r in pareto if r["config"] == "fixed_int8")
+        assert int8_row["within_quality_gate"] is False
+        assert int8_row["quality_gate_failure_reason"] == "non_finite_frames"
+        assert int8_row["valid_frame_ratio"] == 4 / 12
+
     def test_pareto_reports_nearest_when_nothing_qualifies(self):
         rows = [
             {"config": "fixed_int16", "selector": "fixed", "channel": "int16", "bit_depth": 16,

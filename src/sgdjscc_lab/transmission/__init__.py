@@ -52,6 +52,10 @@ from sgdjscc_lab.transmission.packet_bundle import (
     parse_bundle,
     serialize_bundle,
 )
+from sgdjscc_lab.transmission.receiver_runtime import (
+    encode_frame_to_bundle_bytes,
+    reconstruct_frame_from_bundle_bytes,
+)
 
 __all__ = [
     "QuantizedTensor",
@@ -87,4 +91,6 @@ __all__ = [
     "decode_frame_bundle",
     "parse_bundle",
     "serialize_bundle",
+    "encode_frame_to_bundle_bytes",
+    "reconstruct_frame_from_bundle_bytes",
 ]

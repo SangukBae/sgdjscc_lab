@@ -108,10 +108,13 @@ class TestExactByteAccounting:
         # the analog item itself contributes 0 to the exact-byte total
         assert bundle.get("visual").byte_len == 0
 
-    def test_digital_bundle_total_bytes_matches_sum_of_items(self):
+    def test_digital_bundle_total_bytes_matches_serialized_artifact(self):
         bundle, _, _ = _make_digital_bundle()
-        expected = sum(it.byte_len for it in bundle.items if not it.is_analog)
-        assert bundle.total_exact_bytes() == expected
+        expected_payload = sum(it.byte_len for it in bundle.items if not it.is_analog)
+        assert bundle.payload_exact_bytes() == expected_payload
+        assert bundle.total_exact_bytes() == len(serialize_bundle(bundle))
+        assert bundle.overhead_exact_bytes() == len(serialize_bundle(bundle)) - expected_payload
+        assert bundle.overhead_exact_bytes() > 0
         assert bundle.total_analog_channel_symbols() == 0
 
     def test_smaller_bit_depth_yields_smaller_bundle(self):
@@ -129,7 +132,25 @@ class TestExactByteAccounting:
         caption_bytes = bundle.get("caption").byte_len
         manifest_bytes = bundle.get("manifest").byte_len
         edge_bytes = bundle.get("edge").byte_len
-        assert bundle.total_exact_bytes() == visual_only + caption_bytes + manifest_bytes + edge_bytes
+        assert bundle.payload_exact_bytes() == visual_only + caption_bytes + manifest_bytes + edge_bytes
+        assert bundle.total_exact_bytes() > bundle.payload_exact_bytes()
+
+    def test_patchwise_captions_and_edge_uncertainty_round_trip(self):
+        visual = torch.randn(2, 16, 16, 16)
+        edge = torch.rand(2, 11, 128, 128)
+        uncertainty = torch.rand_like(edge)
+        bundle = build_frame_bundle(
+            visual_latent_patches=visual, visual_is_analog=False, visual_bit_depth=8,
+            visual_granularity="per_tensor", visual_channel_dim=1,
+            visual_channel_symbols=visual.numel(), caption=["left patch", "right patch"],
+            edge_tensor=edge, edge_uncertainty_tensor=uncertainty, edge_bit_depth=8,
+            keyframe_index=0, manifest={"selected_keyframes": [0, 12]},
+        )
+        decoded = decode_frame_bundle(serialize_bundle(bundle))
+        assert decoded["captions"] == ["left patch", "right patch"]
+        assert decoded["edge"].shape[0] == 2
+        assert decoded["edge_uncertainty"].shape == uncertainty.shape
+        assert decoded["manifest"]["selected_keyframes"] == [0, 12]
 
 
 class TestReceiverBoundary:

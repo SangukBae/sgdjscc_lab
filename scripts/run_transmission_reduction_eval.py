@@ -18,27 +18,14 @@ orchestration, not just the selected keyframes), across:
 
 Architecture
 ------------
-Reconstruction quality comes from the **real, unmodified** production path:
-``video.temporal_pipeline.TemporalPipeline`` drives ``reconstruct_fn`` (built
-from ``pipelines.eval_pipeline._reconstruct_with_cfg``, the exact function
-``scripts/evaluate_video.py`` uses) over every frame, with
-``models.jscc_model.channel_model`` set once per (video, config) run — the
-same Phase 5-A extension point Rayleigh/fast-fading/packet-drop/digital_packet
-all use. This script does not alter ``infer_pipeline.py`` /
-``temporal_pipeline.py`` numerics anywhere.
-
-Transmission-size accounting runs as a **separate, lightweight shadow pass**
-after ``pipeline.run()`` completes: for every frame whose decision actually
-transmitted a new visual latent (``"keyframe"``, ``"recompute_semantic"``,
-``"recompute_motion"`` — never ``"reuse"``/``"generate"``, which transmit
-nothing new), it re-runs only the cheap JSCC encode + channel step
-(``pipelines.infer_pipeline._encode_latent``/``_apply_channel``, the exact
-functions the real forward pass uses — same VAE, same channel dispatch,
-deterministic given eval-mode models) plus caption/edge extraction
-(``_extract_semantic_guidance``) to build a full
-``transmission.packet_bundle.TransmissionBundle``. This never re-runs the
-(expensive, and already-correct) diffusion decode — only re-derives what was
-transmitted, for exact byte accounting.
+``video.temporal_pipeline.TemporalPipeline`` drives the temporal policy. For
+each digitally transmitted frame the sender serializes all visual patches,
+per-patch captions, edge + uncertainty, patch layout and keyframe manifest.
+The receiver reconstructs from those bytes through
+``transmission.receiver_runtime``; the exact same artifact is saved and
+counted. AWGN remains an analog baseline: its visual samples use the original
+production path, while a shadow pass records the exact digital side-info bytes
+and analog visual-symbol count as separate domains.
 
 Scope note (exact vs. estimate — see ``transmission.byte_accounting``):
     - ``latent_elements`` / ``source_packet_bits`` / packet-bundle component
@@ -143,6 +130,11 @@ def _parse_args(argv=None) -> argparse.Namespace:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("--dataset-root", default=str(_REPO_ROOT / "data/etri_video_eval"))
+    p.add_argument(
+        "--config", default=None,
+        help="Optional composed video config. Use the Wan/SKEM recipe here to exercise "
+             "the real generator; otherwise the benchmark-safe default video config is used.",
+    )
     p.add_argument("--output-root", required=True)
     p.add_argument("--video-ids", default=None, help="Comma-separated subset, default = all in manifest.")
     p.add_argument("--configs", default=",".join(DEFAULT_CONFIGS),
@@ -264,6 +256,14 @@ class KeyframeSelection:
 def _select_keyframes(video_key, frames, captions, selector_name, threshold, max_segment_length, args) -> KeyframeSelection:
     selector = _build_selector(selector_name, captions, threshold, max_segment_length, args)
     result = selector.extract(frames)
+    return _selection_from_result(
+        video_key, selector_name, threshold, max_segment_length, len(frames), result
+    )
+
+
+def _selection_from_result(
+    video_key, selector_name, threshold, max_segment_length, n_frames, result,
+) -> KeyframeSelection:
     keyframes = list(result["keyframes"])
     reasons = {int(k): v for k, v in dict(result.get("keyframe_reasons", {})).items()}
     # Structured field — video/skem_selector.py's real force_reason (never
@@ -276,7 +276,7 @@ def _select_keyframes(video_key, frames, captions, selector_name, threshold, max
     }
     return KeyframeSelection(
         video=video_key, selector=selector_name, threshold=threshold,
-        max_segment_length=max_segment_length, n_frames=len(frames),
+        max_segment_length=max_segment_length, n_frames=n_frames,
         keyframe_indices=keyframes, n_keyframes=len(keyframes),
         force_reason=force_reason, reasons=reasons,
         psss_scores=list(result.get("psss_scores", [])),
@@ -288,10 +288,13 @@ def _select_keyframes(video_key, frames, captions, selector_name, threshold, max
 # Config / model setup
 # ─────────────────────────────────────────────────────────────────────────────
 
-_CFG_FRAGMENTS = ("base/channel/awgn", "base/model/sgdjscc", "base/infer/awgn", "base/eval/default")
+_CFG_FRAGMENTS = (
+    "base/channel/awgn", "base/model/sgdjscc", "base/infer/awgn",
+    "base/eval/default", "base/video/default",
+)
 
 
-def _make_cfg(output_root: Path, model_root: Path, snr_db: float):
+def _make_cfg(output_root: Path, model_root: Path, snr_db: float, config_path=None):
     """Compose a real config via the project's own fragment set (config.py's
     _defaults_ mechanism) rather than hand-rolling a minimal dict — guarantees
     every key run_single_image()/_jscc_forward() expects is present with its
@@ -299,17 +302,25 @@ def _make_cfg(output_root: Path, model_root: Path, snr_db: float):
     from omegaconf import OmegaConf
     from sgdjscc_lab.config import load_config
 
-    composed_path = output_root / "configs" / "composed.yaml"
-    composed_path.parent.mkdir(parents=True, exist_ok=True)
-    frag_paths = [str((_REPO_ROOT / "configs" / f)) for f in _CFG_FRAGMENTS]
-    composed_path.write_text(
-        "_defaults_: [" + ", ".join(f'"{p}"' for p in frag_paths) + "]\n",
-        encoding="utf-8",
-    )
-    cfg = load_config(composed_path)
+    if config_path:
+        source_path = Path(config_path).resolve()
+        cfg = load_config(source_path)
+        composed_path = output_root / "configs" / "source_config.txt"
+        composed_path.parent.mkdir(parents=True, exist_ok=True)
+        composed_path.write_text(str(source_path) + "\n", encoding="utf-8")
+    else:
+        composed_path = output_root / "configs" / "composed.yaml"
+        composed_path.parent.mkdir(parents=True, exist_ok=True)
+        frag_paths = [str((_REPO_ROOT / "configs" / f)) for f in _CFG_FRAGMENTS]
+        composed_path.write_text(
+            "_defaults_: [" + ", ".join(f'"{p}"' for p in frag_paths) + "]\n",
+            encoding="utf-8",
+        )
+        cfg = load_config(composed_path)
     cfg = OmegaConf.merge(cfg, OmegaConf.create({
         "model_root": str(model_root),
         "snr_db": float(snr_db),
+        "use_phase4": True,
     }))
     return cfg
 
@@ -337,84 +348,118 @@ def _set_channel(models, channel_kind: str, bit_depth: Optional[int], granularit
     return ch
 
 
-def _run_temporal_pipeline(frames, models, cfg, keyframe_extractor):
+def _run_temporal_pipeline(
+    frames, models, cfg, keyframe_extractor, captions=None, *, channel_kind="awgn",
+    bit_depth=None, granularity="per_tensor", video_key="", config_name="",
+    selected_keyframes=None,
+):
     from sgdjscc_lab.pipelines.eval_pipeline import _reconstruct_with_cfg
+    from sgdjscc_lab.guidance.semantic_packet_extractor import SemanticPacketExtractor
+    from sgdjscc_lab.transmission.receiver_runtime import (
+        encode_frame_to_bundle_bytes, reconstruct_frame_from_bundle_bytes,
+    )
     from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
 
+    frame_index_by_id = {id(frame): i for i, frame in enumerate(frames)}
+    transmitted_bundles = {}
+
     def reconstruct_fn(frame, run_cfg):
-        return _reconstruct_with_cfg(frame, models, run_cfg if run_cfg is not None else cfg)
+        resolved_cfg = run_cfg if run_cfg is not None else cfg
+        index = frame_index_by_id[id(frame)]
+        if channel_kind == "awgn":
+            return _reconstruct_with_cfg(frame, models, resolved_cfg)
+        data, n_elements = encode_frame_to_bundle_bytes(
+            frame, models, resolved_cfg, bit_depth=bit_depth,
+            granularity=granularity, keyframe_index=index,
+            manifest={"video": video_key, "config": config_name},
+            selected_keyframes=selected_keyframes,
+            caption_override=(captions[index] if captions and index < len(captions) else None),
+        )
+        # This dictionary is sender output storage only.  The receiver call
+        # below is deliberately passed bytes, models and config — no frame or
+        # sender-side tensors can cross the boundary.
+        transmitted_bundles[index] = (data, n_elements)
+        return reconstruct_frame_from_bundle_bytes(data, models, resolved_cfg)
+
+    packet_extractor = SemanticPacketExtractor(
+        text_extractor=getattr(models, "text_extractor", None),
+        clip_evaluator=None, device=models.device,
+    )
+
+    def _caption_for(frame_id):
+        fid = str(frame_id)
+        if fid.startswith("recon_") or captions is None:
+            return None
+        try:
+            idx = int(fid.split("_")[-1])
+        except (ValueError, IndexError):
+            return None
+        return captions[idx] if 0 <= idx < len(captions) else None
 
     def packet_fn(frame, frame_id):
-        # This driver's transmission-size accounting comes from the packet
-        # BUNDLE (transmission/packet_bundle.py — visual+caption+edge+
-        # manifest), not from a semantic packet's object/relation content, so
-        # a minimal (no objects/relations/attributes/scene) packet is
-        # deliberately used here. semantic_packet_matcher.compare() treats
-        # missing keys as empty (no crash), so every inter-frame's semantic
-        # delta comes out as "no change" -> TemporalPipeline reuses every
-        # inter-frame and only the keyframe_extractor's own selected
-        # keyframes are transmitting frames (no recompute_semantic/motion
-        # ever fires). That is an accurate reflection of "no semantic-content
-        # signal was supplied", not a bug — build a real
-        # guidance.semantic_packet_extractor.SemanticPacketExtractor and pass
-        # it here instead if recompute-branch coverage is needed.
-        return {"frame_id": str(frame_id)}
+        return packet_extractor.extract(
+            frame, frame_id=str(frame_id), caption=_caption_for(frame_id)
+        )
+
+    from omegaconf import OmegaConf
+    reuse_threshold = float(OmegaConf.select(cfg, "temporal.reuse_threshold", default=0.2))
+    semantic_threshold = OmegaConf.select(cfg, "temporal.semantic_delta_threshold", default=None)
+    if semantic_threshold is not None:
+        reuse_threshold = float(semantic_threshold)
+    motion_threshold = OmegaConf.select(cfg, "temporal.motion_threshold", default=None)
+
+    from sgdjscc_lab.phase_gates import effective_flag
+    enable_generate = effective_flag(cfg, "use_video_gen", phase=4) and bool(
+        OmegaConf.select(cfg, "video_generator.enabled", default=False)
+    )
+    video_generator = None
+    if enable_generate:
+        from sgdjscc_lab.video.video_generator import build_generator
+        video_generator = build_generator(cfg)
 
     pipeline = TemporalPipeline(
         reconstruct_fn=reconstruct_fn, packet_fn=packet_fn,
         keyframe_extractor=keyframe_extractor, cfg=cfg,
+        reuse_threshold=reuse_threshold,
+        motion_threshold=(None if motion_threshold is None else float(motion_threshold)),
+        motion_weight=float(OmegaConf.select(cfg, "temporal.motion_weight", default=0.5)),
+        motion_grid=int(OmegaConf.select(cfg, "temporal.motion_grid", default=8)),
+        diffusion_step=int(cfg.get("diffusion_step", 50)),
+        enable_generate=enable_generate,
+        video_generator=video_generator,
+        generate_delta_min=OmegaConf.select(cfg, "video_generator.generate_delta_min", default=None),
+        generate_delta_max=OmegaConf.select(cfg, "video_generator.generate_delta_max", default=None),
+        generate_motion_max=OmegaConf.select(cfg, "video_generator.generate_motion_max", default=None),
+        allow_ground_truth_reference=bool(OmegaConf.select(
+            cfg, "video_generator.allow_ground_truth_reference", default=False
+        )),
+        conditioning_mode=str(OmegaConf.select(
+            cfg, "video_generator.conditioning_mode", default="start_only"
+        )),
     )
-    return pipeline.run(frames)
+    return pipeline.run(frames), transmitted_bundles
 
 
-def _shadow_measure_frame(frames, index, models, cfg, channel_kind, bit_depth, granularity, video_key, config_name):
-    """Re-derive what was transmitted for one frame (cheap: encode+channel
-    only, no diffusion decode) and build its full TransmissionBundle.
+def _shadow_measure_frame(
+    frames, index, models, cfg, channel_kind, bit_depth, granularity,
+    video_key, config_name, selected_keyframes=None, caption_override=None,
+):
+    """Build the analog baseline's digital side-information envelope.
 
-    Reuses the exact production helpers (_encode_latent/_apply_channel/
-    _extract_semantic_guidance) so caption/edge/visual-latent are byte-for-
-    byte what the real forward pass used — this function derives, it does not
-    alter, the real reconstruction.
+    Digital configurations do not use this shadow path: their exact bytes are
+    captured from the very bundle consumed by the real receiver.
     """
-    import torch
-    from sgdjscc_lab.pipelines.infer_pipeline import (
-        _apply_channel, _encode_latent, _extract_semantic_guidance,
+    from sgdjscc_lab.transmission.packet_bundle import parse_bundle
+    from sgdjscc_lab.transmission.receiver_runtime import encode_frame_to_bundle_bytes
+
+    data, n_elements = encode_frame_to_bundle_bytes(
+        frames[index], models, cfg, bit_depth=bit_depth, granularity=granularity,
+        keyframe_index=index, manifest={"video": video_key, "config": config_name},
+        selected_keyframes=selected_keyframes,
+        visual_is_analog=(channel_kind == "awgn"),
+        caption_override=caption_override,
     )
-    from sgdjscc_lab.transmission.packet_bundle import build_frame_bundle
-    from sgdjscc_lab.utils.preprocessing import prepare_patches
-
-    device = models.device
-    patches, _meta = prepare_patches(frames[index])
-    patches = patches.to(device)
-    n_elements = int(patches.shape[0]) * LATENT_ELEMENTS_PER_PATCH
-
-    with torch.inference_mode():
-        gt_text, canny_data, _canny_unc = _extract_semantic_guidance(patches, models, cfg, device)
-        caption = gt_text[0][0] if gt_text and gt_text[0] else ""
-        encode_features, _std = _encode_latent(models.jscc_model, patches)
-
-        channel = _set_channel(models, channel_kind, bit_depth, granularity)
-        if channel is not None:
-            channel.reset_accumulation()
-        _hat, _scale = _apply_channel(models.jscc_model, encode_features)
-
-    if channel_kind == "awgn":
-        bundle = build_frame_bundle(
-            visual_latent_patches=None, visual_is_analog=True, visual_bit_depth=None,
-            visual_granularity=granularity, visual_channel_dim=1, visual_channel_symbols=n_elements,
-            caption=caption, edge_tensor=(canny_data[0:1].cpu() if canny_data is not None else None),
-            edge_bit_depth=8, keyframe_index=index,
-            manifest={"video": video_key, "config": config_name},
-        )
-    else:
-        bundle = build_frame_bundle(
-            visual_latent_patches=encode_features.detach().cpu(), visual_is_analog=False,
-            visual_bit_depth=bit_depth, visual_granularity=granularity, visual_channel_dim=1,
-            visual_channel_symbols=n_elements, caption=caption,
-            edge_tensor=(canny_data[0:1].cpu() if canny_data is not None else None), edge_bit_depth=8,
-            keyframe_index=index, manifest={"video": video_key, "config": config_name},
-        )
-    return bundle, n_elements
+    return parse_bundle(data), data, n_elements
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -448,7 +493,7 @@ def run(argv=None) -> int:
     quality_evaluator = QualityEvaluator(use_lpips=not args.no_lpips, device=device)
 
     from sgdjscc_lab.paths import model_root as _model_root
-    cfg = _make_cfg(output_root, _model_root(), args.snr)
+    cfg = _make_cfg(output_root, _model_root(), args.snr, config_path=args.config)
     models = _build_models(cfg, device)
 
     keyframe_rows: List[Dict[str, Any]] = []
@@ -491,19 +536,33 @@ def run(argv=None) -> int:
                 channel_kind = "awgn" if ch_name == "awgn" else "digital_packet"
                 bit_depth = CHANNEL_CONFIGS[ch_name]["bit_depth"]
 
-                sel = _select_keyframes(
-                    video_key, frames, captions, sel_name,
-                    args.psss_threshold, args.psss_max_segment_length, args,
-                )
                 keyframe_extractor = _build_selector(
                     sel_name, captions, args.psss_threshold, args.psss_max_segment_length, args
                 )
+                # PSSS/scene detection may be expensive.  Compute it exactly
+                # once, then give TemporalPipeline a cache wrapper so the same
+                # structure drives both reconstruction and accounting.
+                selection_result = keyframe_extractor.extract(frames)
+                sel = _selection_from_result(
+                    video_key, sel_name, args.psss_threshold,
+                    args.psss_max_segment_length, len(frames), selection_result,
+                )
+
+                class _CachedExtractor:
+                    def extract(self, _frames):
+                        return selection_result
+
                 log(f"[{video_key}][{config_name}] running TemporalPipeline over {len(frames)} frames "
                     f"(selector={sel_name}, channel={ch_name}, psss_backend_kind={sel.psss_backend_kind})")
 
                 _set_channel(models, channel_kind, bit_depth, args.granularity)
                 start = time.time()
-                result = _run_temporal_pipeline(frames, models, cfg, keyframe_extractor)
+                result, transmitted_bundles = _run_temporal_pipeline(
+                    frames, models, cfg, _CachedExtractor(), captions,
+                    channel_kind=channel_kind, bit_depth=bit_depth,
+                    granularity=args.granularity, video_key=video_key,
+                    config_name=config_name, selected_keyframes=sel.keyframe_indices,
+                )
                 video_elapsed = time.time() - start
                 records = sorted(result["records"], key=lambda r: r.index)
 
@@ -518,9 +577,6 @@ def run(argv=None) -> int:
                 for rec in records:
                     if rec.recon is None:
                         continue
-                    fpath = recon_dir / f"frame_{rec.index:05d}.png"
-                    save_tensor_as_image(rec.recon, fpath)
-                    frame_files.append(fpath)
                     if torch.isnan(rec.recon).any() or torch.isinf(rec.recon).any():
                         # Known, reproducible fragility (not a bug in this
                         # feature's own code — see README's "Known limitations"):
@@ -539,8 +595,11 @@ def run(argv=None) -> int:
                         # and always counted so it's visible, never hidden.
                         n_nan_frames += 1
                         log(f"  [{video_key}][{config_name}] frame {rec.index}: NaN/Inf reconstruction "
-                            f"(excluded from quality average, not from byte accounting)")
+                            f"(quality gate fails; invalid frame is not written to recon.mp4)")
                         continue
+                    fpath = recon_dir / f"frame_{rec.index:05d}.png"
+                    save_tensor_as_image(rec.recon, fpath)
+                    frame_files.append(fpath)
                     original = frames[rec.index]
                     h = min(rec.recon.shape[-2], original.shape[-2])
                     w = min(rec.recon.shape[-1], original.shape[-1])
@@ -549,9 +608,16 @@ def run(argv=None) -> int:
                     video_ssim.append(m["ssim"])
                     if m["lpips"] is not None:
                         video_lpips.append(m["lpips"])
-                if frame_files:
+                if len(frame_files) == len(records):
                     fps = args.fps or info.get("fps") or 24.0
                     write_video(frame_files, recon_dir / "recon.mp4", fps=fps)
+                elif n_nan_frames:
+                    (recon_dir / "INVALID_RECONSTRUCTION.json").parent.mkdir(parents=True, exist_ok=True)
+                    (recon_dir / "INVALID_RECONSTRUCTION.json").write_text(json.dumps({
+                        "n_frames_total": len(records),
+                        "n_nan_or_inf_frames": n_nan_frames,
+                        "reason": "recon.mp4 omitted because at least one reconstructed frame was non-finite",
+                    }, indent=2), encoding="utf-8")
 
                 # ── shadow accounting pass: only frames that transmitted a new latent ──
                 video_bytes = 0
@@ -559,10 +625,23 @@ def run(argv=None) -> int:
                 video_symbols_latent = 0
                 transmitting = [r for r in records if r.decision in TRANSMITTING_DECISIONS]
                 for rec in transmitting:
-                    bundle, n_elements = _shadow_measure_frame(
-                        frames, rec.index, models, cfg, channel_kind, bit_depth,
-                        args.granularity, video_key, config_name,
-                    )
+                    if channel_kind == "awgn":
+                        bundle, serialized, n_elements = _shadow_measure_frame(
+                            frames, rec.index, models, cfg, channel_kind, bit_depth,
+                            args.granularity, video_key, config_name,
+                            selected_keyframes=sel.keyframe_indices,
+                            caption_override=(
+                                captions[rec.index] if captions and rec.index < len(captions) else None
+                            ),
+                        )
+                    else:
+                        if rec.index not in transmitted_bundles:
+                            raise RuntimeError(
+                                f"missing receiver-consumed bundle for transmitting frame {rec.index}"
+                            )
+                        serialized, n_elements = transmitted_bundles[rec.index]
+                        from sgdjscc_lab.transmission.packet_bundle import parse_bundle
+                        bundle = parse_bundle(serialized)
                     from sgdjscc_lab.transmission.byte_accounting import measure_frame_transmission
 
                     measurement = measure_frame_transmission(
@@ -570,15 +649,13 @@ def run(argv=None) -> int:
                         bits_per_symbol=args.bits_per_symbol, code_rate=args.code_rate,
                     )
                     video_symbols_latent += n_elements
+                    video_bytes += bundle.total_exact_bytes()
                     if channel_kind == "awgn":
                         video_symbols_analog += n_elements
-                    else:
-                        video_bytes += bundle.total_exact_bytes()
 
                     bundle_dir = output_root / "packets" / video_key / config_name
                     bundle_dir.mkdir(parents=True, exist_ok=True)
-                    from sgdjscc_lab.transmission.packet_bundle import serialize_bundle
-                    (bundle_dir / f"frame_{rec.index:05d}.sgbundle").write_bytes(serialize_bundle(bundle))
+                    (bundle_dir / f"frame_{rec.index:05d}.sgbundle").write_bytes(serialized)
 
                     force_reason = sel.force_reason.get(rec.index, "selected")
                     m_dict = measurement.as_dict()
@@ -591,10 +668,17 @@ def run(argv=None) -> int:
                     })
 
                     breakdown_rows = {
-                        "caption_bytes": bundle.get("caption").byte_len if bundle.get("caption") else 0,
+                        "caption_bytes": sum(
+                            it.byte_len for it in bundle.items if it.name in ("caption", "captions")
+                        ),
                         "edge_bytes": bundle.get("edge").byte_len if bundle.get("edge") else 0,
+                        "edge_uncertainty_bytes": (
+                            bundle.get("edge_uncertainty").byte_len
+                            if bundle.get("edge_uncertainty") else 0
+                        ),
                         "manifest_bytes": bundle.get("manifest").byte_len if bundle.get("manifest") else 0,
                         "visual_bytes": sum(it.byte_len for it in bundle.items if it.name.startswith("visual")),
+                        "bundle_overhead_bytes": bundle.overhead_exact_bytes(),
                         "total_bundle_bytes": bundle.total_exact_bytes(),
                         "video": video_key, "config": config_name, "frame_index": rec.index,
                         "bit_depth": bit_depth if bit_depth is not None else "",
@@ -609,14 +693,18 @@ def run(argv=None) -> int:
                     "psss_backend_kind": sel.psss_backend_kind,
                     "n_frames_total": len(frames), "n_transmitting_frames": len(transmitting),
                     "n_keyframes_selected": n_kf_in_gop, "n_nan_or_inf_frames": n_nan_frames,
+                    "n_quality_frames": len(video_psnr),
+                    "valid_frame_ratio": len(video_psnr) / max(len(frames), 1),
                     "mean_psnr": sum(video_psnr) / n if video_psnr else float("nan"),
                     "mean_ssim": sum(video_ssim) / n if video_ssim else float("nan"),
                     "mean_lpips": (sum(video_lpips) / len(video_lpips)) if video_lpips else "",
                     "latent_elements_total": video_symbols_latent,
                     "analog_channel_symbols_total": video_symbols_analog if channel_kind == "awgn" else "",
-                    "source_packet_bits_total": video_bytes * 8 if channel_kind != "awgn" else "",
-                    "total_bundle_bytes": video_bytes if channel_kind != "awgn" else "",
+                    "source_packet_bits_total": video_bytes * 8,
+                    "digital_side_information_bytes_total": video_bytes if channel_kind == "awgn" else "",
+                    "total_bundle_bytes": video_bytes,
                     "analog_no_wire_bytes": channel_kind == "awgn",
+                    "visual_transport_complete": channel_kind != "awgn",
                     "total_elapsed_s": round(video_elapsed, 3),
                 })
                 nan_note = f" ({n_nan_frames} NaN/Inf frames excluded)" if n_nan_frames else ""
@@ -670,6 +758,14 @@ def _aggregate(per_video_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "bit_depth": rows[0]["bit_depth"],
             "psss_backend_kind": rows[0]["psss_backend_kind"],
             "n_videos": n,
+            "total_frames": sum(r.get("n_frames_total", 1) for r in rows),
+            "total_quality_frames": sum(
+                r.get("n_quality_frames", r.get("n_frames_total", 1)) for r in rows
+            ),
+            "valid_frame_ratio": (
+                sum(r.get("n_quality_frames", r.get("n_frames_total", 1)) for r in rows)
+                / max(sum(r.get("n_frames_total", 1) for r in rows), 1)
+            ),
             "mean_psnr": sum(r["mean_psnr"] for r in rows) / n,
             "mean_ssim": sum(r["mean_ssim"] for r in rows) / n,
             "mean_lpips": (sum(lpips_rows) / len(lpips_rows)) if lpips_rows else "",
@@ -686,12 +782,16 @@ def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
     baseline = None
     baseline_config = None
     for candidate in BASELINE_PREFERENCE:
-        if candidate in by_config:
+        if candidate in by_config and by_config[candidate].get("total_nan_or_inf_frames", 0) == 0:
             baseline = by_config[candidate]
             baseline_config = candidate
             break
     baseline_is_analog = bool(baseline and baseline.get("analog_no_wire_bytes"))
-    baseline_info = {"baseline_config": baseline_config, "baseline_is_analog": baseline_is_analog}
+    baseline_info = {
+        "baseline_config": baseline_config,
+        "baseline_is_analog": baseline_is_analog,
+        "baseline_valid": baseline is not None,
+    }
     if baseline is None:
         return [], baseline_info
 
@@ -705,8 +805,12 @@ def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
             (r["mean_lpips"] - baseline["mean_lpips"])
             if (r["mean_lpips"] != "" and baseline["mean_lpips"] != "") else None
         )
+        invalid_frames = int(r.get("total_nan_or_inf_frames", 0))
+        valid_frame_ratio = float(r.get("valid_frame_ratio", 1.0))
         ok = (
-            psnr_drop <= QUALITY_GATE["psnr_drop_db"]
+            invalid_frames == 0
+            and valid_frame_ratio == 1.0
+            and psnr_drop <= QUALITY_GATE["psnr_drop_db"]
             and ssim_drop <= QUALITY_GATE["ssim_drop"]
             and (lpips_rise is None or lpips_rise <= QUALITY_GATE["lpips_rise"])
         )
@@ -716,6 +820,11 @@ def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
         row["ssim_drop"] = ssim_drop
         row["lpips_rise"] = lpips_rise if lpips_rise is not None else ""
         row["within_quality_gate"] = ok
+        row["quality_gate_failure_reason"] = (
+            "non_finite_frames" if invalid_frames else
+            "incomplete_quality_coverage" if valid_frame_ratio < 1.0 else
+            "quality_threshold" if not ok else ""
+        )
         in_budget.append(row)
 
     selected = [r for r in in_budget if r["within_quality_gate"]]
@@ -772,12 +881,11 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
 
     readme = f"""# transmission_reduction run — {output_root.name}
 
-Real packet-bundle (visual + caption + edge + manifest) transmission-size
+Real packet-bundle (all visual patches + per-patch captions + edge/uncertainty + manifest) transmission-size
 accounting, full-video quality via the real `TemporalPipeline` path, and
 SKEM/PSSS keyframe selection (optionally scene-change-combined). See the
 module docstring of `scripts/run_transmission_reduction_eval.py` for the
-exact-vs-estimate accounting boundaries and how quality/accounting are kept
-separate (real reconstruction path vs. a lightweight shadow accounting pass).
+exact-vs-estimate accounting boundaries and the digital bundle-only receiver boundary.
 
 {baseline_note}
 
@@ -791,7 +899,8 @@ separate (real reconstruction path vs. a lightweight shadow accounting pass).
   `estimated_digital_channel_symbols`/`estimated_wire_bytes`), and
   `psss_backend_kind` (`mock`|`proxy`|`real` — never conflated).
 - `packet_components.csv` — exact per-frame bundle byte breakdown (caption/
-  edge/visual/manifest bytes), summed to `total_bundle_bytes`.
+  edge/edge-uncertainty/visual/manifest payloads + container overhead), with
+  `total_bundle_bytes` equal to the actual `.sgbundle` file size.
 - `packets/<video>/<config>/frame_NNNNN.sgbundle` — the actual serialized
   transmission bundles (visual+caption+edge+manifest) a receiver would parse.
 - `recon_videos/<video>/<config>/recon.mp4` + `frame_*.png` — the FULL
@@ -814,14 +923,10 @@ Known limitations:
 - `estimated_digital_channel_symbols`/`estimated_wire_bytes` are labeled
   proxy estimates (`{'unavailable — no --bits-per-symbol given' if args.bits_per_symbol is None else f'bits_per_symbol={args.bits_per_symbol}'}`)
   — no real modulator/FEC coder exists in this codebase.
-- The shadow accounting pass re-runs JSCC-encode + channel (cheap) once more
-  per transmitting frame to build its packet bundle; it does not re-run
-  diffusion decode and does not alter the real reconstruction in any way, but
-  it does mean the real forward pass's random channel draw (AWGN) and the
-  shadow pass's are two independent samples for analog configs — irrelevant
-  for digital configs (deterministic given the input) but worth knowing for
-  AWGN's `analog_channel_symbols` (which is an exact *count*, not a captured
-  noise sample, so this has no accounting-exactness impact).
+- Digital configs reconstruct from the exact `.sgbundle` bytes saved in this
+  run. AWGN cannot be reconstructed from a byte bundle because its visual
+  waveform is analog; for AWGN, `analog_channel_symbols_total` and the exact
+  digital caption/edge/manifest bytes are reported as separate domains.
 - **Known numerical fragility at coarse digital quantization** (found via GPU
   verification, not this feature's own bug): `jscc.snr_prediction_net` (the
   blind SNR predictor `_compute_step()` uses, `pipelines/infer_pipeline.py`,
@@ -830,13 +935,10 @@ Known limitations:
   predicted signal scale to >= 1, making `10*log10(1/cur_step - 1)` evaluate
   `log10` of a non-positive number -> NaN, which then propagates through the
   (otherwise correct) diffusion decode. This driver detects it
-  (`n_nan_or_inf_frames` in per_video_metrics.csv/aggregate.csv) and excludes
-  those frames from the quality average rather than silently reporting a
-  poisoned `nan` mean — but does not (and, per this repo's algorithm-
-  preservation invariant, should not) alter `_compute_step()` itself. If
-  `n_nan_or_inf_frames > 0` for a config, treat that config's quality numbers
-  as measured over fewer frames than `n_transmitting_frames` and consider a
-  higher bit_depth (16/32) or a different SNR for that content.
+  (`n_nan_or_inf_frames` in per_video_metrics.csv/aggregate.csv). Any such
+  config unconditionally fails the quality gate, cannot be Pareto-selected,
+  and does not get a misleading `recon.mp4`; finite-frame diagnostic means
+  remain available together with `valid_frame_ratio`.
 """
     (output_root / "README.md").write_text(readme, encoding="utf-8")
 

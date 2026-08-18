@@ -110,8 +110,21 @@ class TransmissionBundle:
         return next((it for it in self.items if it.name == name), None)
 
     def total_exact_bytes(self) -> int:
-        """Sum of every non-analog item's exact byte length (the real transmission size)."""
+        """Exact size of the serialized bundle placed on the digital link.
+
+        This deliberately includes the outer bundle header, every item header
+        and name, and the bundle CRC.  ``payload_exact_bytes()`` is available
+        when callers need the sum of component payloads only.
+        """
+        return len(serialize_bundle(self))
+
+    def payload_exact_bytes(self) -> int:
+        """Sum of non-analog item payloads, excluding container overhead."""
         return sum(it.byte_len for it in self.items if not it.is_analog)
+
+    def overhead_exact_bytes(self) -> int:
+        """Exact container overhead (headers, item names and CRC)."""
+        return self.total_exact_bytes() - self.payload_exact_bytes()
 
     def total_analog_channel_symbols(self) -> int:
         return sum(it.channel_symbols for it in self.items if it.is_analog)
@@ -216,11 +229,12 @@ def build_frame_bundle(
     visual_granularity: str,
     visual_channel_dim: int,
     visual_channel_symbols: int,     # exact latent element count (always known)
-    caption: str,
+    caption,
     edge_tensor,                     # torch.Tensor or None
     edge_bit_depth: int,
     keyframe_index: int,
     manifest: Dict[str, Any],
+    edge_uncertainty_tensor=None,    # torch.Tensor or None
     compress_metadata: bool = True,
 ) -> TransmissionBundle:
     """Build the full transmission bundle for one keyframe.
@@ -259,8 +273,14 @@ def build_frame_bundle(
             data = serialize_wire_packet(packet, compress_metadata=compress_metadata)
             items.append(BundleItem(name=f"visual_patch_{patch_idx:03d}", kind="wire_packet", data=data))
 
-    caption_bytes = (caption or "").encode("utf-8")
-    items.append(BundleItem(name="caption", kind="raw_bytes", data=caption_bytes))
+    if isinstance(caption, (list, tuple)):
+        caption_bytes = json.dumps(
+            [str(x) for x in caption], ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        items.append(BundleItem(name="captions", kind="json", data=caption_bytes))
+    else:
+        caption_bytes = str(caption or "").encode("utf-8")
+        items.append(BundleItem(name="caption", kind="raw_bytes", data=caption_bytes))
 
     if edge_tensor is not None:
         q_edge = quantize_tensor(edge_tensor, bit_depth=edge_bit_depth, granularity="per_tensor")
@@ -271,6 +291,22 @@ def build_frame_bundle(
         )
         edge_data = serialize_wire_packet(edge_packet, compress_metadata=compress_metadata)
         items.append(BundleItem(name="edge", kind="wire_packet", data=edge_data))
+
+    if edge_uncertainty_tensor is not None:
+        q_unc = quantize_tensor(
+            edge_uncertainty_tensor, bit_depth=edge_bit_depth, granularity="per_tensor"
+        )
+        unc_packet = WirePacket(
+            bit_depth=q_unc.bit_depth, granularity=q_unc.granularity,
+            channel_dim=q_unc.channel_dim, shape=q_unc.shape, scale=q_unc.scale,
+            zero_point=q_unc.zero_point, pad_bits=q_unc.pad_bits,
+            n_elements=q_unc.n_elements, payload=q_unc.packed,
+            keyframe_index=keyframe_index,
+        )
+        items.append(BundleItem(
+            name="edge_uncertainty", kind="wire_packet",
+            data=serialize_wire_packet(unc_packet, compress_metadata=compress_metadata),
+        ))
 
     manifest_full = dict(manifest)
     manifest_full["keyframe_index"] = keyframe_index
@@ -324,14 +360,28 @@ def decode_frame_bundle(data: bytes, dtype=None, device: str = "cpu") -> Dict[st
             visual_latents.append(tensor)
             visual_channel_symbols += packet.n_elements
 
+    captions_item = bundle.get("captions")
     caption_item = bundle.get("caption")
-    caption = caption_item.data.decode("utf-8") if caption_item is not None else ""
+    if captions_item is not None:
+        captions = [str(x) for x in json.loads(captions_item.data.decode("utf-8"))]
+        caption = captions[0] if captions else ""
+    else:
+        caption = caption_item.data.decode("utf-8") if caption_item is not None else ""
+        captions = [caption]
 
     edge_item = bundle.get("edge")
     edge_tensor = None
     if edge_item is not None:
         edge_packet = parse_wire_packet(edge_item.data)
         edge_tensor = dequantize_tensor(edge_packet.to_quantized_tensor(), dtype=dtype or torch.float32, device=device)
+
+    edge_uncertainty_item = bundle.get("edge_uncertainty")
+    edge_uncertainty = None
+    if edge_uncertainty_item is not None:
+        unc_packet = parse_wire_packet(edge_uncertainty_item.data)
+        edge_uncertainty = dequantize_tensor(
+            unc_packet.to_quantized_tensor(), dtype=dtype or torch.float32, device=device
+        )
 
     manifest_item = bundle.get("manifest")
     manifest = json.loads(manifest_item.data.decode("utf-8")) if manifest_item is not None else {}
@@ -341,7 +391,9 @@ def decode_frame_bundle(data: bytes, dtype=None, device: str = "cpu") -> Dict[st
         "visual_is_analog": visual_is_analog,
         "visual_channel_symbols": visual_channel_symbols,
         "caption": caption,
+        "captions": captions,
         "edge": edge_tensor,
+        "edge_uncertainty": edge_uncertainty,
         "manifest": manifest,
         "keyframe_index": bundle.keyframe_index,
     }
