@@ -246,6 +246,30 @@ class TestComputeStepDigitalChannel:
         thresholded = (cur_snr <= -5).reshape(-1, 1, 1, 1).repeat(1, 1, 4, 4).float()
         assert thresholded.shape == (2, 1, 4, 4)
 
+    @pytest.mark.parametrize("step_style", ["continuous", "discrete"])
+    def test_expanded_power_scalar_does_not_expand_step_batch(self, step_style):
+        """Receiver power normalization is spatially expanded, but step matching is per sample."""
+        ch = DigitalPacketChannel(bit_depth=32)
+        jscc = _fake_jscc(channel_model=ch)
+        latent = torch.randn(2, 16, 16, 16)
+        expanded_power = torch.ones_like(latent)
+        pipe = types.SimpleNamespace(
+            scheduler=types.SimpleNamespace(alphas_cumprod=torch.linspace(0.999, 0.001, 1000))
+        )
+
+        cur_step, cur_snr = _compute_step(
+            jscc=jscc, encode_features_hat=latent, power_scalar=expanded_power,
+            signal_scale=torch.ones(2, 1), pipe=pipe, step_style=step_style,
+            use_jscc_feat=True, use_gt_csi=False, device=torch.device("cpu"),
+        )
+
+        if step_style == "continuous":
+            assert cur_step.shape == (2, 1)
+            assert cur_snr.shape == (2, 1)
+        else:
+            assert isinstance(cur_step, int)
+            assert isinstance(cur_snr, float)
+
     def test_poisoned_net_is_never_called_for_digital_channel(self):
         calls = {"n": 0}
 

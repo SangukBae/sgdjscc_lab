@@ -1126,7 +1126,7 @@ def _compute_step(
                 cur_snr  = float(jscc.snr)
             elif is_digital:
                 predicted_signal_scale, snr_db = _digital_signal_scale(
-                    bit_depth, power_scalar.reshape([-1, 1]),
+                    bit_depth, encode_features_hat[:, 0:1, 0, 0],
                     policy=digital_policy, quant_snr_db=digital_quant_snr_db,
                 )
                 cur_step = 1 - predicted_signal_scale
@@ -1166,7 +1166,7 @@ def _compute_step(
                 )
             elif is_digital:
                 pred, _ = _digital_signal_scale(
-                    bit_depth, power_scalar.reshape([-1, 1]),
+                    bit_depth, encode_features_hat[:, 0:1, 0, 0],
                     policy=digital_policy, quant_snr_db=digital_quant_snr_db,
                 )
                 cur_step = (
