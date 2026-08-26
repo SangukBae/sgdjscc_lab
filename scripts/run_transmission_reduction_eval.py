@@ -46,13 +46,14 @@ Scope note (exact vs. estimate — see ``transmission.byte_accounting``):
 
 Example
 -------
-Correctness smoke run (tiny, real models/checkpoints, one video):
+Correctness smoke run with explicit baselines:
     python scripts/run_transmission_reduction_eval.py \\
-        --video-ids 01_person_walk --configs fixed_awgn,fixed_int16,fixed_int8,skem_int8 \\
+        --video-ids 01_person_walk --configs fixed_awgn,fixed_int16,skem_int4 \\
         --max-frames 20 --device cuda:0 --output-root outputs/transmission_reduction_smoke
 
 Full sweep (all 10 videos, full config grid + keyframe sweep):
     python scripts/run_transmission_reduction_eval.py \\
+        --configs fixed_awgn,fixed_int16,fixed_int8,fixed_int6,fixed_int4,skem_int16,skem_int8,skem_int6,skem_int4 \\
         --device cuda:0 --output-root outputs/transmission_reduction_$(date +%Y%m%d_%H%M%S)
 """
 
@@ -89,8 +90,8 @@ SELECTORS = ("fixed", "skem")
 ALL_CONFIGS = [f"{sel}_{ch}" for sel in SELECTORS for ch in CHANNEL_CONFIGS]
 # fixed baseline (analog) + fixed/SKEM reliable-digital baseline (int16) +
 # fixed/SKEM lossy digital (int8/6/4). float32 is available (ALL_CONFIGS) but
-# not in the default grid — int16 already gives a fair, cheaper reliable-
-# digital reference point.
+# not in the default grid. int16 is kept as the provisional reliable-digital
+# reference; configurations with invalid frames cannot become a Pareto baseline.
 DEFAULT_CONFIGS = [
     "fixed_awgn",
     "fixed_int16", "fixed_int8", "fixed_int6", "fixed_int4",
@@ -917,13 +918,19 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
     }
     (output_root / "summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
 
-    baseline_note = (
-        f"Pareto baseline: `{baseline_info['baseline_config']}` "
-        + ("(**analog fallback** — no reliable digital baseline (int16/float32) was in --configs; "
-           "quality-gate comparisons against an analog baseline mix quantization loss with AWGN "
-           "noise and should be treated cautiously)."
-           if baseline_info["baseline_is_analog"] else "(a reliable digital baseline, never AWGN).")
-    )
+    if not baseline_info["baseline_valid"]:
+        baseline_note = (
+            "Pareto baseline: unavailable. Include a valid reliable-digital config "
+            "(preferably float32/int16) or fixed_awgn to build a comparison frontier."
+        )
+    else:
+        baseline_note = (
+            f"Pareto baseline: `{baseline_info['baseline_config']}` "
+            + ("(**analog fallback** — no valid reliable digital baseline (int16/float32) was available; "
+               "quality-gate comparisons against an analog baseline mix quantization loss with AWGN "
+               "noise and should be treated cautiously)."
+               if baseline_info["baseline_is_analog"] else "(a reliable digital baseline, never AWGN).")
+        )
 
     readme = f"""# transmission_reduction run — {output_root.name}
 

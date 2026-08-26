@@ -1,198 +1,231 @@
-# sgdjscc_lab
+# SGD-JSCC Lab
 
-무선 채널 잡음을 통과한 뒤에도 이미지·영상의 **의미(semantic intent)**가 얼마나
-보존되는지 측정하는, `SGDJSCC` 기반 End-to-End semantic 전송 시뮬레이션 프레임워크다.
-목표는 픽셀 화질이 아니라 **전송량을 줄이면서 복원 성능과 의미 신뢰도를 유지하고,
-할루시네이션(없던 객체 생성/누락)을 억제하는 것**이다.
+생성형 AI 기반 이미지·영상 시맨틱 통신 연구 프레임워크다. SGD-JSCC 복원 경로에
+전송 packet, 의미 신뢰도 평가, 할루시네이션 검증, 영상 keyframe 처리를 결합한다.
+기존 추론 경로는 유지하며 연구 기능은 config로 선택한다.
 
-## 핵심 기능
+## 주요 기능
 
-- **원본 SGDJSCC 경로 보존** — VAE latent 인코딩 + AWGN 채널 + diffusion 복원의
-  forward-pass 수치는 원본과 동일. 모든 확장은 opt-in.
-- **Semantic Reliability Score(SRS)** — PSNR/SSIM과 별개로 CLIP 유사도, 객체
-  보존/누락/추가율을 합쳐 의미 보존을 점수화.
-- **패킷 인식 검증·재생성** — 전송 semantic packet과 복원 결과를 비교해 오류
-  유형(추가/누락/구조 왜곡)별로 재생성을 조정하는 Packet Verifier.
-- **영상 확장** — 키프레임 + reuse/recompute/generate 3-way 분기, 시간축 지표
-  (`PTC`/`SFR`/`SDI`), LGVSC 논문을 참고한 segment 단위 생성 복원.
-- **실제 전송량 절감** — 4/6/8/16-bit 실제 binary packet 양자화(`transmission/`)로
-  채널 심볼/비트 단위 전송량을 직접 줄이고 측정.
-- **비-AWGN 채널·가속** — Rayleigh/fast-fading/packet-drop, SNR 적응형 가이던스,
-  저지연 샘플링(모두 opt-in, 기본 off).
+- 이미지·영상 JSCC 추론과 AWGN/Rayleigh/fading/drop 채널 실험
+- PSNR, SSIM, LPIPS, CLIP, SRS와 영상 시간축 지표 평가
+- semantic packet 검증과 재생성 후보 탐색
+- keyframe 기반 영상 복원과 외부 Wan/SVD worker 연동
+- 4/6/8/16-bit packet 직렬화와 정확한 bundle byte 집계
+- stage별 학습, checkpoint export, 단일·다중 GPU 실행
 
-## 동작 구조
+> Bundle byte는 실제 직렬화 크기다. 변조·FEC·물리 채널 symbol 수는 현재 proxy이며
+> 실제 전송량과 구분해 해석해야 한다.
 
-```
-원본 이미지/키프레임
-  → Tx: JSCC 인코더 (VAE latent + Canny 구조 가이드)
-  → 무선 채널 (AWGN 기본; Rayleigh/fast-fading/packet-drop opt-in)
-  → Rx: diffusion 복원 (MDTv2 + 선택적 ControlNet)
-  → 의미 일치·할루시네이션 평가 (SRS, packet verifier, 시간축 지표)
-  → CSV/리포트
-```
+## 실행 환경
 
-## 지원 환경 및 주요 의존성
+| 항목 | 권장 환경 |
+|---|---|
+| OS | Linux |
+| Python | 3.9 |
+| PyTorch | 2.1.0 |
+| CUDA | 11.8 |
+| GPU | CUDA GPU 권장 |
 
-- Python 3.9, PyTorch 2.1.0 + torchvision 0.16.0, CUDA 11.8(conda)
-- `diffusers` 0.26.3, `transformers` 4.44.2, `numpy` 1.23.2, `openai-clip`, `lpips`,
-  `clean-fid`/`torch-fidelity` — 전체 버전은 [requirements.txt](./requirements.txt) 참고
-- 원본 `SGDJSCC/` 저장소가 `../SGDJSCC/`(또는 `SGDJSCC_ROOT` 환경변수)에 있어야
-  모델 코드를 import할 수 있다
+주요 패키지는 `diffusers==0.26.3`, `transformers==4.44.2`,
+`numpy==1.23.2`, `openai-clip`, `lpips`다. 전체 버전은
+[requirements.txt](./requirements.txt)를 따른다. 모델 구현을 불러오기 위해 원본
+`SGDJSCC/`가 기본적으로 이 저장소의 형제 경로 `../SGDJSCC/`에 있어야 한다.
 
 ## 설치
 
 ```bash
+cd /path/to/sgdjscc_lab
+
 conda create -n ptest python=3.9
 conda activate ptest
-conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 pytorch-cuda=11.8 \
-    -c pytorch -c nvidia
-pip install -r sgdjscc_lab/requirements.txt
+conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 \
+    pytorch-cuda=11.8 -c pytorch -c nvidia
+
+pip install -r requirements.txt
+pip install -e .
 ```
 
-editable install(선택 — 되면 `sgdjscc-infer`/`sgdjscc-train`/`sgdjscc-evaluate`/
-`sgdjscc-evaluate-video` 커맨드도 같은 스크립트를 그대로 실행한다):
+editable install 후 `sgdjscc-infer`, `sgdjscc-evaluate`, `sgdjscc-evaluate-video`,
+`sgdjscc-train` 명령도 사용할 수 있다.
+
+## 모델과 데이터 준비
+
+[murjun/SGDJSCC](https://huggingface.co/murjun/SGDJSCC/tree/main)에서 다음 파일을
+받아 `checkpoints/`에 둔다.
+
+```text
+checkpoints/
+├── JSCC_model.pth
+├── diffusion_backbone.pth
+├── diffusion_controlnet.pth
+└── muge-epoch-19-checkpoint.pth
+```
+
+이미지와 영상 입력은 config 또는 `--input`으로 지정한다. 데이터 역할은
+[데이터셋 지침](./docs/protocols/datasets.md), baseline/custom checkpoint 구분은
+[재현성 지침](./docs/protocols/reproducibility.md)을 참고한다.
+
+저장소 밖의 대용량 파일은 아래 환경변수로 경로를 바꿀 수 있다.
 
 ```bash
-pip install -e sgdjscc_lab/
+export SGDJSCC_ROOT=/path/to/SGDJSCC
+export SGDJSCC_DATA_ROOT=/path/to/data
+export SGDJSCC_MODEL_ROOT=/path/to/models
+export SGDJSCC_RUN_ROOT=/path/to/outputs
+export SGDJSCC_CACHE_ROOT=/path/to/cache
 ```
 
-## Checkpoint와 데이터 준비
+## 사용법
 
-[HuggingFace `murjun/SGDJSCC`](https://huggingface.co/murjun/SGDJSCC/tree/main)에서
-`JSCC_model.pth`, `diffusion_backbone.pth`, `diffusion_controlnet.pth`,
-`muge-epoch-19-checkpoint.pth`를 받아 `sgdjscc_lab/checkpoints/`에 둔다.
+모든 명령은 `sgdjscc_lab/`에서 실행한다.
 
-데이터셋 준비/역할 매핑은 [docs/dataset_status.md](./docs/dataset_status.md),
-ETRI 10-영상 평가셋은 [data/etri_video_eval/README.md](./data/etri_video_eval/README.md)
-참고. 이미지는 128×128 배수 크기로 리사이즈해 타일링한다
-(예시: [configs/base/dataset/kodak.yaml](./configs/base/dataset/kodak.yaml)).
-
-대용량 데이터/checkpoint/실행결과를 저장소 밖에 둘 수도 있다 — 환경변수
-(`SGDJSCC_DATA_ROOT`/`SGDJSCC_MODEL_ROOT`/`SGDJSCC_RUN_ROOT`/`SGDJSCC_CACHE_ROOT`/
-`SGDJSCC_ROOT`)를 설정하지 않으면 기존 저장소 내부 경로 그대로 동작한다. 자세한
-규칙은 `src/sgdjscc_lab/paths.py` 참고.
-
-## 이미지 추론
+### 이미지 추론
 
 ```bash
-cd sgdjscc_lab && conda activate ptest
-
-python scripts/infer_images.py --config configs/base/default.yaml
-python scripts/infer_images.py --config configs/recipes/inference/composed.yaml \
-    --input /path/to/images/ --output /path/to/out/ --snr 5 --device cuda:0
+python scripts/infer_images.py \
+    --config configs/recipes/inference/composed.yaml \
+    --input /path/to/images \
+    --output outputs/inference \
+    --snr 5 --device cuda:0
 ```
 
-## 이미지 평가
+### 이미지 평가
 
 ```bash
-python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 10
-python scripts/evaluate.py --config configs/recipes/inference/composed.yaml \
-    --snr-list -5,0,5,10,15,20,25
-python scripts/evaluate.py --config configs/recipes/inference/composed.yaml \
-    --snr 10 --no-clip
+# 단일 SNR
+python scripts/evaluate.py \
+    --config configs/recipes/inference/composed.yaml --snr 10
+
+# SNR sweep
+python scripts/evaluate.py \
+    --config configs/recipes/inference/composed.yaml \
+    --snr-list=-5,0,5,10,15,20,25
 ```
 
-`--profile {paper,extended,full}`로 지표 집합을, `--require-real-fid`로 FID 실측을
-강제할 수 있다.
-
-## 비디오 평가
+### 영상 평가
 
 ```bash
-python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml \
-    --snr 10 --device cuda:0
+python scripts/evaluate_video.py \
+    --config configs/recipes/video/composed_video.yaml \
+    --input data/etri_video_eval/processed/01_person_walk.mp4 \
+    --snr 5 --device cuda:0 --save-video
 ```
 
-Phase 4-B 키프레임/시간적 파이프라인은 기본 off(`use_phase4`)다. `--no-clip`,
-`--force-interframe-reuse`, `--recon-caption-mode {own,skip}`, `--packet-cache-dir`
-등으로 세부 동작을 제어한다. ETRI 10-영상 배치 실행은
-[docs/README.md](./docs/README.md#7-개별-실험-결과)의 개별 실험 결과 문서들과
-`scripts/run_etri_video_eval.py` 참고.
-
-## 학습
-
-`scripts/train.py`는 논문 3-stage(`jscc` → `text_dm` → `controlnet`)에 보조
-`edge_codec`/`csi_estimation`과 선택적 `end_to_end_ft`를 더한 stage-aware CLI다.
-inference/evaluation 경로는 영향받지 않는다.
+ETRI 10개 영상 일괄 평가는 다음 명령으로 실행한다.
 
 ```bash
-python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \
-    --train-list /path/to/train/ --val-list /path/to/val/ --device cuda:0
-python scripts/train.py --config configs/recipes/training/composed_train_controlnet.yaml \
-    --resume latest
-python scripts/train.py --config configs/recipes/training/composed_train_jscc.yaml \
-    --no-models   # GPU 없는 dry-run
+python scripts/run_etri_video_eval.py --stages all --snr 5 --device cuda:0
+python scripts/summarize_etri_video_eval.py --output-root outputs/etri_video_eval
+python scripts/generate_etri_final_report.py --output-root outputs/etri_video_eval
 ```
 
-`--stage`로 override, `--max-steps`/`--epochs`로 종료 조건, Multi-GPU는
-`torchrun --standalone --nproc_per_node=N scripts/train.py ...`. 전체 stage·config·
-freeze·export·DDP는 [docs/training_scaffold.md](./docs/training_scaffold.md), 실제
-모델 1~2 step 배선 검증은 [docs/dev/smoke_training.md](./docs/dev/smoke_training.md).
-
-## 테스트
+### 전송 packet 비교
 
 ```bash
-python -m pytest tests/ -v
+python scripts/run_transmission_reduction_eval.py \
+    --configs fixed_awgn,fixed_int16,fixed_int8,fixed_int6,fixed_int4,skem_int16,skem_int8,skem_int6,skem_int4 \
+    --device cuda:0 \
+    --output-root outputs/transmission_reduction
 ```
 
-## 주요 출력 결과
+현재 `int4`는 analog AWGN 임시 기준의 픽셀 품질 gate를 통과한 잠정 후보다.
+reliable-digital 기준과 SRS·할루시네이션 평가 전에는 기본 operating point로
+확정하지 않는다.
 
-- 이미지 평가: 이미지 × SNR별 한 행으로 `psnr, ssim, lpips, clip_image_image,
-  clip_text_image, object_preservation_rate, missing_object_rate,
-  additional_object_rate, hallucination_score, semantic_reliability_score`
-  (`src/sgdjscc_lab/utils/csv_logger.py::RESULT_COLUMNS`)를 CSV로 기록.
-- 영상 평가: `temporal_metrics.csv`(`PTC`/`SFR`/`SDI`), `segments.json`,
-  `summary_metrics.csv/md`, `final_report.md` — 예시는 `outputs/etri_video_eval/`.
-- 전송량 절감 PoC: `accounting_summary.json`(bit/symbol 절감률),
-  `rate_reliability_curve.csv`(전송량-신뢰도 trade-off).
+### 학습
 
-## 현재 구현 범위와 중요한 한계
+```bash
+# Stage 1: JSCC
+python scripts/train.py \
+    --config configs/recipes/training/composed_train_jscc.yaml \
+    --train-list /path/to/train --val-list /path/to/val --device cuda:0
 
-Phase 1~4(AWGN 추론, 모듈 분리, 평가기 세트, 패킷 검증+영상 파이프라인)는 완료,
-Phase 5(채널 조건화, 저지연 샘플링, SRS-v2)는 구조 완성·일부 실모델 검증 진행 중이다.
-전송량 절감은 실제 4~16bit binary packet 양자화(`transmission/`)까지 구현됐고, 10개
-영상 실험에서 4-bit 양자화가 평균 ΔPSNR −0.13dB로 화질 저하 없이 선택됐다(영상별
-분산·SRS 변화는 추가 검증 필요). 할루시네이션 검증은 Packet Verifier가 오류 유형을
-판정·기록하지만, 그 판정을 실제 diffusion 샘플러(negative prompt 등)에 반영하는
-배선은 아직 없다 — 판정과 로그까지만 완료다. LGVSC 참고 영상 생성 확장은 재현
-baseline 실행 준비까지 완료했고 실제 10-영상 실행 결과는 아직 없다. 정확한
-완료/스캐폴드/미구현 구분은 [docs/etri_strategy.md](./docs/etri_strategy.md)(현재
-상태)와 [docs/roadmap.md](./docs/roadmap.md)(향후 계획) 참고.
+# Stage 3: ControlNet
+python scripts/train.py \
+    --config configs/recipes/training/composed_train_controlnet.yaml \
+    --train-list /path/to/train --resume latest --device cuda:0
 
-## Acknowledgements
+# 모델을 로드하지 않는 설정 검증
+python scripts/train.py \
+    --config configs/recipes/training/composed_train_jscc.yaml \
+    --train-list /path/to/train --no-models
+```
 
-`sgdjscc_lab`의 개발은 원본 `SGDJSCC` 프로젝트와 그 상위 의존성에 기반한다:
+다중 GPU는 `torchrun --standalone --nproc_per_node=N scripts/train.py ...` 형식으로
+실행한다. stage별 입력과 export 방식은 [학습 지침](./docs/protocols/training.md)에 있다.
 
-- [SGDJSCC](https://github.com/MauroZMJ/SGDJSCC)
-- [transformer_latent_diffusion](https://github.com/apapiu/transformer_latent_diffusion)
-- [MDT](https://github.com/sail-sg/MDT)
-- [SwinJSCC](https://github.com/semcomm/SwinJSCC)
-- [latent-diffusion](https://github.com/CompVis/latent-diffusion)
+### 테스트
 
-## 문서
+```bash
+python -m pytest tests/ -q
+```
 
-아래는 활성 문서 목록이다. 과거 완료 기록(`docs/archive/`)과 발표·보고 자료
-(`docs/reports/`)를 포함한 전체 색인은 [docs/README.md](./docs/README.md) 참고.
+## 주요 출력
+
+- 이미지: 복원 이미지와 이미지·SNR별 품질/의미 지표 CSV
+- 영상: 복원 프레임·MP4, `temporal_metrics.csv`, `segments.json`, 요약 리포트
+- 전송: 직렬화 `.sgbundle`, packet 구성 byte, Pareto 결과
+- 학습: `outputs/checkpoints/<stage>/`의 checkpoint와 `train_log.jsonl`
+
+## 프로젝트 구조
+
+```text
+configs/       기본·실험 설정
+data/          데이터 설명과 소규모 평가셋
+docs/          현재 상태·설계·절차·실험 기록
+scripts/       추론·평가·학습 진입점
+src/           sgdjscc_lab 패키지
+tests/         CPU 중심 자동 테스트
+transmission/  양자화·packet 직렬화
+```
+
+현재 구현 범위와 남은 한계는 [현재 상태](./docs/current/status.md),
+[향후 계획](./docs/current/roadmap.md), [알려진 문제](./docs/current/open_issues.md)를
+기준으로 판단한다.
+
+## 문서 안내
 
 | 문서 | 설명 |
 |---|---|
-| [docs/README.md](./docs/README.md) | 전체 문서 색인 (archive/reports/notes 포함) |
-| [docs/etri_overview.md](./docs/etri_overview.md) | 프로젝트 목표, 파이프라인, SRS, 실험 설정 |
-| [docs/etri_strategy.md](./docs/etri_strategy.md) | 핵심 한계 3가지와 현재 구현 상태 |
-| [docs/roadmap.md](./docs/roadmap.md) | 향후 연구개발 계획 (연구 목표 기준), 일정, ETRI 협의 필요사항 |
-| [docs/phase4.md](./docs/phase4.md) | Phase 4: 패킷 검증기 + 적응형 가이드, 키프레임/시간적 파이프라인 |
-| [docs/phase5.md](./docs/phase5.md) | Phase 5: 채널 조건화, 저지연 샘플링, SRS-v2 |
-| [docs/paper_alignment.md](./docs/paper_alignment.md) | 논문 정합성, `paper_mode`, 하이퍼파라미터 출처 |
-| [docs/framework_file_roles.md](./docs/framework_file_roles.md) | 파일별 실행 흐름과 역할 지도 |
-| [docs/video_extension_lgvsc.md](./docs/video_extension_lgvsc.md) | LGVSC 논문을 참고한 비디오 확장 시스템 구조 |
-| [docs/training_scaffold.md](./docs/training_scaffold.md) | stage-aware 학습 CLI 상세 |
-| [docs/checkpoint_usage.md](./docs/checkpoint_usage.md) | checkpoint 경로, export, 로컬/원격 가중치 |
-| [docs/dataset_status.md](./docs/dataset_status.md) | 데이터셋 역할·stage 매핑·변환 워크플로 |
-| [docs/dev/smoke_training.md](./docs/dev/smoke_training.md) | 실제 모델 1~2 step 학습 배선 검증 |
-| [docs/etri_stage1_validation.md](./docs/etri_stage1_validation.md) | 1차 구현 검증 리포트 |
-| [docs/etri_video_speed_optimization.md](./docs/etri_video_speed_optimization.md) | 영상 파이프라인 속도 병목·가속화 옵션 |
-| [docs/remote_hq_validation.md](./docs/remote_hq_validation.md) | 원격 GPU 고품질 검증 |
-| [docs/etri_video_rate_benchmark.md](./docs/etri_video_rate_benchmark.md) | 의미 payload vs H.264/H.265/AV1 크기·품질 비교 |
-| [docs/etri_owlv2_vqa_readiness.md](./docs/etri_owlv2_vqa_readiness.md) | OWLv2/VQA presence calibration 검증 결과 |
-| [docs/lgvsc_1b_worker_readiness.md](./docs/lgvsc_1b_worker_readiness.md) | LGVSC 1B 외부 생성 worker 실제 GPU 검증 |
-| [docs/lgvsc_1c_reproduction_readiness.md](./docs/lgvsc_1c_reproduction_readiness.md) | LGVSC 1C 재현 baseline 준비 |
-| [docs/lgvsc_psss_skem_readiness.md](./docs/lgvsc_psss_skem_readiness.md) | PSSS/SKEM keyframe selector 검증 |
+| [docs/README.md](./docs/README.md) | 전체 문서 색인 |
+| [docs/architecture/metrics.md](./docs/architecture/metrics.md) | 지표 정의 |
+| [docs/architecture/system.md](./docs/architecture/system.md) | 시스템 구조 |
+| [docs/architecture/tx_rx_contract.md](./docs/architecture/tx_rx_contract.md) | Tx/Rx 계약 |
+| [docs/archive/etri_development_plan_v2.md](./docs/archive/etri_development_plan_v2.md) | 과거 개발안 |
+| [docs/archive/etri_development_roadmap.md](./docs/archive/etri_development_roadmap.md) | 과거 로드맵 |
+| [docs/archive/etri_implementation_log.md](./docs/archive/etri_implementation_log.md) | 구현 이력 |
+| [docs/archive/framework_comparison.md](./docs/archive/framework_comparison.md) | 과거 프레임워크 비교 |
+| [docs/archive/limitation_reference_map.md](./docs/archive/limitation_reference_map.md) | 과거 한계 근거 |
+| [docs/archive/paper_gap_closure.md](./docs/archive/paper_gap_closure.md) | 과거 논문 보완안 |
+| [docs/archive/paper_training_alignment.md](./docs/archive/paper_training_alignment.md) | 과거 학습 정합성 |
+| [docs/archive/phase4_2026-07.md](./docs/archive/phase4_2026-07.md) | Phase 4 기록 |
+| [docs/archive/phase5_2026-07.md](./docs/archive/phase5_2026-07.md) | Phase 5 기록 |
+| [docs/archive/phases_1to3.md](./docs/archive/phases_1to3.md) | Phase 1–3 기록 |
+| [docs/archive/video_extension_lgvsc_2026-07.md](./docs/archive/video_extension_lgvsc_2026-07.md) | 과거 LGVSC 설계 |
+| [docs/current/open_issues.md](./docs/current/open_issues.md) | 알려진 문제 |
+| [docs/current/roadmap.md](./docs/current/roadmap.md) | 향후 계획 |
+| [docs/current/status.md](./docs/current/status.md) | 현재 상태 |
+| [docs/experiments/2026-07-17_stage1_video_pipeline.md](./docs/experiments/2026-07-17_stage1_video_pipeline.md) | 영상 1차 검증 |
+| [docs/experiments/2026-07-24_video_speed_optimization.md](./docs/experiments/2026-07-24_video_speed_optimization.md) | 영상 속도 실험 |
+| [docs/experiments/2026-07-28_owlv2_vqa_calibration.md](./docs/experiments/2026-07-28_owlv2_vqa_calibration.md) | Presence 보정 실험 |
+| [docs/experiments/2026-07_lgvsc_1b_worker_validation.md](./docs/experiments/2026-07_lgvsc_1b_worker_validation.md) | LGVSC worker 검증 |
+| [docs/experiments/2026-07_lgvsc_1c_reproduction.md](./docs/experiments/2026-07_lgvsc_1c_reproduction.md) | LGVSC 재현 준비 |
+| [docs/experiments/2026-07_lgvsc_psss_skem.md](./docs/experiments/2026-07_lgvsc_psss_skem.md) | PSSS/SKEM 검증 |
+| [docs/experiments/2026-08-16_remote_hq_validation.md](./docs/experiments/2026-08-16_remote_hq_validation.md) | 원격 HQ 검증 |
+| [docs/experiments/2026-08-18_transmission_reduction.md](./docs/experiments/2026-08-18_transmission_reduction.md) | 전송량 실험 |
+| [docs/protocols/datasets.md](./docs/protocols/datasets.md) | 데이터 지침 |
+| [docs/protocols/evaluation.md](./docs/protocols/evaluation.md) | 평가 지침 |
+| [docs/protocols/reproducibility.md](./docs/protocols/reproducibility.md) | 재현성 지침 |
+| [docs/protocols/training.md](./docs/protocols/training.md) | 학습 지침 |
+| [docs/protocols/video_rate_benchmark.md](./docs/protocols/video_rate_benchmark.md) | 전송률 비교 절차 |
+| [docs/reference/framework_file_roles.md](./docs/reference/framework_file_roles.md) | 파일 역할 지도 |
+| [docs/reference/paper_alignment.md](./docs/reference/paper_alignment.md) | 논문 정합성 |
+| [docs/reference/paper_writing_notes.md](./docs/reference/paper_writing_notes.md) | 논문 작성 메모 |
+| [docs/reports/2026-08-16_etri/Appendix_Slide_Explanations_EN.md](./docs/reports/2026-08-16_etri/Appendix_Slide_Explanations_EN.md) | 영문 부록 설명 |
+| [docs/reports/2026-08-16_etri/Slide_Detailed_Notes_External_EN.md](./docs/reports/2026-08-16_etri/Slide_Detailed_Notes_External_EN.md) | 영문 외부 발표 노트 |
+| [docs/reports/2026-08-16_etri/Slide_Detailed_Notes_Internal_EN.md](./docs/reports/2026-08-16_etri/Slide_Detailed_Notes_Internal_EN.md) | 영문 내부 발표 노트 |
+| [docs/reports/2026-08-16_etri/부록슬라이드_상세설명_KO.md](./docs/reports/2026-08-16_etri/부록슬라이드_상세설명_KO.md) | 국문 부록 설명 |
+| [docs/reports/2026-08-16_etri/슬라이드상세설명_내부용_KO.md](./docs/reports/2026-08-16_etri/슬라이드상세설명_내부용_KO.md) | 국문 내부 발표 노트 |
+| [docs/reports/2026-08-16_etri/슬라이드상세설명_외부공유용_KO.md](./docs/reports/2026-08-16_etri/슬라이드상세설명_외부공유용_KO.md) | 국문 외부 발표 노트 |
+| [docs/reports/README.md](./docs/reports/README.md) | 보고 자료 안내 |
+| [docs/reports/etri_qna_reply.md](./docs/reports/etri_qna_reply.md) | 과제 Q&A |

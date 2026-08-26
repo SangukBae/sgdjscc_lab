@@ -2,11 +2,11 @@
 
 # Phase 1–3 요약
 
-> 보관본. 이후 전체 전략은 [etri_strategy.md](../etri_strategy.md), 후속 기능은
-> [phase4.md](../phase4.md) · [phase5.md](../phase5.md) 참조.
+> 보관본. 이후 전체 전략은 [etri_strategy.md](../current/status.md), 후속 기능은
+> [phase4.md](../archive/phase4_2026-07.md) · [phase5.md](../archive/phase5_2026-07.md) 참조.
 
 > 이 문서는 Phase 3 시점의 스냅샷이다. 이후 phase가 얹은 패킷/시간적/채널 조건화
-> 기능은 [phase4.md](../phase4.md) · [phase5.md](../phase5.md) 참조.
+> 기능은 [phase4.md](../archive/phase4_2026-07.md) · [phase5.md](../archive/phase5_2026-07.md) 참조.
 
 ## Phase 1 — AWGN 추론 CLI
 

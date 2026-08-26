@@ -43,8 +43,8 @@ class TestArgParsing:
     def test_default_configs_match_fair_baseline_grid(self):
         args = mod._parse_args(["--output-root", "/tmp/x"])
         configs = args.configs.split(",")
-        # includes int16 reliable-digital baselines, not just fixed_awgn +
-        # lossy int8/6/4 — the "fair baseline" fix.
+        # Keep baselines in the default run until a digital-baseline and
+        # semantic-reliability validation confirms an operating point.
         assert configs == [
             "fixed_awgn",
             "fixed_int16", "fixed_int8", "fixed_int6", "fixed_int4",

@@ -2,10 +2,10 @@
 
 # ETRI 구현 이력 (1차~6차, LGVSC 1A/1B/1C)
 
-이 문서는 `etri_strategy.md`에 있던 상세 구현 로그를 2026-08-25에 그대로 옮긴
-**과거 완료 기록**이다. 현재 상태 요약은 `etri_strategy.md`, 향후 계획은
-`roadmap.md`를 참고한다. 아래 내용은 작성 당시 시점 기준이며 날짜/수치를
-수정하지 않았다.
+이 문서는 옛 `docs/etri_strategy.md`의 상세 구현 로그를 2026-08-25에 옮긴
+**과거 완료 기록**이다. 현재 상태는 [status.md](../current/status.md), 향후 계획은
+[roadmap.md](../current/roadmap.md)를 따른다. 본문에 남은 옛 문서 경로는 당시
+스냅샷이며, 현재 위치는 [문서 색인](../README.md)에서 확인한다.
 
 ## 구현 실행 순서 (0~12)
 
@@ -54,7 +54,7 @@ phase/config gate 뒤에 두고, 기본값에서 원본 SGD-JSCC 경로와 동�
 ### 1차 구현 결과 (2026-07)
 
 > 상세 검증 기록(기준 커밋, 로컬/원격/실모델 실행 결과, 산출물)은
-> [etri_stage1_validation.md](../etri_stage1_validation.md) 참조.
+> [etri_stage1_validation.md](../experiments/2026-07-17_stage1_video_pipeline.md) 참조.
 
 1차(순서 0~4)는 구현 완료됐다. 1차의 성격은 **최종 평가 체계 완성이 아니라 동작하는
 비디오/시간축 평가 뼈대 확보**이며, OWLv2/VQA·Generate·Adapter/Critic·Temporal SRS
@@ -642,4 +642,3 @@ segment 0(`conditioning_mode=bidirectional`, `end_keyframe_index=12`,
 
 자세한 모드 정의·config↔소스 대응·실행 명령어·결과 해석 주의사항은
 `docs/lgvsc_1c_reproduction_readiness.md` 참조.
-

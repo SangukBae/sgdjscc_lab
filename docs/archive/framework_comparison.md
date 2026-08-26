@@ -2,13 +2,13 @@
 
 # 프레임워크 비교
 
-> 보관본. 최신 요약은 [paper_alignment.md](../paper_alignment.md)를 우선 참조.
+> 보관본. 최신 요약은 [paper_alignment.md](../reference/paper_alignment.md)를 우선 참조.
 
 두 가지를 비교한다: (1) 원본 `SGDJSCC/` monolithic 추론과 `sgdjscc_lab/`의 모듈화
 구조, (2) **SGD-JSCC 논문**과 `sgdjscc_lab` 구현의 정합 수준.
 
 > **역할**: 이 문서 = 원본·논문 **대비 차이/정합**(무엇이 어떻게 다른가).
-> 파일별 **실행 흐름**은 [framework_file_roles.md](../framework_file_roles.md).
+> 파일별 **실행 흐름**은 [framework_file_roles.md](../reference/framework_file_roles.md).
 
 ## 1. 구조 비교 — 원본 vs sgdjscc_lab
 
@@ -74,7 +74,7 @@ Inception-FID 수치(#15) — 모두 데이터/컴퓨트/네트워크 의존.
 (auto-caption·Canny edge·`shared_vae` transport·zero-vector CFG null·단일 고정 SNR
 edge codec)을 체크포인트 로딩 전에 `PaperModeError`로 차단한다. 논문 경로는
 `configs/experiments/paper_reproduction/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml` +
-`paper_eval_awgn.yaml`. 항목별 상세는 [paper_alignment.md](../paper_alignment.md).
+`paper_eval_awgn.yaml`. 항목별 상세는 [paper_alignment.md](../reference/paper_alignment.md).
 
 ### 검증 상태
 
@@ -83,4 +83,4 @@ water-filling 수치 / Inception-FID 수치는 체크포인트·GPU·네트워�
 기준으로만 검증됨.
 
 ### 관련 문서
-- [../paper_alignment.md](../paper_alignment.md) · [../training_scaffold.md](../training_scaffold.md) · [../phase5.md](../phase5.md)
+- [../paper_alignment.md](../reference/paper_alignment.md) · [../training_scaffold.md](../protocols/training.md) · [../phase5.md](../archive/phase5_2026-07.md)

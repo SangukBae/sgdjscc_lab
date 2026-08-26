@@ -1,7 +1,7 @@
 # 개발계획서 (업데이트판)
 ## 생성 AI 기반 시맨틱 미디어 전송 신뢰성 평가·고도화 프레임워크
 
-> 보관본. 최신 요약은 [etri_strategy.md](../etri_strategy.md)를 우선 참조.
+> 보관본. 최신 요약은 [etri_strategy.md](../current/status.md)를 우선 참조.
 
 > 초기 개발계획서를 현재 구현 상태에 맞춰 최신화한 문서다. **논문 정합 영역 ↔ ETRI
 > 확장 영역**, **구현 완료 ↔ 부분/스캐폴드 ↔ 미구현**을 구분해, 계획이 아닌 현재
@@ -28,7 +28,7 @@
 확장 기능은 **기본 off**, 마스터 스위치를 끄면 원본 추론과 수치적으로 동일.
 
 **현황** — Phase 1~4 완료, Phase 5 부분/스캐폴드. 상세는 §3(한계 매핑)·§8(구현 현황)·
-§12(변경표) 및 [phase4.md](../phase4.md) / [phase5.md](../phase5.md).
+§12(변경표) 및 [phase4.md](../archive/phase4_2026-07.md) / [phase5.md](../archive/phase5_2026-07.md).
 
 > 이 아래는 상세 기록(부록 성격)이다. 빠른 파악은 위 요약으로 충분하다.
 
@@ -84,7 +84,7 @@ SGD-JSCC의 단순 재현이 아니라 ETRI용 **시맨틱 미디어 전송 신�
 고도화한다: 베이스라인 재현성을 고정한 채, 노이즈 채널 통과 후 **송신 의도 보존도**와
 **할루시네이션**을 정량화하고, guidance(text/edge/depth/seg/패킷)·채널·영상·저지연으로
 단계 확장한다. 성공 기준은 PSNR이 아니라 **의미 전달 신뢰성**이다. 목표·파이프라인 서술은
-[etri_overview.md](../etri_overview.md) 참조.
+[etri_overview.md](../architecture/system.md) 참조.
 
 ## 2. 기본 모델 선정
 
@@ -159,7 +159,7 @@ flowchart LR
 `runtime.build_models()`가 위 core 구성요소를 `ModelBundle`(jscc_model · sem_pipeline ·
 text_extractor · edge_extractor)로 묶고, `pipelines/infer_pipeline.py`가 128×128 패치
 단위로 forward를 조율한다. 파일별 실행 흐름 상세는
-[framework_file_roles.md](../framework_file_roles.md) 참조.
+[framework_file_roles.md](../reference/framework_file_roles.md) 참조.
 
 ---
 
@@ -219,7 +219,7 @@ MIMO/OFDM/다중사용자 확장은 핵심 3축 위에서 다루는 후속 트�
 | CelebA | image-only | 도메인 특화(text stage 시 캡션 자동 생성, paper-like) |
 
 **평가 축** — COCO val2017 / Kodak / ADE20K, 입력은 128×128 패치 타일링(H·W 128 배수).
-데이터셋 역할·stage 매핑·변환 상세는 [dataset_status.md](../dataset_status.md).
+데이터셋 역할·stage 매핑·변환 상세는 [dataset_status.md](../protocols/datasets.md).
 
 **규모·지표 한계(정직 공개)**: 논문 ~1,400만 pair·250k-step 스케줄은 미포함(로컬은 소규모
 subset). CLIP text-image는 캡션 공급 시 동작하는 확장 지표, 정식 mIoU는
@@ -229,7 +229,7 @@ segmentation-consistency로 대체.
 
 ## 6. 평가 지표
 
-지표 정의·SRS 가중치는 [etri_overview.md](../etri_overview.md)와 겹친다 — 여기서는 계층·
+지표 정의·SRS 가중치는 [etri_overview.md](../architecture/system.md)와 겹친다 — 여기서는 계층·
 기록 규칙만 요약한다.
 
 - **품질/의미** — PSNR/SSIM/LPIPS(SSIM은 논문 외), CLIP image-image, CLIP text-image
@@ -277,7 +277,7 @@ segmentation-consistency로 대체.
 없다. 본 과제는 그 forward 경로를 **수치 변경 없이 재사용**(paper-faithful)하고, 모듈화·
 End-to-End 평가·CSV·SRS·할루시네이션/객체 평가·packet verifier·영상/시간축·다중 채널·
 채널 조건화·저지연·stage-aware 학습 scaffold로 골격을 메웠다. 논문 대비 항목별 정합표는
-[paper_alignment.md](../paper_alignment.md) 참조.
+[paper_alignment.md](../reference/paper_alignment.md) 참조.
 
 ### 8.1 기능군별 현황 (요약)
 
@@ -328,7 +328,7 @@ Phase 1~3(베이스라인 재현 → 모듈화 → 시맨틱 우선 평가) 완�
 영상) 대부분 완료, Phase 5(채널 연구·저지연·강한 검증) 부분/스캐폴드. 병행 트랙으로 학습
 재현 scaffold(부분 충실)와 DeepJSCC/DiffJSCC/SGD-JSCC/Proposed 비교·ablation.
 
-- 단계별 상세: [phases_1to3.md](./phases_1to3.md) · [../phase4.md](../phase4.md) · [../phase5.md](../phase5.md)
+- 단계별 상세: [phases_1to3.md](./phases_1to3.md) · [../phase4.md](../archive/phase4_2026-07.md) · [../phase5.md](../archive/phase5_2026-07.md)
 - 한계점 개선 매핑: [etri_development_roadmap.md](./etri_development_roadmap.md)
 
 ## 10. 실험 시나리오

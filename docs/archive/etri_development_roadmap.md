@@ -2,9 +2,9 @@
 
 # ETRI 개발 로드맵
 
-> 보관본. 최신 요약은 [etri_strategy.md](../etri_strategy.md)를 우선 참조.
+> 보관본. 최신 요약은 [etri_strategy.md](../current/status.md)를 우선 참조.
 
-ETRI 과제 목표([etri_overview.md](../etri_overview.md))와 핵심 한계 3가지
+ETRI 과제 목표([etri_overview.md](../architecture/system.md))와 핵심 한계 3가지
 ([limitation_reference_map.md](./limitation_reference_map.md))를 실제 개발 순서로
 결합한다. 정렬 원칙: **측정 체계와 소프트웨어 베이스라인을 먼저 세운 뒤, 그 위에
 연구적 개선을 얹는다.**
@@ -13,8 +13,8 @@ ETRI 과제 목표([etri_overview.md](../etri_overview.md))와 핵심 한계 3�
 
 Phase 4/5 확장은 **기본값 off**다. 상위 게이트 `use_phase4` / `use_phase5`가 `true`일
 때만 개별 플래그가 효력을 갖고, `false`이면 무시된다. `use_phase5: true`여도
-`use_phase4`는 자동으로 켜지지 않는다. 상세: [phase4.md](../phase4.md#마스터-스위치) ·
-[phase5.md](../phase5.md#마스터-스위치).
+`use_phase4`는 자동으로 켜지지 않는다. 상세: [phase4.md](../archive/phase4_2026-07.md#마스터-스위치) ·
+[phase5.md](../archive/phase5_2026-07.md#마스터-스위치).
 
 ## 권장 개발 순서 (1→12)
 
@@ -52,7 +52,7 @@ Phase 4/5 확장은 **기본값 off**다. 상위 게이트 `use_phase4` / `use_p
 
 ## 학습 재현성 (논문 3-stage + 확장)
 
-stage 인식 학습 프레임워크가 논문 재현을 뒷받침한다([training_scaffold.md](../training_scaffold.md)).
+stage 인식 학습 프레임워크가 논문 재현을 뒷받침한다([training_scaffold.md](../protocols/training.md)).
 
 - **Core baseline = Stage 1/2/3** (`jscc`, `text_dm`, `controlnet`).
 - **Stage 3 엣지 transport**: baseline은 전용 `edge_jscc` 링크, `shared_vae`는 ablation.
@@ -65,4 +65,4 @@ stage 인식 학습 프레임워크가 논문 재현을 뒷받침한다([trainin
 `end_to_end_ft`는 single-step denoise, ~14M pair 오픈 데이터셋은 미번들(loader만 제공).
 
 ## 관련 문서
-- [../etri_strategy.md](../etri_strategy.md) · [../etri_overview.md](../etri_overview.md) · [../phase4.md](../phase4.md) · [../phase5.md](../phase5.md)
+- [../etri_strategy.md](../current/status.md) · [../etri_overview.md](../architecture/system.md) · [../phase4.md](../archive/phase4_2026-07.md) · [../phase5.md](../archive/phase5_2026-07.md)

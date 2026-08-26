@@ -2,7 +2,7 @@
 
 # SGD-JSCC 한계점 우선순위 지도
 
-> 보관본. 최신 요약은 [etri_strategy.md](../etri_strategy.md)를 우선 참조.
+> 보관본. 최신 요약은 [etri_strategy.md](../current/status.md)를 우선 참조.
 
 ETRI 과제 초점은 최대 `PSNR`이 아니라 **무선 전송 후 시맨틱 의도의 신뢰성 있는
 보존**이다. 이 기준에서 `sgdjscc_lab`이 우선 해결해야 할 핵심 한계를 3가지로 정리한다.

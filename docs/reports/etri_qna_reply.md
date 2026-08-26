@@ -1,3 +1,11 @@
+---
+status: frozen
+updated: 2026-08-26
+owner: ETRI SGD-JSCC 연구팀
+source_commit: d0d3bfb
+supersedes:
+---
+
 # ETRI 권해찬 연구원님 질문 답변
 
 > 첨부: `etri_simple_structure.drawio` (전체 구조 한눈에 보기용 블록도)

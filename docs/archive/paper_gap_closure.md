@@ -2,7 +2,7 @@
 
 # Paper gap closure — `sgdjscc_lab`를 SGD-JSCC 논문에 정렬
 
-> 보관본. 최신 요약은 [paper_alignment.md](../paper_alignment.md)를 우선 참조.
+> 보관본. 최신 요약은 [paper_alignment.md](../reference/paper_alignment.md)를 우선 참조.
 
 대상 논문: **"Semantics-Guided Diffusion for Deep Joint Source-Channel Coding
 in Wireless Image Transmission"** (Zhang et al., arXiv:2501.01138).
