@@ -282,7 +282,8 @@ set +e
 sweep_status="${PIPESTATUS[0]}"
 set -e
 if [ "$sweep_status" -eq 3 ]; then
-  fail "sweep completed_with_failures. Final summaries/manifests were written; inspect failed_pairs.csv and resume with --retry-failed."
+  printf '[%s] COMPLETED_WITH_FAILURES: final summaries/manifests were written; inspect failed_pairs.csv and resume with --retry-failed.\n' "$(date +%H:%M:%S)" >&2
+  exit 3
 elif [ "$sweep_status" -ne 0 ]; then
   fail "run_transmission_reduction_eval.py exited non-zero -- see $LOG_FILE. Re-run this same command (or with --resume $OUTPUT_ROOT) to continue from the last completed (video, config) pair."
 fi

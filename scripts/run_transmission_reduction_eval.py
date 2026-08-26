@@ -1189,6 +1189,7 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
             "code_rate": args.code_rate,
         },
         "configs": sorted(c for c in args.configs.split(",") if c),
+        "device": args.device,
         "digital_step_policy": args.digital_step_policy,
         "ablation_label": args.ablation_label,
         "match_fixed_keyframes": bool(args.match_fixed_keyframes),
@@ -1269,6 +1270,10 @@ def _write_manifest(
     if phase == "final":
         extra["output_artifact_sha256"] = _hash_output_artifacts(output_root)
 
+    cuda_device_index = 0
+    if str(args.device).startswith("cuda:"):
+        cuda_device_index = int(str(args.device).split(":", 1)[1])
+
     manifest = rm.build_run_manifest(
         run_id=output_root.name,
         command_argv=sys.argv,
@@ -1298,6 +1303,7 @@ def _write_manifest(
             "failure_stages": failure_stages,
         },
         repo_root=_REPO_ROOT,
+        cuda_device_index=cuda_device_index,
         extra=extra,
     )
     rm.write_run_manifest(output_root / f"run_manifest_{phase}.json", manifest)

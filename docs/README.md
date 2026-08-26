@@ -60,7 +60,7 @@
 | [protocols/reproducibility.md](./protocols/reproducibility.md) | checkpoint 선택 기준, `paper_mode` 사용법 |
 | [protocols/results_registry.md](./protocols/results_registry.md) | 추적 `results/` 구조, run manifest 스키마·생성 절차 |
 | [protocols/training.md](./protocols/training.md) | stage-aware 학습 CLI, export, real-model smoke 검증 |
-| [protocols/transmission_normalization.md](./protocols/transmission_normalization.md) | digital blind-SNR NaN 수정, `run_transmission_normalization.sh` 절차, 양자화/selector 효과 분리 |
+| [protocols/transmission_normalization.md](./protocols/transmission_normalization.md) | 전송 정상화와 단일/3-GPU 안전 실행 절차 |
 
 - 데이터 문서
   - 전체 데이터: [data/README.md](../data/README.md)

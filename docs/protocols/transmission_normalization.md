@@ -194,6 +194,35 @@ bash scripts/run_transmission_normalization.sh --digital-step-policy bitdepth_pr
   - `--retry-failed`를 지정할 때만 기존 실패 행을 제거하고 재시도
   - 실패가 남으면 `completed_with_failures`와 비정상 종료 코드 3을 기록·반환
 
+## 3-GPU 안전 병렬 실행
+
+```bash
+bash scripts/run_transmission_normalization_parallel.sh --preflight-only
+bash scripts/run_transmission_normalization_parallel.sh --dry-run
+bash scripts/run_transmission_normalization_parallel.sh --devices cuda:0,cuda:1,cuda:2
+bash scripts/run_transmission_normalization_parallel.sh \
+  --resume outputs/transmission_normalization_parallel_<timestamp> \
+  --devices cuda:0,cuda:1,cuda:2 --retry-failed
+```
+
+- 작업 분배
+  - `manifest.csv`의 프레임 수를 기준으로 영상을 longest-first 방식으로 균등 배분
+  - GPU별 단일 프로세스·단일 `--device` 사용
+  - 기본 10영상은 3개 worker에 `4/3/3`개로 분할
+- 파일 안전성
+  - `workers/worker_00`·`worker_01`·`worker_02`가 독립 CSV·packet·복원 영상을 기록
+  - worker 사이에 공유하는 가변 CSV·manifest 없음
+  - 모든 worker가 종료된 뒤 상위 디렉터리에 aggregate·Pareto·effect 표를 재계산
+  - 대용량 packet·복원 영상은 worker 디렉터리에 유지하고 중복 복사하지 않음
+- 재개
+  - `parallel_plan.json`에 commit·GPU·영상 배분·실험 설정을 고정
+  - 계획이 바뀐 동일 출력 디렉터리 재사용은 거부
+  - worker별 기존 signature/resume 검증도 그대로 적용
+  - 실패 pair는 `--retry-failed`에서만 해당 worker가 재시도
+- 결과
+  - 상위 `run_manifest.json`이 worker manifest hash와 병합 산출물 hash를 기록
+  - worker 실패가 남으면 병합 결과도 `completed_with_failures`, 종료 코드 3
+
 ## 알려진 한계
 
 - **16GB급 단일 GPU에서 digital_packet 설정이 OOM 날 수 있음** — ModelBundle만으로

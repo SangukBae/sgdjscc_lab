@@ -140,6 +140,9 @@ bash scripts/run_transmission_normalization.sh --preflight-only  # 데이터·ch
 bash scripts/run_transmission_normalization.sh --dry-run          # 실행할 명령만 출력
 bash scripts/run_transmission_normalization.sh --resume outputs/transmission_normalization_20260826_120000
 bash scripts/run_transmission_normalization.sh --resume outputs/transmission_normalization_20260826_120000 --retry-failed
+
+# 3-GPU 안전 병렬 실행
+bash scripts/run_transmission_normalization_parallel.sh --devices cuda:0,cuda:1,cuda:2
 ```
 
 - digital 채널의 blind SNR 추정(`jscc.snr_prediction_net`, AWGN 전용 학습)을
@@ -156,6 +159,8 @@ bash scripts/run_transmission_normalization.sh --resume outputs/transmission_nor
   `selector_effect.csv`(bit_depth 고정, fixed vs SKEM 효과)로 두 효과를 분리 출력
   (`bytes/video`·`bytes/frame` 단위 분리 포함).
 - AWGN은 visual wire byte가 없으므로 Pareto 후보가 아니며 참고 품질 행으로만 유지한다.
+- 3-GPU 실행기는 영상을 GPU별 독립 worker 디렉터리로 분할한다. worker가 모두 끝난
+  뒤에만 상위 CSV·Pareto·effect·manifest를 병합하므로 공용 파일 쓰기 충돌이 없다.
 
 ### 학습
 

@@ -130,6 +130,32 @@ def test_get_cuda_env_gpu_name_lookup_failure_is_unknown(monkeypatch):
     assert env["gpu_name"] == rm.UNKNOWN
 
 
+def test_get_cuda_env_uses_requested_device_index(monkeypatch):
+    requested = []
+
+    class FakeVersion:
+        cuda = "11.8"
+
+    class FakeCudaModule:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def get_device_name(index):
+            requested.append(index)
+            return f"GPU-{index}"
+
+    class FakeTorch:
+        __version__ = "2.1.0"
+        cuda = FakeCudaModule()
+        version = FakeVersion()
+
+    monkeypatch.setattr(rm, "_try_import_torch", lambda: FakeTorch())
+    assert rm.get_cuda_env(2)["gpu_name"] == "GPU-2"
+    assert requested == [2]
+
+
 def test_try_import_torch_survives_broken_shared_library(monkeypatch):
     """Simulate a real import-time failure (OSError from a broken .so, not
     just ImportError from a missing package) using a poisoned meta_path

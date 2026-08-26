@@ -211,7 +211,7 @@ def _try_import_torch() -> Any:
         return None
 
 
-def get_cuda_env() -> Dict[str, Any]:
+def get_cuda_env(device_index: int = 0) -> Dict[str, Any]:
     """Torch/CUDA/GPU info, `"unknown"` per-field if torch/CUDA unavailable.
 
     Never raises: a missing torch package, a broken/incompatible torch
@@ -240,7 +240,7 @@ def get_cuda_env() -> Dict[str, Any]:
         info["cuda_version"] = UNKNOWN
     if available:
         try:
-            info["gpu_name"] = torch.cuda.get_device_name(0)
+            info["gpu_name"] = torch.cuda.get_device_name(int(device_index))
         except Exception:
             info["gpu_name"] = UNKNOWN
     return info
@@ -329,6 +329,7 @@ def build_run_manifest(
     nan_or_failure_counts: Optional[Dict[str, Any]] = None,
     repo_root: Optional[Union[str, Path]] = None,
     include_environment: bool = True,
+    cuda_device_index: int = 0,
     include_git: bool = True,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
@@ -470,7 +471,7 @@ def build_run_manifest(
     }
 
     if include_environment:
-        environment = {**get_python_env(), **get_cuda_env()}
+        environment = {**get_python_env(), **get_cuda_env(cuda_device_index)}
     else:
         environment = {
             "python_version": UNKNOWN,
