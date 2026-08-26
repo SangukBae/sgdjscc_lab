@@ -80,8 +80,23 @@ def _to_float(value: Any) -> Optional[float]:
 
 
 def _is_valid(row: Dict[str, Any]) -> bool:
+    """Task validity gate: zero non-finite frames, all quality metrics
+    finite, full quality coverage, and every expected video present —
+    mirrors run_transmission_reduction_eval.py::_pareto_frontier's
+    ``_row_is_valid`` (this script reads that function's own output columns,
+    already carrying these fields in aggregate.csv, so it never re-derives
+    them from raw per-frame data)."""
     n_nan = _to_float(row.get("total_nan_or_inf_frames", 0)) or 0.0
-    return n_nan == 0.0
+    if n_nan != 0.0:
+        return False
+    if str(row.get("all_finite_metrics", "True")).strip().lower() == "false":
+        return False
+    vfr = _to_float(row.get("valid_frame_ratio", 1.0))
+    if vfr is not None and vfr != 1.0:
+        return False
+    if str(row.get("all_expected_videos_present", "True")).strip().lower() == "false":
+        return False
+    return True
 
 
 def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
@@ -127,20 +142,23 @@ def build_quantization_effect(aggregate_rows: List[Dict[str, Any]]) -> List[Dict
                 "selector": selector,
                 "channel": channel,
                 "bit_depth": row.get("bit_depth", ""),
+                "digital_step_policy": row.get("digital_step_policy", ""),
+                "psss_backend_kind": row.get("psss_backend_kind", ""),
                 "reference_channel": reference_channel or "",
                 "n_videos": row.get("n_videos", ""),
                 "mean_psnr": row.get("mean_psnr", ""),
                 "mean_ssim": row.get("mean_ssim", ""),
                 "mean_lpips": row.get("mean_lpips", ""),
-                "mean_total_bundle_bytes": row.get("mean_total_bundle_bytes", ""),
+                "mean_total_bundle_bytes_per_video": row.get("mean_total_bundle_bytes_per_video", ""),
+                "mean_total_bundle_bytes_per_frame": row.get("mean_total_bundle_bytes_per_frame", ""),
                 "total_nan_or_inf_frames": row.get("total_nan_or_inf_frames", ""),
                 "nonfinite_stages": row.get("nonfinite_stages", ""),
                 "valid": valid_row,
                 "is_reference": channel == reference_channel,
             }
             if comparable:
-                ref_bytes = _to_float(reference.get("mean_total_bundle_bytes"))
-                row_bytes = _to_float(row.get("mean_total_bundle_bytes"))
+                ref_bytes = _to_float(reference.get("mean_total_bundle_bytes_per_video"))
+                row_bytes = _to_float(row.get("mean_total_bundle_bytes_per_video"))
                 entry["psnr_drop_db"] = _to_float(reference["mean_psnr"]) - _to_float(row["mean_psnr"])
                 entry["ssim_drop"] = _to_float(reference["mean_ssim"]) - _to_float(row["mean_ssim"])
                 ref_lpips, row_lpips = _to_float(reference.get("mean_lpips")), _to_float(row.get("mean_lpips"))
@@ -184,16 +202,23 @@ def build_selector_effect(aggregate_rows: List[Dict[str, Any]]) -> List[Dict[str
         entry: Dict[str, Any] = {
             "channel": channel,
             "bit_depth": fixed_row.get("bit_depth", ""),
+            # skem's real/mock/proxy PSSS backend, so a proxy-backend result is
+            # never presented as "real SKEM" (task requirement) -- fixed has no
+            # PSSS backend at all (not_applicable) so only skem's is reported.
+            "skem_psss_backend_kind": skem_row.get("psss_backend_kind", ""),
             "fixed_mean_psnr": fixed_row.get("mean_psnr", ""),
             "skem_mean_psnr": skem_row.get("mean_psnr", ""),
             "fixed_mean_ssim": fixed_row.get("mean_ssim", ""),
             "skem_mean_ssim": skem_row.get("mean_ssim", ""),
             "fixed_mean_lpips": fixed_row.get("mean_lpips", ""),
             "skem_mean_lpips": skem_row.get("mean_lpips", ""),
-            "fixed_mean_total_bundle_bytes": fixed_row.get("mean_total_bundle_bytes", ""),
-            "skem_mean_total_bundle_bytes": skem_row.get("mean_total_bundle_bytes", ""),
+            "fixed_mean_total_bundle_bytes_per_video": fixed_row.get("mean_total_bundle_bytes_per_video", ""),
+            "skem_mean_total_bundle_bytes_per_video": skem_row.get("mean_total_bundle_bytes_per_video", ""),
+            "fixed_mean_total_bundle_bytes_per_frame": fixed_row.get("mean_total_bundle_bytes_per_frame", ""),
+            "skem_mean_total_bundle_bytes_per_frame": skem_row.get("mean_total_bundle_bytes_per_frame", ""),
             "fixed_mean_n_keyframes_selected": fixed_row.get("mean_n_keyframes_selected", ""),
             "skem_mean_n_keyframes_selected": skem_row.get("mean_n_keyframes_selected", ""),
+            "keyframe_count_matched": fixed_row.get("keyframe_count_matched", ""),
             "fixed_total_nan_or_inf_frames": fixed_row.get("total_nan_or_inf_frames", ""),
             "skem_total_nan_or_inf_frames": skem_row.get("total_nan_or_inf_frames", ""),
             "valid": both_valid,
@@ -203,7 +228,7 @@ def build_selector_effect(aggregate_rows: List[Dict[str, Any]]) -> List[Dict[str
             entry["ssim_delta_skem_minus_fixed"] = _to_float(skem_row["mean_ssim"]) - _to_float(fixed_row["mean_ssim"])
             fl, sl = _to_float(fixed_row.get("mean_lpips")), _to_float(skem_row.get("mean_lpips"))
             entry["lpips_delta_skem_minus_fixed"] = (sl - fl) if (fl is not None and sl is not None) else ""
-            fb, sb = _to_float(fixed_row.get("mean_total_bundle_bytes")), _to_float(skem_row.get("mean_total_bundle_bytes"))
+            fb, sb = _to_float(fixed_row.get("mean_total_bundle_bytes_per_video")), _to_float(skem_row.get("mean_total_bundle_bytes_per_video"))
             entry["byte_ratio_skem_over_fixed"] = (sb / fb) if fb else ""
             fk, sk = _to_float(fixed_row.get("mean_n_keyframes_selected")), _to_float(skem_row.get("mean_n_keyframes_selected"))
             entry["keyframe_count_delta_skem_minus_fixed"] = (sk - fk) if (fk is not None and sk is not None) else ""
@@ -232,11 +257,31 @@ def run(argv=None) -> int:
     _write_csv(output_root / "quantization_effect.csv", quant_rows)
     _write_csv(output_root / "selector_effect.csv", selector_rows)
 
+    ablation_policies = sorted({
+        r.get("digital_step_policy", "") for r in aggregate_rows
+        if r.get("digital_step_policy", "") not in ("", "fixed_reference")
+    })
+    if ablation_policies:
+        print(
+            f"WARNING: this run mixes digital_step_policy={ablation_policies} into "
+            "quantization_effect.csv -- those rows are a decoder-step ABLATION, not "
+            "the pure quantization comparison ('fixed_reference' is); do not present "
+            "them as isolating quantization alone.",
+            file=sys.stderr,
+        )
+
+    skem_backend_kinds = sorted({
+        r.get("psss_backend_kind", "") for r in aggregate_rows
+        if r.get("selector") == "skem" and r.get("psss_backend_kind", "")
+    })
+
     summary = {
         "run_root": str(run_root),
         "n_quantization_effect_rows": len(quant_rows),
         "n_selector_effect_rows": len(selector_rows),
         "n_invalid_configs": sum(1 for r in quant_rows if not r["valid"]),
+        "ablation_policies_present": ablation_policies,
+        "skem_backend_kinds_present": skem_backend_kinds,
     }
     (output_root / "normalization_effect_summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"

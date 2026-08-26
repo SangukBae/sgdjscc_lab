@@ -626,6 +626,7 @@ def _encode_latent(
     """VAE encode: x*2-1 → latent/scaling_factor → L2-normalise."""
     latent_dist = jscc.vae.encode(x * 2 - 1).latent_dist
     encode_features     = jscc.normalize(latent_dist.mean / _SCALING_FACTOR)
+    encode_features = assert_finite(encode_features, "encode_latent")
     encode_features_std = latent_dist.std
     return encode_features, encode_features_std
 
@@ -688,7 +689,7 @@ def _compute_power_scalar(
          encode_features_hat.shape[2],
          encode_features_hat.shape[3]]
     )
-    return power_scalar
+    return assert_finite(power_scalar, "power_scalar")
 
 
 def _retransmit_canny(
@@ -724,7 +725,7 @@ def _retransmit_canny(
         thresholded * (thresholded > th) * snr_threshold
         + thresholded * (1 - snr_threshold)
     ).float()
-    return thresholded
+    return assert_finite(thresholded, "canny_output")
 
 
 def _encode_canny_latent(
@@ -737,12 +738,13 @@ def _encode_canny_latent(
     Mirrors inference_one.py line 133:
       canny_latent = vae.encode((thresholded*2-1).repeat([1,3,1,1]))[0].mean / scaling_factor
     """
-    return (
+    canny_latent = (
         jscc.vae.encode(
             (thresholded * 2 - 1).repeat([1, 3, 1, 1]).to(device)
         )[0].mean
         / _SCALING_FACTOR
     )
+    return assert_finite(canny_latent, "canny_latent")
 
 
 def _build_not_control(
@@ -870,6 +872,7 @@ def _run_diffusion(
         if use_jscc_feat
         else torch.randn_like(encode_features_hat)
     )
+    latent_init = assert_finite(latent_init, "diffusion_latent_init")
 
     # ── Fast-fading water-filling decode (paper Algorithm 4), opt-in ──────────
     # Replaces the global step-matched decode with the per-element water-filling
@@ -882,9 +885,10 @@ def _run_diffusion(
         wf = cfg.get("water_filling", None)
         steps = int(wf.get("steps", 50)) if wf is not None else 50
         logger.info("Fast-fading water-filling decode (Algorithm 4, %d steps).", steps)
-        return _run_water_filling_diffusion(
+        return assert_finite(_run_water_filling_diffusion(
             pipe, latent_init, noise_level, semantic_text, negative_prompt,
-            guidance_scale, canny_latent, use_controlnet, not_control, mask_token, steps)
+            guidance_scale, canny_latent, use_controlnet, not_control, mask_token, steps
+        ), "diffusion_latent")
 
     # ── Phase 5-B: intra-sampler early-exit (opt-in via cfg.acceleration) ─────
     # use_phase5 is the master gate: if it is false the acceleration block is
@@ -914,7 +918,7 @@ def _run_diffusion(
             num_imgs=1, n_iter=40, scale_factor=1, img_channel=16, img_size=16,
             alphas_cumprod=pipe.alphas_cumprod,
         )
-        return denoised_latent
+        return assert_finite(denoised_latent, "diffusion_latent")
 
     _image, denoised_latent = pipe.generate(
         prompt=semantic_text,
@@ -938,7 +942,7 @@ def _run_diffusion(
         diffusion_step=diffusion_step,
         step_style=step_style,
     )
-    return denoised_latent
+    return assert_finite(denoised_latent, "diffusion_latent")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -951,32 +955,45 @@ def _run_diffusion(
 _DIGITAL_SNR_FLOOR_DB = -20.0
 _DIGITAL_SNR_CEIL_DB = 60.0
 
+# Digital step-matching policies (see _digital_effective_snr_db):
+#   fixed_reference — every bit_depth is decoded as if it were the clean
+#     (float32) reference, i.e. the SAME fixed step for all bit depths. This
+#     is the policy the quantization-effect comparison uses by default: it
+#     isolates what raw quantization distortion alone does to the final
+#     image, uncontaminated by the decoder ALSO adapting its diffusion
+#     strength differently per bit_depth.
+#   bitdepth_proxy — a deterministic, bit_depth-only heuristic
+#     (_digital_quant_snr_db). Explicitly a *proxy*, never presented as a
+#     measured channel SNR (it never reads the actual transmitted tensor).
+#   quant_nmse — the sender's OWN measured quantization NMSE/SNR for this
+#     exact packet (computed from the real original-vs-dequantized latent at
+#     encode time, transmitted as packet metadata — see
+#     transmission/packet_bundle.py). The receiver must be given this value
+#     explicitly (`digital_quant_snr_db`); it is never inferred from a
+#     process-global channel object.
+DIGITAL_STEP_POLICIES = ("fixed_reference", "bitdepth_proxy", "quant_nmse")
+
 
 def _digital_quant_snr_db(bit_depth: int) -> float:
-    """Deterministic quantization SNR (dB) implied by ``bit_depth`` alone.
+    """Deterministic *proxy* quantization SNR (dB) implied by ``bit_depth`` alone.
 
-    A uniform affine quantizer (``transmission/quantization.py``) maps a
-    tensor's full ``[min, max]`` range onto ``qmax = 2**bit_depth - 1``
-    codes. Treating both the latent values and the resulting quantization
-    error as uniformly distributed over their respective ranges gives
-    ``SNR = 20*log10(range/scale) = 20*log10(qmax)`` — a function of
-    ``bit_depth`` only, never of the tensor's actual values, so it is always
-    finite and requires no data-dependent estimation.
+    NOT a measured SNR — a uniform affine quantizer (``transmission/
+    quantization.py``) maps a tensor's full ``[min, max]`` range onto
+    ``qmax = 2**bit_depth - 1`` codes; treating both the latent values and
+    the resulting quantization error as uniformly distributed over their
+    respective ranges gives ``SNR = 20*log10(range/scale) = 20*log10(qmax)``
+    — a function of ``bit_depth`` only, never of the tensor's actual values,
+    so it is always finite and requires no data-dependent estimation. This
+    is the ``"bitdepth_proxy"`` policy (see :data:`DIGITAL_STEP_POLICIES`);
+    the ``"quant_nmse"`` policy uses the sender's real measured SNR instead.
 
-    This is what ``_compute_step`` now uses in place of feeding the
-    *received* (quantized) latent through ``jscc.snr_prediction_net``: that
-    network was trained exclusively on AWGN-shaped noise and can predict a
-    ``signal_scale >= 1`` on quantization noise (out of its training
-    domain), which made ``step_style="continuous"``'s
-    ``10*log10(1/cur_step - 1)`` evaluate ``log10`` of a non-positive number
-    -> NaN/Inf (observed at bit_depth=8/16 on real frames; see
-    docs/current/open_issues.md history).
-
-    ``bit_depth=32`` (lossless raw float32, see
-    ``transmission/quantization.py::LOSSLESS_BIT_DEPTH``) has no
-    quantization error at all, so it is clamped to the SNR ceiling rather
-    than computed (``qmax`` would be astronomically large but is not
-    meaningfully "the" SNR of a bit-exact transport).
+    Originally added in place of feeding the *received* (quantized) latent
+    through ``jscc.snr_prediction_net``: that network was trained
+    exclusively on AWGN-shaped noise and can predict a ``signal_scale >= 1``
+    on quantization noise (out of its training domain), which made
+    ``step_style="continuous"``'s ``10*log10(1/cur_step - 1)`` evaluate
+    ``log10`` of a non-positive number -> NaN/Inf (observed at bit_depth=8/16
+    on real frames; see docs/current/open_issues.md history).
     """
     from sgdjscc_lab.transmission.quantization import LOSSLESS_BIT_DEPTH
 
@@ -987,19 +1004,64 @@ def _digital_quant_snr_db(bit_depth: int) -> float:
     return float(min(max(snr_db, _DIGITAL_SNR_FLOOR_DB), _DIGITAL_SNR_CEIL_DB))
 
 
-def _digital_signal_scale(bit_depth: int, like: torch.Tensor) -> Tuple[torch.Tensor, float]:
+def _digital_effective_snr_db(
+    bit_depth: int,
+    policy: str = "bitdepth_proxy",
+    quant_snr_db: Optional[float] = None,
+) -> float:
+    """Effective SNR (dB) used to derive the digital_packet decoder step.
+
+    ``bit_depth`` at/above ``transmission.quantization.LOSSLESS_BIT_DEPTH``
+    (float32) is always the ceiling regardless of *policy* — it is a
+    structural fact (byte-exact transport, zero quantization error), not a
+    policy choice (task requirement: "float32는 quantization error가 없는
+    lossless transport로 명확히 처리한다").
+
+    See :data:`DIGITAL_STEP_POLICIES` for what each policy name means.
+    ``policy="quant_nmse"`` requires *quant_snr_db* (the sender's own
+    measured value for this exact packet) and raises if it is missing —
+    never silently substitutes the bitdepth_proxy value, which would quietly
+    misrepresent a proxy heuristic as a measurement.
+    """
+    from sgdjscc_lab.transmission.quantization import LOSSLESS_BIT_DEPTH
+
+    if bit_depth >= LOSSLESS_BIT_DEPTH:
+        return _DIGITAL_SNR_CEIL_DB
+    if policy == "fixed_reference":
+        return _DIGITAL_SNR_CEIL_DB
+    if policy == "bitdepth_proxy":
+        return _digital_quant_snr_db(bit_depth)
+    if policy == "quant_nmse":
+        if quant_snr_db is None:
+            raise ValueError(
+                "digital_policy='quant_nmse' requires quant_snr_db from the "
+                "received packet's own metadata (the sender computes and "
+                "transmits it — see transmission/packet_bundle.py's "
+                "build_frame_bundle); none was supplied for this frame"
+            )
+        return float(min(max(float(quant_snr_db), _DIGITAL_SNR_FLOOR_DB), _DIGITAL_SNR_CEIL_DB))
+    raise ValueError(f"unknown digital_policy={policy!r}; expected one of {DIGITAL_STEP_POLICIES}")
+
+
+def _digital_signal_scale(
+    bit_depth: int,
+    like: torch.Tensor,
+    policy: str = "bitdepth_proxy",
+    quant_snr_db: Optional[float] = None,
+) -> Tuple[torch.Tensor, float]:
     """Stable ``(signal_scale, snr_db)`` for a digital_packet-received latent.
 
     Mirrors the analytic ``use_gt_csi`` mapping (``signal_scale = snr_scale /
-    (snr_scale + 1)``) used elsewhere in this module, but driven by the
-    quantizer's ``bit_depth`` instead of ``jscc.snr`` (which describes the
-    AWGN config, not the digital channel actually used) or the AWGN-trained
-    blind estimator. ``snr_scale`` is always finite and strictly positive,
-    so ``signal_scale`` — and therefore ``cur_step = 1 - signal_scale`` — is
+    (snr_scale + 1)``) used elsewhere in this module, but driven by
+    :func:`_digital_effective_snr_db` (bit_depth + policy, never
+    ``jscc.snr`` — that describes the AWGN config, not the digital channel
+    actually used — and never the AWGN-trained blind estimator). The
+    resulting ``snr_scale`` is always finite and strictly positive, so
+    ``signal_scale`` — and therefore ``cur_step = 1 - signal_scale`` — is
     always strictly inside ``(0, 1)``, never exactly 0 or 1, so nothing
     downstream divides by zero or takes ``log10`` of a non-positive number.
     """
-    snr_db = _digital_quant_snr_db(bit_depth)
+    snr_db = _digital_effective_snr_db(bit_depth, policy, quant_snr_db)
     snr_scale = 10 ** (snr_db / 10)
     signal_scale = (snr_scale / (snr_scale + 1)) * torch.ones_like(like)
     return signal_scale, snr_db
@@ -1015,31 +1077,52 @@ def _compute_step(
     use_jscc_feat: bool,
     use_gt_csi: bool,
     device: torch.device,
+    digital_bit_depth: Optional[int] = None,
+    digital_policy: str = "bitdepth_proxy",
+    digital_quant_snr_db: Optional[float] = None,
 ):
     """Compute diffusion starting step and estimated SNR.
 
     Mirrors the step-matching block in inference_one.py lines 93–120 for the
-    AWGN path (untouched — algorithm-preservation invariant). When
-    ``jscc.channel_model`` is a :class:`DigitalPacketChannel`, the blind
-    (``use_gt_csi=False``) branches use :func:`_digital_signal_scale`
-    (quantization-metadata-derived) instead of ``jscc.snr_prediction_net``
-    (AWGN-trained, out of domain for quantized latents — see
-    :func:`_digital_quant_snr_db`).
+    AWGN path (untouched — algorithm-preservation invariant).
+
+    Digital-channel detection: if *digital_bit_depth* is given explicitly,
+    it is used as-is (this is how a real receiver — e.g.
+    ``transmission/receiver_runtime.py`` — must call this: with the bit_depth
+    and metadata decoded from the RECEIVED PACKET's own bytes, never a
+    process-global channel object). If not given, this falls back to
+    inspecting ``jscc.channel_model`` — used only by the simple in-process
+    ``_encode_and_transmit`` path (``channels/digital_packet.py``'s
+    ``transmit()`` returns a dequantized tensor directly with no wire/packet
+    boundary at all, so there is no packet to read metadata from; reading
+    the channel object there is not the sender/receiver-boundary violation
+    the packet-bundle receiver path must avoid).
+
+    When digital, the blind (``use_gt_csi=False``) branches use
+    :func:`_digital_signal_scale` (never ``jscc.snr_prediction_net``, which
+    was trained exclusively on AWGN-shaped noise and is out of domain for
+    quantized latents — see :func:`_digital_quant_snr_db`), driven by
+    *digital_policy* (see :data:`DIGITAL_STEP_POLICIES`).
 
     Returns (cur_step, cur_snr).
     """
-    digital_channel = jscc.channel_model if isinstance(
-        getattr(jscc, "channel_model", None), DigitalPacketChannel
-    ) else None
+    if digital_bit_depth is not None:
+        bit_depth = int(digital_bit_depth)
+    elif isinstance(getattr(jscc, "channel_model", None), DigitalPacketChannel):
+        bit_depth = jscc.channel_model.bit_depth
+    else:
+        bit_depth = None
+    is_digital = bit_depth is not None
 
     if step_style == "continuous":
         if use_jscc_feat:
             if use_gt_csi:
                 cur_step = float(1 - signal_scale.mean().item())
                 cur_snr  = float(jscc.snr)
-            elif digital_channel is not None:
+            elif is_digital:
                 predicted_signal_scale, snr_db = _digital_signal_scale(
-                    digital_channel.bit_depth, power_scalar.reshape([-1, 1])
+                    bit_depth, power_scalar.reshape([-1, 1]),
+                    policy=digital_policy, quant_snr_db=digital_quant_snr_db,
                 )
                 cur_step = 1 - predicted_signal_scale
                 # A tensor, not the raw snr_db float — _retransmit_canny does
@@ -1076,9 +1159,10 @@ def _compute_step(
                     .int()
                     .item()
                 )
-            elif digital_channel is not None:
+            elif is_digital:
                 pred, _ = _digital_signal_scale(
-                    digital_channel.bit_depth, power_scalar.reshape([-1, 1])
+                    bit_depth, power_scalar.reshape([-1, 1]),
+                    policy=digital_policy, quant_snr_db=digital_quant_snr_db,
                 )
                 cur_step = (
                     torch.argmin(torch.abs(alphas - pred), axis=1)
@@ -1103,8 +1187,8 @@ def _compute_step(
         else:
             cur_step = 981
         cur_snr = (
-            _digital_quant_snr_db(digital_channel.bit_depth)
-            if digital_channel is not None and use_jscc_feat and not use_gt_csi
+            _digital_effective_snr_db(bit_depth, digital_policy, digital_quant_snr_db)
+            if is_digital and use_jscc_feat and not use_gt_csi
             else float(jscc.snr)
         )
 

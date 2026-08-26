@@ -1,0 +1,1 @@
+_defaults_: ["/home/wilco/SangukBae/Semantic/sgdjscc_lab/configs/base/channel/awgn", "/home/wilco/SangukBae/Semantic/sgdjscc_lab/configs/base/model/sgdjscc", "/home/wilco/SangukBae/Semantic/sgdjscc_lab/configs/base/infer/awgn", "/home/wilco/SangukBae/Semantic/sgdjscc_lab/configs/base/eval/default", "/home/wilco/SangukBae/Semantic/sgdjscc_lab/configs/base/video/default"]

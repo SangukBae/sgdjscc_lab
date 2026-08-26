@@ -61,8 +61,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import importlib.util
 import json
+import math
 import sys
 import time
 from dataclasses import dataclass
@@ -73,6 +75,15 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SRC_ROOT = _REPO_ROOT / "src"
 if str(_SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(_SRC_ROOT))
+
+# Hard dependency (not soft/optional): reproducibility manifests are a
+# required part of this feature, not a best-effort extra. run_manifest.py
+# is import-light (no torch) — see its own module docstring — so importing
+# it at module level does not slow down a plain --help/--dry-run invocation,
+# and a missing/broken module fails IMMEDIATELY (import error at script
+# start) rather than degrading to a "status: unavailable" placeholder deep
+# into a run.
+from sgdjscc_lab.utils import run_manifest as rm  # noqa: E402
 
 CHANNEL_CONFIGS = {
     "awgn": {"channel": "awgn", "bit_depth": None},
@@ -181,6 +192,34 @@ def _parse_args(argv=None) -> argparse.Namespace:
                     help="Modulation assumption for estimated_digital_channel_symbols; "
                          "omitted = reported as 'unavailable', never fabricated.")
     p.add_argument("--code-rate", type=float, default=1.0, help="FEC code rate for estimated_wire_bytes.")
+    # reproducibility
+    p.add_argument("--seed", type=int, default=2025,
+                    help="Base seed for Python/NumPy/PyTorch/CUDA. A deterministic per-(video, "
+                         "frame) seed derived from this is set before each frame's reconstruction "
+                         "so different configs reconstructing the SAME frame share the same RNG "
+                         "state as much as possible (see utils/seed.py::derive_frame_seed).")
+    # digital step-matching policy (see pipelines/infer_pipeline.py::DIGITAL_STEP_POLICIES)
+    p.add_argument(
+        "--digital-step-policy", default="fixed_reference",
+        choices=["fixed_reference", "bitdepth_proxy", "quant_nmse"],
+        help="How the diffusion decoder step is derived for a digital_packet frame. "
+             "'fixed_reference' (default): every bit_depth decoded as if it were the clean "
+             "float32 reference -- the quantization-effect comparison isolates raw quantization "
+             "distortion, uncontaminated by the decoder also adapting its diffusion strength per "
+             "bit_depth (any run with a non-default value here is a decoder-step ablation, not "
+             "the quantization comparison -- see --ablation-label). 'bitdepth_proxy': a "
+             "deterministic bit_depth-only heuristic, explicitly labeled a proxy, never a real "
+             "channel SNR. 'quant_nmse': the sender's OWN measured quantization SNR for this "
+             "exact packet, read by the receiver from the packet's own metadata.",
+    )
+    p.add_argument(
+        "--ablation-label", default=None,
+        help="Free-form label recorded in per_video_metrics.csv/aggregate.csv/summary.json "
+             "identifying this run as a decoder-step ablation (e.g. 'bitdepth_proxy_ablation') "
+             "rather than the quantization comparison. Required when --digital-step-policy is "
+             "not 'fixed_reference', so a bitdepth_proxy/quant_nmse run can never be silently "
+             "mixed into a quantization_effect.csv table meant to isolate quantization alone.",
+    )
     return p.parse_args(argv)
 
 
@@ -221,8 +260,14 @@ def _psss_backend_cfg(args) -> Dict[str, Any]:
 
 def _build_selector(
     name: str, captions: Optional[List[str]], threshold: float, max_segment_length: int, args,
-    fixed_max_gop_override: Optional[int] = None,
+    fixed_count_override: Optional[int] = None,
 ):
+    """*fixed_count_override*, when given, builds the "fixed" selector as a
+    :class:`~sgdjscc_lab.video.keyframe_extractor.FixedCountKeyframeSelector`
+    producing EXACTLY that many keyframes (not an approximation via
+    ``max_gop`` — see ``run()``'s per-video block, which passes SKEM's own
+    achieved keyframe count here for an exact fixed-vs-SKEM keyframe-count
+    match)."""
     from omegaconf import OmegaConf
     from sgdjscc_lab.video.keyframe_extractor import build_caption_fn, build_keyframe_extractor
     from sgdjscc_lab.video.scene_change_detector import SceneChangeDetector
@@ -230,8 +275,12 @@ def _build_selector(
     scene_detector = SceneChangeDetector()
 
     if name == "fixed":
-        max_gop = fixed_max_gop_override if fixed_max_gop_override is not None else args.fixed_max_gop
-        cfg = OmegaConf.create({"keyframe": {"selector": "fixed", "max_gop": max_gop}})
+        if fixed_count_override is not None:
+            cfg = OmegaConf.create({
+                "keyframe": {"selector": "fixed_count", "fixed_count": {"count": int(fixed_count_override)}},
+            })
+            return build_keyframe_extractor(cfg, scene_detector=scene_detector)
+        cfg = OmegaConf.create({"keyframe": {"selector": "fixed", "max_gop": args.fixed_max_gop}})
         return build_keyframe_extractor(cfg, scene_detector=scene_detector)
 
     caption_source = "captions_file" if captions else "mock"
@@ -272,11 +321,11 @@ class KeyframeSelection:
 
 def _select_keyframes(
     video_key, frames, captions, selector_name, threshold, max_segment_length, args,
-    fixed_max_gop_override: Optional[int] = None,
+    fixed_count_override: Optional[int] = None,
 ) -> KeyframeSelection:
     selector = _build_selector(
         selector_name, captions, threshold, max_segment_length, args,
-        fixed_max_gop_override=fixed_max_gop_override,
+        fixed_count_override=fixed_count_override,
     )
     result = selector.extract(frames)
     return _selection_from_result(
@@ -374,22 +423,25 @@ def _set_channel(models, channel_kind: str, bit_depth: Optional[int], granularit
 def _run_temporal_pipeline(
     frames, models, cfg, keyframe_extractor, captions=None, *, channel_kind="awgn",
     bit_depth=None, granularity="per_tensor", video_key="", config_name="",
-    selected_keyframes=None, log_fn=None,
+    selected_keyframes=None, log_fn=None, digital_step_policy="fixed_reference",
+    base_seed=None,
 ):
     """Reconstruct *frames* via TemporalPipeline.
 
-    Returns ``(pipeline_result, transmitted_bundles, transmitted_semantic_packets,
-    nonfinite_frames)``. ``nonfinite_frames`` is ``{frame_index: {"stage", "n_nan",
-    "n_inf", "numel"}}`` for any frame whose reconstruction hit a
-    :class:`~sgdjscc_lab.utils.finite_checks.NonFiniteError` (raised as early as
-    possible inside the forward pass — see ``pipelines/infer_pipeline.py``'s
-    ``assert_finite`` calls). Those frames are NOT re-raised here: a
-    quantization config producing an occasional non-finite frame is an
-    expected, reportable data point (excluded from quality metrics and from
-    baseline/Pareto eligibility downstream), not a crash — only an
-    *unexpected* exception (a real bug) propagates and stops the run, per
-    ``NonFiniteError`` being caught specifically rather than a bare
-    ``except Exception``.
+    Returns ``(pipeline_result, transmitted_bundles, transmitted_semantic_packets)``
+    on success — success means every frame's reconstruction was finite by
+    construction (enforced deep inside the forward pass by ``pipelines/
+    infer_pipeline.py``'s ``assert_finite`` stage guards).
+
+    If any frame hits a :class:`~sgdjscc_lab.utils.finite_checks.NonFiniteError`,
+    this does NOT substitute a placeholder and keep going: the exception is
+    enriched with ``{"video", "config", "frame_index"}`` (added to
+    ``exc.context``, while this closure still has all three in scope) and
+    RE-RAISED, aborting this ``(video, config)`` pair immediately — the
+    caller (``run()``'s per-config loop) catches it, records the failure, and
+    moves on to the next pair. Any OTHER (unexpected) exception is not caught
+    here at all and stops the whole run — only ``NonFiniteError`` gets this
+    special "abort just this pair" handling.
     """
     from sgdjscc_lab.pipelines.eval_pipeline import _reconstruct_with_cfg
     from sgdjscc_lab.guidance.semantic_packet_extractor import SemanticPacketExtractor
@@ -397,17 +449,25 @@ def _run_temporal_pipeline(
         encode_frame_to_bundle_bytes, reconstruct_frame_from_bundle_bytes,
     )
     from sgdjscc_lab.utils.finite_checks import NonFiniteError
+    from sgdjscc_lab.utils.seed import derive_frame_seed, set_global_seed
     from sgdjscc_lab.video.temporal_pipeline import TemporalPipeline
 
     log_fn = log_fn or (lambda msg: None)
     frame_index_by_id = {id(frame): i for i, frame in enumerate(frames)}
     transmitted_bundles = {}
     transmitted_semantic_packets = {}
-    nonfinite_frames: Dict[int, Dict[str, Any]] = {}
 
     def reconstruct_fn(frame, run_cfg):
         resolved_cfg = run_cfg if run_cfg is not None else cfg
         index = frame_index_by_id[id(frame)]
+        if base_seed is not None:
+            # Deterministic per-(video, frame) seed shared across every
+            # config reconstructing this same frame, so a residual
+            # RNG-dependent step (e.g. an unconditional diffusion draw) is
+            # aligned across the configs being compared instead of adding
+            # incidental RNG-draw noise on top of the real channel/selector
+            # difference under test.
+            set_global_seed(derive_frame_seed(base_seed, video_key, index))
         try:
             if channel_kind == "awgn":
                 return _reconstruct_with_cfg(frame, models, resolved_cfg)
@@ -423,25 +483,17 @@ def _run_temporal_pipeline(
             # below is deliberately passed bytes, models and config — no frame or
             # sender-side tensors can cross the boundary.
             transmitted_bundles[index] = (data, n_elements)
-            return reconstruct_frame_from_bundle_bytes(data, models, resolved_cfg)
+            return reconstruct_frame_from_bundle_bytes(
+                data, models, resolved_cfg, digital_step_policy=digital_step_policy,
+            )
         except NonFiniteError as exc:
-            # Fail at the STAGE the non-finite value first appeared (cheap:
-            # caught before the rest of a possibly-50-step diffusion loop
-            # runs), but do not abort the sweep: record video/config/frame/
-            # stage now (while this closure still has all four in scope) and
-            # hand back a same-shape NaN placeholder so TemporalPipeline's own
-            # bookkeeping (reuse/motion decisions reading a prior recon) keeps
-            # working exactly as it did before this frame started failing
-            # closed instead of failing loud.
-            nonfinite_frames[index] = {
-                "stage": exc.stage, "n_nan": exc.n_nan, "n_inf": exc.n_inf, "numel": exc.numel,
-            }
+            exc.context.update({"video": video_key, "config": config_name, "frame_index": index})
             log_fn(
                 f"  [{video_key}][{config_name}] frame {index}: non-finite at stage={exc.stage!r} "
                 f"({exc.n_nan} NaN, {exc.n_inf} Inf / {exc.numel} elements) — "
-                "excluded from quality metrics and from baseline/Pareto eligibility"
+                "ABORTING this (video, config) pair, not processing further frames"
             )
-            return torch.full_like(frame, float("nan"))
+            raise
 
     packet_extractor = SemanticPacketExtractor(
         text_extractor=getattr(models, "text_extractor", None),
@@ -512,7 +564,7 @@ def _run_temporal_pipeline(
             cfg, "video_generator.conditioning_mode", default="start_only"
         )),
     )
-    return pipeline.run(frames), transmitted_bundles, transmitted_semantic_packets, nonfinite_frames
+    return pipeline.run(frames), transmitted_bundles, transmitted_semantic_packets
 
 
 def _shadow_measure_frame(
@@ -553,6 +605,12 @@ def run(argv=None) -> int:
             raise ValueError(f"unknown config {c!r}; expected one of {ALL_CONFIGS}")
     if args.psss_backend == "real" and not args.psss_model_id:
         raise ValueError("--psss-backend real requires --psss-model-id.")
+    if args.digital_step_policy != "fixed_reference" and not args.ablation_label:
+        raise ValueError(
+            f"--digital-step-policy={args.digital_step_policy!r} is a decoder-step ablation, "
+            "not the quantization comparison ('fixed_reference' is) -- pass --ablation-label "
+            "so this run can never be silently mixed into quantization_effect.csv."
+        )
 
     for sub in ("packets", "recon_videos", "configs", "logs"):
         (output_root / sub).mkdir(parents=True, exist_ok=True)
@@ -562,6 +620,22 @@ def run(argv=None) -> int:
     if args.video_ids:
         wanted = set(args.video_ids.split(","))
         entries = [e for e in entries if e["key"] in wanted]
+    expected_video_keys = {e["key"] for e in entries}
+
+    from sgdjscc_lab.paths import model_root as _model_root
+    cfg = _make_cfg(output_root, _model_root(), args.snr, config_path=args.config)
+
+    # Run signature + resume-safety check FIRST (before any heavy model load):
+    # a resume targeting the same --output-root under DIFFERENT conditions
+    # (different commit/dataset/config/checkpoint/seed/video list/frame cap/
+    # granularity/PSSS settings/eval options) is refused immediately, and the
+    # INITIAL manifest/run spec is recorded before any video is processed.
+    signature = _build_run_signature(args, cfg, entries, _model_root())
+    _check_resume_signature(output_root, signature)
+
+    from sgdjscc_lab.utils.finite_checks import NonFiniteError
+    from sgdjscc_lab.utils.seed import set_global_seed
+    set_global_seed(int(args.seed))
 
     import torch
     device = torch.device(args.device)
@@ -569,9 +643,13 @@ def run(argv=None) -> int:
     from sgdjscc_lab.evaluators.quality import QualityEvaluator
     quality_evaluator = QualityEvaluator(use_lpips=not args.no_lpips, device=device)
 
-    from sgdjscc_lab.paths import model_root as _model_root
-    cfg = _make_cfg(output_root, _model_root(), args.snr, config_path=args.config)
     models = _build_models(cfg, device)
+
+    per_video_rows_initial: List[Dict[str, Any]] = [
+        _coerce_per_video_row(r) for r in _read_csv_dicts(output_root / "per_video_metrics.csv")
+    ]
+    if not (output_root / "run_manifest_initial.json").exists():
+        _write_manifest(args, output_root, cfg, per_video_rows_initial, signature, phase="initial")
 
     # Resume: reload any prior (possibly interrupted) run's CSVs from this same
     # output_root so already-completed (video, config) pairs are skipped, not
@@ -579,9 +657,8 @@ def run(argv=None) -> int:
     keyframe_rows: List[Dict[str, Any]] = _read_csv_dicts(output_root / "keyframe_selection.csv")
     packet_rows: List[Dict[str, Any]] = _read_csv_dicts(output_root / "packet_components.csv")
     keyframe_sweep_rows: List[Dict[str, Any]] = _read_csv_dicts(output_root / "keyframe_sweep.csv")
-    per_video_rows: List[Dict[str, Any]] = [
-        _coerce_per_video_row(r) for r in _read_csv_dicts(output_root / "per_video_metrics.csv")
-    ]
+    failed_pairs: List[Dict[str, Any]] = _read_csv_dicts(output_root / "failed_pairs.csv")
+    per_video_rows: List[Dict[str, Any]] = per_video_rows_initial
     done_pairs = {(r["video"], r["config"]) for r in per_video_rows}
     done_sweep_videos = {r["video"] for r in keyframe_sweep_rows}
 
@@ -605,20 +682,30 @@ def run(argv=None) -> int:
                 frames = frames[: args.max_frames]
             captions = _load_captions(entry["captions"], len(frames))
 
-            # Rate/keyframe-count matching: derive the fixed selector's max_gop
-            # from this video's SKEM keyframe count at the run's chosen
-            # threshold/max_segment_length, so a fixed_* vs skem_* comparison
-            # below isolates quantization/channel effects rather than mixing
-            # in "SKEM just picked a different number of keyframes."
-            matched_max_gop = None
+            # Keyframe-count matching: build the fixed selector as a
+            # FixedCountKeyframeSelector with EXACTLY this video's SKEM
+            # keyframe count (never a max_gop approximation) so fixed_* vs
+            # skem_* isolates the channel/quantization effect from "SKEM just
+            # picked a different number of keyframes." See
+            # video/keyframe_extractor.py::FixedCountKeyframeSelector.
+            fixed_count_target = None
+            keyframe_count_matched_possible = True
             if args.match_fixed_keyframes:
                 ref_sel = _select_keyframes(
                     video_key, frames, captions, "skem",
                     args.psss_threshold, args.psss_max_segment_length, args,
                 )
-                matched_max_gop = max(1, round(len(frames) / max(ref_sel.n_keyframes, 1)))
-                log(f"  match_fixed_keyframes {video_key}: skem selected {ref_sel.n_keyframes} "
-                    f"keyframes over {len(frames)} frames -> fixed max_gop={matched_max_gop}")
+                if 1 <= ref_sel.n_keyframes <= len(frames):
+                    fixed_count_target = ref_sel.n_keyframes
+                    log(f"  match_fixed_keyframes {video_key}: skem selected {ref_sel.n_keyframes} "
+                        f"keyframes over {len(frames)} frames -> fixed selector forced to exactly "
+                        f"{fixed_count_target} keyframes (FixedCountKeyframeSelector)")
+                else:
+                    keyframe_count_matched_possible = False
+                    log(f"  match_fixed_keyframes {video_key}: skem selected {ref_sel.n_keyframes} "
+                        f"keyframes, which FixedCountKeyframeSelector cannot represent over "
+                        f"{len(frames)} frames -- falling back to --fixed-max-gop "
+                        f"({args.fixed_max_gop}); keyframe_count_matched=False for this video")
 
             if not args.skip_keyframe_sweep and video_key not in done_sweep_videos:
                 for th in DEFAULT_PSSS_THRESHOLDS:
@@ -646,7 +733,7 @@ def run(argv=None) -> int:
 
                 keyframe_extractor = _build_selector(
                     sel_name, captions, args.psss_threshold, args.psss_max_segment_length, args,
-                    fixed_max_gop_override=(matched_max_gop if sel_name == "fixed" else None),
+                    fixed_count_override=(fixed_count_target if sel_name == "fixed" else None),
                 )
                 # PSSS/scene detection may be expensive.  Compute it exactly
                 # once, then give TemporalPipeline a cache wrapper so the same
@@ -666,15 +753,27 @@ def run(argv=None) -> int:
 
                 _set_channel(models, channel_kind, bit_depth, args.granularity)
                 start = time.time()
-                result, transmitted_bundles, transmitted_semantic_packets, nonfinite_frames = (
-                    _run_temporal_pipeline(
+                try:
+                    result, transmitted_bundles, transmitted_semantic_packets = _run_temporal_pipeline(
                         frames, models, cfg, _CachedExtractor(), captions,
                         channel_kind=channel_kind, bit_depth=bit_depth,
                         granularity=args.granularity, video_key=video_key,
                         config_name=config_name, selected_keyframes=sel.keyframe_indices,
-                        log_fn=log,
+                        log_fn=log, digital_step_policy=args.digital_step_policy,
+                        base_seed=int(args.seed),
                     )
-                )
+                except NonFiniteError as exc:
+                    failed_pairs.append({
+                        "video": video_key, "config": config_name,
+                        "failure_stage": exc.stage, "frame_index": exc.context.get("frame_index", ""),
+                        "n_nan": exc.n_nan, "n_inf": exc.n_inf, "numel": exc.numel,
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    })
+                    log(f"[{video_key}][{config_name}] ABORTED: non-finite at stage={exc.stage!r} "
+                        f"frame={exc.context.get('frame_index', '?')} ({exc.n_nan} NaN, {exc.n_inf} Inf) "
+                        "— this pair produces no per_video_metrics.csv row; moving to next pair")
+                    _write_csv(output_root / "failed_pairs.csv", failed_pairs)
+                    continue
                 video_elapsed = time.time() - start
                 records = sorted(result["records"], key=lambda r: r.index)
 
@@ -685,38 +784,24 @@ def run(argv=None) -> int:
                 recon_dir = output_root / "recon_videos" / video_key / config_name
                 frame_files = []
                 video_psnr, video_ssim, video_lpips = [], [], []
-                nonfinite_stages: List[str] = []
-                n_nan_frames = 0
                 for rec in records:
                     if rec.recon is None:
                         continue
                     if torch.isnan(rec.recon).any() or torch.isinf(rec.recon).any():
-                        # The dominant historical cause (blind SNR estimation
-                        # feeding an AWGN-trained net with a quantized latent —
-                        # see pipelines/infer_pipeline.py::_compute_step and
-                        # _digital_quant_snr_db) is fixed: digital configs use
-                        # a deterministic, bit_depth-derived step/scale instead.
-                        # This branch is now a residual safety net for any
-                        # OTHER stage that still goes non-finite (e.g. the
-                        # diffusion decode itself diverging at very aggressive
-                        # quantization) — nonfinite_frames[rec.index], recorded
-                        # by reconstruct_fn's NonFiniteError handler, carries
-                        # the exact stage; excluded from the quality average
-                        # rather than silently poisoning mean_psnr/ssim/lpips
-                        # into "nan", and always counted so it's visible.
-                        n_nan_frames += 1
-                        detail = nonfinite_frames.get(rec.index)
-                        stage = detail["stage"] if detail else "unknown_post_hoc"
-                        nonfinite_stages.append(stage)
-                        detail_note = (
-                            f"stage={stage!r} ({detail['n_nan']} NaN, {detail['n_inf']} Inf)"
-                            if detail else "stage=unknown (non-finite output detected post-hoc, "
-                                            "not caught by an internal assert_finite stage — "
-                                            "please file this as a new gap)"
+                        # Must be unreachable: every reconstruct_fn call is
+                        # guarded by assert_finite at every internal stage
+                        # (see pipelines/infer_pipeline.py), and any failure
+                        # there raises NonFiniteError, caught above, which
+                        # aborts this pair before reaching here. If this ever
+                        # fires, it is a real gap in stage coverage — treat it
+                        # as the unexpected bug it is, not a data point to
+                        # quietly exclude.
+                        raise RuntimeError(
+                            f"[{video_key}][{config_name}] frame {rec.index}: non-finite reconstruction "
+                            "was not caught by any assert_finite stage -- this is a coverage gap in "
+                            "pipelines/infer_pipeline.py, not an expected data point; add the missing "
+                            "assert_finite call rather than suppressing this"
                         )
-                        log(f"  [{video_key}][{config_name}] frame {rec.index}: non-finite reconstruction, "
-                            f"{detail_note} (quality gate fails; invalid frame is not written to recon.mp4)")
-                        continue
                     fpath = recon_dir / f"frame_{rec.index:05d}.png"
                     save_tensor_as_image(rec.recon, fpath)
                     frame_files.append(fpath)
@@ -728,16 +813,9 @@ def run(argv=None) -> int:
                     video_ssim.append(m["ssim"])
                     if m["lpips"] is not None:
                         video_lpips.append(m["lpips"])
-                if len(frame_files) == len(records):
+                if frame_files:
                     fps = args.fps or info.get("fps") or 24.0
                     write_video(frame_files, recon_dir / "recon.mp4", fps=fps)
-                elif n_nan_frames:
-                    (recon_dir / "INVALID_RECONSTRUCTION.json").parent.mkdir(parents=True, exist_ok=True)
-                    (recon_dir / "INVALID_RECONSTRUCTION.json").write_text(json.dumps({
-                        "n_frames_total": len(records),
-                        "n_nan_or_inf_frames": n_nan_frames,
-                        "reason": "recon.mp4 omitted because at least one reconstructed frame was non-finite",
-                    }, indent=2), encoding="utf-8")
 
                 # ── shadow accounting pass: only frames that transmitted a new latent ──
                 video_bytes = 0
@@ -836,19 +914,40 @@ def run(argv=None) -> int:
 
                 n = max(len(video_psnr), 1)
                 n_kf_in_gop = sel.n_keyframes
+                if sel_name == "fixed" and args.match_fixed_keyframes:
+                    if fixed_count_target is not None:
+                        fixed_selector_kind = "fixed_count"
+                        keyframe_count_matched = (n_kf_in_gop == fixed_count_target)
+                    else:
+                        fixed_selector_kind = "fixed_max_gop"
+                        keyframe_count_matched = False  # keyframe_count_matched_possible was False
+                elif sel_name == "fixed":
+                    fixed_selector_kind = "fixed_max_gop"
+                    keyframe_count_matched = ""  # matching not requested -- not applicable
+                else:
+                    fixed_selector_kind = ""
+                    keyframe_count_matched = ""
                 per_video_rows.append({
                     "video": video_key, "config": config_name, "selector": sel_name,
                     "channel": ch_name, "bit_depth": bit_depth if bit_depth is not None else "",
                     "psss_backend_kind": sel.psss_backend_kind,
+                    "digital_step_policy": (args.digital_step_policy if channel_kind == "digital_packet" else ""),
                     "n_frames_total": len(frames), "n_transmitting_frames": len(transmitting),
-                    "n_keyframes_selected": n_kf_in_gop, "n_nan_or_inf_frames": n_nan_frames,
-                    "fixed_max_gop_used": (
-                        (matched_max_gop if matched_max_gop is not None else args.fixed_max_gop)
-                        if sel_name == "fixed" else ""
-                    ),
-                    "nonfinite_stages": ",".join(sorted(set(nonfinite_stages))),
+                    "n_keyframes_selected": n_kf_in_gop, "n_nan_or_inf_frames": 0,
+                    "fixed_selector_kind": fixed_selector_kind,
+                    "fixed_count_target": (fixed_count_target if fixed_count_target is not None else ""),
+                    "fixed_max_gop_used": (args.fixed_max_gop if fixed_selector_kind == "fixed_max_gop" else ""),
+                    "keyframe_count_matched": keyframe_count_matched,
+                    "nonfinite_stages": "",
                     "n_quality_frames": len(video_psnr),
-                    "valid_frame_ratio": len(video_psnr) / max(len(frames), 1),
+                    # Denominator is ALL frames, not just transmitting ones:
+                    # TemporalPipeline sets rec.recon (and this loop scores it)
+                    # for every decision (keyframe/reuse/recompute_*/generate)
+                    # -- reused frames legitimately get PSNR/SSIM against the
+                    # stale reconstruction they reused, which is itself a real
+                    # quality signal (temporal-reuse cost), not something to
+                    # exclude from the denominator.
+                    "valid_frame_ratio": (len(video_psnr) / len(frames)) if frames else 1.0,
                     "mean_psnr": sum(video_psnr) / n if video_psnr else float("nan"),
                     "mean_ssim": sum(video_ssim) / n if video_ssim else float("nan"),
                     "mean_lpips": (sum(video_lpips) / len(video_lpips)) if video_lpips else "",
@@ -857,14 +956,15 @@ def run(argv=None) -> int:
                     "source_packet_bits_total": video_bytes * 8,
                     "digital_side_information_bytes_total": video_bytes if channel_kind == "awgn" else "",
                     "total_bundle_bytes": video_bytes,
+                    "total_bundle_bytes_per_frame": video_bytes / max(len(frames), 1),
                     "analog_no_wire_bytes": channel_kind == "awgn",
                     "visual_transport_complete": channel_kind != "awgn",
                     "total_elapsed_s": round(video_elapsed, 3),
                 })
-                nan_note = f" ({n_nan_frames} NaN/Inf frames excluded)" if n_nan_frames else ""
                 log(f"[{video_key}][{config_name}] frames={len(frames)} transmitting={len(transmitting)} "
-                    f"mean_psnr={per_video_rows[-1]['mean_psnr']:.4f}{nan_note} "
-                    f"bytes={per_video_rows[-1]['total_bundle_bytes']}")
+                    f"mean_psnr={per_video_rows[-1]['mean_psnr']:.4f} "
+                    f"bytes/video={per_video_rows[-1]['total_bundle_bytes']} "
+                    f"bytes/frame={per_video_rows[-1]['total_bundle_bytes_per_frame']:.1f}")
 
                 # Persist after every (video, config) pair — not just at the end —
                 # so a killed/crashed run resumes from the last completed pair
@@ -877,83 +977,207 @@ def run(argv=None) -> int:
     _write_csv(output_root / "keyframe_selection.csv", keyframe_rows)
     _write_csv(output_root / "packet_components.csv", packet_rows)
     _write_csv(output_root / "keyframe_sweep.csv", keyframe_sweep_rows)
-    aggregate_rows = _aggregate(per_video_rows)
+    _write_csv(output_root / "failed_pairs.csv", failed_pairs)
+    aggregate_rows = _aggregate(per_video_rows, expected_video_keys=expected_video_keys)
     _write_csv(output_root / "aggregate.csv", aggregate_rows)
     pareto_rows, baseline_info = _pareto_frontier(aggregate_rows)
     _write_csv(output_root / "pareto_frontier.csv", pareto_rows)
+
+    if args.match_fixed_keyframes:
+        rate_matching_rows = _compute_rate_matching(per_video_rows)
+        _write_csv(output_root / "rate_matching.csv", rate_matching_rows)
 
     source_size_rows: List[Dict[str, Any]] = []
     if not args.skip_source_size_report:
         source_size_rows = _source_size_report(entries)
     _write_csv(output_root / "source_size_report.csv", source_size_rows)
 
-    _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, baseline_info)
-    _write_manifest(args, output_root, cfg, per_video_rows)
+    _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, baseline_info, failed_pairs)
+    _write_manifest(args, output_root, cfg, per_video_rows, signature, phase="final")
+    if failed_pairs:
+        print(f"done with {len(failed_pairs)} failed (video, config) pair(s) -- see failed_pairs.csv")
     return 0
 
 
-def _write_manifest(args, output_root: Path, cfg, per_video_rows: List[Dict[str, Any]]) -> None:
-    """Best-effort reproducibility manifest via utils/run_manifest.py, if present.
+_CHECKPOINT_NAMES = (
+    "JSCC_model.pth", "diffusion_backbone.pth", "diffusion_controlnet.pth",
+    "muge-epoch-19-checkpoint.pth",
+)
 
-    Soft dependency by design: run_manifest.py is a separate, independently
-    developed utility (see docs/protocols/results_registry.md) that may not
-    be present in every checkout/commit of this script. When it isn't
-    importable, this records a minimal fallback manifest instead of failing
-    the whole (potentially hours-long) sweep over a missing optional module.
+
+def _checkpoint_hashes(model_root: Path) -> Dict[str, str]:
+    """``{name: sha256}`` for every checkpoint file that exists under *model_root*."""
+    return {
+        name: rm.sha256_file(model_root / name)
+        for name in _CHECKPOINT_NAMES if (model_root / name).exists()
+    }
+
+
+def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]:
+    """Everything that must be IDENTICAL for a ``--resume`` to safely continue
+    a prior run in this same ``--output-root`` (task requirement): commit,
+    dataset/config/checkpoint hashes, seed, video list + frame counts,
+    granularity, PSSS settings, eval options. Written once at the start of a
+    fresh run (``run_signature.json``) and re-derived + compared on every
+    invocation targeting an existing output_root — see ``_check_resume_signature``.
     """
-    try:
-        from sgdjscc_lab.utils import run_manifest as rm
-    except ImportError:
-        (output_root / "run_manifest.json").write_text(json.dumps({
-            "status": "unavailable",
-            "reason": "sgdjscc_lab.utils.run_manifest is not importable in this checkout",
-            "command_argv": sys.argv,
-        }, indent=2), encoding="utf-8")
-        return
-
     from omegaconf import OmegaConf
 
-    from sgdjscc_lab.paths import model_root as _model_root
-
-    checkpoint_names = (
-        "JSCC_model.pth", "diffusion_backbone.pth", "diffusion_controlnet.pth",
-        "muge-epoch-19-checkpoint.pth",
-    )
-    checkpoints = {}
-    for name in checkpoint_names:
-        p = Path(_model_root()) / name
-        if p.exists():
-            checkpoints[name] = p
-
+    git_state = rm.get_git_state(_REPO_ROOT)
     dataset_manifest = Path(args.dataset_root) / "manifest.csv"
     dataset_hash = rm.sha256_file(dataset_manifest) if dataset_manifest.exists() else rm.UNKNOWN
 
     try:
         resolved_config = OmegaConf.to_container(cfg, resolve=True)
-    except Exception:  # noqa: BLE001 — manifest generation must never fail the sweep
+        config_hash = hashlib.sha256(
+            json.dumps(resolved_config, sort_keys=True, default=str).encode("utf-8")
+        ).hexdigest()
+    except Exception:  # noqa: BLE001 — signature must still be buildable if config dump fails
+        config_hash = rm.UNKNOWN
+
+    video_frame_counts = {
+        e["key"]: int(e["row"]["n_frames"]) if "n_frames" in e.get("row", {}) else None
+        for e in entries
+    }
+
+    return {
+        "git_commit": git_state["commit"],
+        "git_dirty": git_state["dirty"],
+        "dataset_root": str(args.dataset_root),
+        "dataset_manifest_sha256": dataset_hash,
+        "resolved_config_sha256": config_hash,
+        "checkpoint_sha256": _checkpoint_hashes(model_root),
+        "seed": args.seed,
+        "video_keys": sorted(e["key"] for e in entries),
+        "video_frame_counts": video_frame_counts,
+        "max_frames_cap": args.max_frames,
+        "granularity": args.granularity,
+        "psss": {
+            "backend": args.psss_backend, "model_id": args.psss_model_id,
+            "device": args.psss_device, "dtype": args.psss_dtype,
+            "threshold": args.psss_threshold, "max_segment_length": args.psss_max_segment_length,
+            "use_scene_detector": bool(args.use_scene_detector),
+        },
+        "eval_options": {
+            "no_lpips": bool(args.no_lpips), "bits_per_symbol": args.bits_per_symbol,
+            "code_rate": args.code_rate,
+        },
+        "configs": sorted(c for c in args.configs.split(",") if c),
+        "digital_step_policy": args.digital_step_policy,
+        "match_fixed_keyframes": bool(args.match_fixed_keyframes),
+        "fixed_max_gop": args.fixed_max_gop,
+    }
+
+
+def _diff_signature(old: Dict[str, Any], new: Dict[str, Any]) -> str:
+    """Human-readable per-key diff for a resume signature mismatch."""
+    lines = []
+    keys = sorted(set(old) | set(new))
+    for key in keys:
+        if old.get(key) != new.get(key):
+            lines.append(f"  {key}:\n    was: {json.dumps(old.get(key), default=str)}\n    now: {json.dumps(new.get(key), default=str)}")
+    return "\n".join(lines)
+
+
+def _check_resume_signature(output_root: Path, signature: Dict[str, Any]) -> None:
+    """Refuse to continue if *output_root* already has a run_signature.json
+    that differs from *signature* — a resume must be the SAME run, not a
+    different one silently writing into the same directory. Writes the
+    signature (first run in this output_root) when none exists yet."""
+    sig_path = output_root / "run_signature.json"
+    if not sig_path.exists():
+        sig_path.parent.mkdir(parents=True, exist_ok=True)
+        sig_path.write_text(json.dumps(signature, indent=2, sort_keys=True), encoding="utf-8")
+        return
+    existing = json.loads(sig_path.read_text(encoding="utf-8"))
+    if existing != signature:
+        diff = _diff_signature(existing, signature)
+        raise SystemExit(
+            f"resume signature mismatch at {output_root} — refusing to continue with "
+            f"different run conditions than the run already recorded there:\n{diff}\n"
+            "Use a different --output-root for a genuinely different run, or match the "
+            "original conditions exactly to resume."
+        )
+
+
+def _write_manifest(
+    args, output_root: Path, cfg, per_video_rows: List[Dict[str, Any]],
+    signature: Dict[str, Any], phase: str,
+) -> None:
+    """Reproducibility manifest via utils/run_manifest.py (hard dependency —
+    see the module-level ``from sgdjscc_lab.utils import run_manifest as rm``
+    import; there is no soft-dependency fallback).
+
+    *phase* is ``"initial"`` (written once at the very start of a run, before
+    any video is processed — the intended run spec) or ``"final"`` (written
+    once at the end, after every artifact CSV/JSON/README this run produces
+    has been written — includes their sha256, see ``_hash_output_artifacts``).
+    """
+    from omegaconf import OmegaConf
+
+    from sgdjscc_lab.paths import model_root as _model_root
+
+    checkpoints = {
+        name: (_model_root() / name) for name in _CHECKPOINT_NAMES if (_model_root() / name).exists()
+    }
+
+    try:
+        resolved_config = OmegaConf.to_container(cfg, resolve=True)
+    except Exception:  # noqa: BLE001 — manifest generation must never crash a completed sweep
         resolved_config = None
+
+    extra: Dict[str, Any] = {"configs_run": args.configs.split(","), "phase": phase, "run_signature": signature}
+    if phase == "final":
+        extra["output_artifact_sha256"] = _hash_output_artifacts(output_root)
 
     manifest = rm.build_run_manifest(
         run_id=output_root.name,
         command_argv=sys.argv,
         command_source="captured",
-        seed=rm.NOT_SET,  # this script exposes no --seed flag; diffusion sampling RNG is unseeded
+        seed=int(args.seed),
         resolved_config=resolved_config,
         dataset_ref=str(args.dataset_root),
-        dataset_hash=dataset_hash,
+        dataset_hash=signature.get("dataset_manifest_sha256", rm.UNKNOWN),
         checkpoints=checkpoints,
         exact_fields=[
             "latent_elements", "source_packet_bits", "header_bytes", "shape_bytes",
             "scale_zp_bytes", "metadata_bytes", "payload_bytes", "checksum_bytes",
-            "total_bundle_bytes", "n_nan_or_inf_frames", "nonfinite_stages",
+            "total_bundle_bytes", "quant_mse", "quant_signal_power", "quant_snr_db",
         ],
-        proxy_fields=["estimated_digital_channel_symbols", "estimated_wire_bytes"],
+        proxy_fields=[
+            "estimated_digital_channel_symbols", "estimated_wire_bytes",
+            "bitdepth_proxy (pipelines/infer_pipeline.py::_digital_quant_snr_db)",
+        ],
         nan_or_failure_counts={
             "total_nan_or_inf_frames": sum(int(r.get("n_nan_or_inf_frames", 0)) for r in per_video_rows),
         },
-        extra={"configs_run": args.configs.split(",")},
+        extra=extra,
     )
-    rm.write_run_manifest(output_root / "run_manifest.json", manifest)
+    rm.write_run_manifest(output_root / f"run_manifest_{phase}.json", manifest)
+    if phase == "final":
+        # Keep the stable, documented name (results_registry.md, README links)
+        # pointing at the final manifest.
+        rm.write_run_manifest(output_root / "run_manifest.json", manifest)
+
+
+_ARTIFACT_HASH_FILES = (
+    "aggregate.csv", "per_video_metrics.csv", "pareto_frontier.csv",
+    "keyframe_selection.csv", "packet_components.csv", "keyframe_sweep.csv",
+    "rate_matching.csv", "failed_pairs.csv", "source_size_report.csv",
+    "summary.json", "README.md",
+)
+
+
+def _hash_output_artifacts(output_root: Path) -> Dict[str, str]:
+    """sha256 of every core output artifact that exists in *output_root*
+    (task requirement: "최종 CSV·JSON·README 등 핵심 artifact의 SHA-256도 기록").
+    A file this run did not produce (e.g. rate_matching.csv when
+    --match-fixed-keyframes was not used) is simply absent from the dict —
+    never a fabricated hash."""
+    return {
+        name: rm.sha256_file(output_root / name)
+        for name in _ARTIFACT_HASH_FILES if (output_root / name).exists()
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -966,9 +1190,13 @@ _PER_VIDEO_INT_FIELDS = (
     "n_nan_or_inf_frames", "n_quality_frames", "latent_elements_total",
     "source_packet_bits_total", "total_bundle_bytes",
 )
-_PER_VIDEO_FLOAT_FIELDS = ("valid_frame_ratio", "mean_psnr", "mean_ssim", "total_elapsed_s")
+_PER_VIDEO_FLOAT_FIELDS = (
+    "valid_frame_ratio", "mean_psnr", "mean_ssim", "total_elapsed_s",
+    "total_bundle_bytes_per_frame",
+)
 _PER_VIDEO_OPTIONAL_FLOAT_FIELDS = ("mean_lpips", "analog_channel_symbols_total", "digital_side_information_bytes_total")
 _PER_VIDEO_BOOL_FIELDS = ("analog_no_wire_bytes", "visual_transport_complete")
+_PER_VIDEO_OPTIONAL_BOOL_FIELDS = ("keyframe_count_matched",)  # "" means "not applicable", never coerced to False
 
 
 def _read_csv_dicts(path: Path) -> List[Dict[str, Any]]:
@@ -1004,6 +1232,9 @@ def _coerce_per_video_row(row: Dict[str, str]) -> Dict[str, Any]:
     for key in _PER_VIDEO_BOOL_FIELDS:
         if key in out:
             out[key] = str(out[key]).strip().lower() == "true"
+    for key in _PER_VIDEO_OPTIONAL_BOOL_FIELDS:
+        if key in out and out[key] != "":
+            out[key] = str(out[key]).strip().lower() == "true"
     if out.get("bit_depth", "") != "":
         out["bit_depth"] = int(out["bit_depth"])
     if out.get("psss_backend_kind", "") == "":
@@ -1012,47 +1243,99 @@ def _coerce_per_video_row(row: Dict[str, str]) -> Dict[str, Any]:
 
 
 def _write_csv(path: Path, rows: List[Dict[str, Any]]) -> None:
+    """Atomically (over)write *path* — write to a sibling temp file, then
+    ``os.replace`` it into place. ``os.replace`` is atomic on POSIX/Windows,
+    so a reader (or a resumed run's ``_read_csv_dicts``) never observes a
+    half-written file, and a process killed mid-write leaves the PREVIOUS
+    complete version at *path* rather than a truncated/corrupt one."""
+    import os
+    import tempfile
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    if not rows:
-        path.write_text("", encoding="utf-8")
-        return
-    fieldnames = list(rows[0].keys())
-    with open(path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp"
+    )
+    try:
+        with os.fdopen(fd, "w", newline="", encoding="utf-8") as fh:
+            if rows:
+                fieldnames = list(rows[0].keys())
+                writer = csv.DictWriter(fh, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(rows)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
 
 
-def _aggregate(per_video_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _aggregate(
+    per_video_rows: List[Dict[str, Any]],
+    expected_video_keys: Optional[set] = None,
+) -> List[Dict[str, Any]]:
+    """One row per config, averaged across the videos that completed it.
+
+    *expected_video_keys* (when given) is the full set of video keys this run
+    intended to cover (from the dataset manifest / ``--video-ids``) — used to
+    set ``all_expected_videos_present`` per config (task requirement: a
+    config missing some expected video's pair — still running, or a config
+    every video hasn't reached yet — is not a valid baseline/Pareto/effect
+    candidate; see ``_pareto_frontier``). A ``(video, config)`` pair that
+    raised ``NonFiniteError`` never produced a ``per_video_rows`` entry (see
+    ``run()``'s per-config loop) — every row here IS therefore already
+    "successful" in the sense that zero non-finite frames occurred within it.
+    """
     by_config: Dict[str, List[Dict[str, Any]]] = {}
     for r in per_video_rows:
         by_config.setdefault(r["config"], []).append(r)
     out = []
     for config, rows in by_config.items():
         n = len(rows)
+        video_keys = {r["video"] for r in rows}
         byte_rows = [r["total_bundle_bytes"] for r in rows if r["total_bundle_bytes"] != ""]
+        bytes_per_frame_rows = [
+            r["total_bundle_bytes_per_frame"] for r in rows if r.get("total_bundle_bytes_per_frame", "") != ""
+        ]
         lpips_rows = [r["mean_lpips"] for r in rows if r["mean_lpips"] != ""]
+        # "" (not applicable -- matching wasn't requested/relevant for this
+        # row, e.g. skem_* rows or a run without --match-fixed-keyframes)
+        # must never silently count as "not matched" -- only rows with an
+        # applicable True/False value are considered.
+        kfcm_applicable = [r["keyframe_count_matched"] for r in rows if r.get("keyframe_count_matched", "") != ""]
+        n_quality = sum(r.get("n_quality_frames", 0) for r in rows)
+        n_transmitting = sum(r.get("n_transmitting_frames", 0) for r in rows)
+        all_finite_metrics = all(
+            math.isfinite(r["mean_psnr"]) and math.isfinite(r["mean_ssim"])
+            and (r["mean_lpips"] == "" or math.isfinite(r["mean_lpips"]))
+            for r in rows
+        )
         out.append({
             "config": config,
             "selector": rows[0]["selector"],
             "channel": rows[0]["channel"],
             "bit_depth": rows[0]["bit_depth"],
             "psss_backend_kind": rows[0]["psss_backend_kind"],
+            "digital_step_policy": rows[0].get("digital_step_policy", ""),
             "n_videos": n,
+            "video_keys": ",".join(sorted(video_keys)),
+            "n_videos_expected": (len(expected_video_keys) if expected_video_keys is not None else n),
+            "all_expected_videos_present": (
+                (expected_video_keys is None) or (video_keys == expected_video_keys)
+            ),
             "total_frames": sum(r.get("n_frames_total", 1) for r in rows),
-            "total_quality_frames": sum(
-                r.get("n_quality_frames", r.get("n_frames_total", 1)) for r in rows
-            ),
-            "valid_frame_ratio": (
-                sum(r.get("n_quality_frames", r.get("n_frames_total", 1)) for r in rows)
-                / max(sum(r.get("n_frames_total", 1) for r in rows), 1)
-            ),
+            "total_quality_frames": n_quality,
+            "total_transmitting_frames": n_transmitting,
+            "valid_frame_ratio": (n_quality / max(sum(r.get("n_frames_total", 1) for r in rows), 1)),
+            "all_finite_metrics": all_finite_metrics,
             "mean_psnr": sum(r["mean_psnr"] for r in rows) / n,
             "mean_ssim": sum(r["mean_ssim"] for r in rows) / n,
             "mean_lpips": (sum(lpips_rows) / len(lpips_rows)) if lpips_rows else "",
             "mean_latent_elements": sum(r["latent_elements_total"] for r in rows) / n,
-            "mean_total_bundle_bytes": (sum(byte_rows) / len(byte_rows)) if byte_rows else "",
+            "mean_total_bundle_bytes_per_video": (sum(byte_rows) / len(byte_rows)) if byte_rows else "",
+            "mean_total_bundle_bytes_per_frame": (
+                (sum(bytes_per_frame_rows) / len(bytes_per_frame_rows)) if bytes_per_frame_rows else ""
+            ),
             "mean_n_keyframes_selected": sum(r.get("n_keyframes_selected", 0) for r in rows) / n,
+            "keyframe_count_matched": (all(bool(v) for v in kfcm_applicable) if kfcm_applicable else ""),
             "analog_no_wire_bytes": rows[0]["analog_no_wire_bytes"],
             "total_nan_or_inf_frames": sum(r.get("n_nan_or_inf_frames", 0) for r in rows),
             "nonfinite_stages": ",".join(sorted({
@@ -1063,11 +1346,25 @@ def _aggregate(per_video_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
+    """Validity gate (task requirement, ALL must hold for baseline OR candidate):
+    zero non-finite frames, PSNR/SSIM/LPIPS all finite, valid_frame_ratio == 1
+    (transmitting frames only — see _aggregate), every expected video present.
+    A candidate additionally needs its video_keys to equal the BASELINE's
+    video_keys (never compared across mismatched video sets)."""
     by_config = {r["config"]: r for r in aggregate_rows}
+
+    def _row_is_valid(r: Dict[str, Any]) -> bool:
+        return (
+            int(r.get("total_nan_or_inf_frames", 0)) == 0
+            and bool(r.get("all_finite_metrics", False))
+            and float(r.get("valid_frame_ratio", 0.0)) == 1.0
+            and bool(r.get("all_expected_videos_present", False))
+        )
+
     baseline = None
     baseline_config = None
     for candidate in BASELINE_PREFERENCE:
-        if candidate in by_config and by_config[candidate].get("total_nan_or_inf_frames", 0) == 0:
+        if candidate in by_config and _row_is_valid(by_config[candidate]):
             baseline = by_config[candidate]
             baseline_config = candidate
             break
@@ -1080,8 +1377,10 @@ def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
     if baseline is None:
         return [], baseline_info
 
+    baseline_video_keys = set(str(baseline.get("video_keys", "")).split(",")) if baseline.get("video_keys") else set()
+
     candidates = [r for r in aggregate_rows
-                  if r["config"] != baseline_config and r["mean_total_bundle_bytes"] != ""]
+                  if r["config"] != baseline_config and r["mean_total_bundle_bytes_per_video"] != ""]
     in_budget = []
     for r in candidates:
         psnr_drop = baseline["mean_psnr"] - r["mean_psnr"]
@@ -1090,11 +1389,12 @@ def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
             (r["mean_lpips"] - baseline["mean_lpips"])
             if (r["mean_lpips"] != "" and baseline["mean_lpips"] != "") else None
         )
-        invalid_frames = int(r.get("total_nan_or_inf_frames", 0))
-        valid_frame_ratio = float(r.get("valid_frame_ratio", 1.0))
+        r_video_keys = set(str(r.get("video_keys", "")).split(",")) if r.get("video_keys") else set()
+        same_video_set = r_video_keys == baseline_video_keys
+        row_valid = _row_is_valid(r)
         ok = (
-            invalid_frames == 0
-            and valid_frame_ratio == 1.0
+            row_valid
+            and same_video_set
             and psnr_drop <= QUALITY_GATE["psnr_drop_db"]
             and ssim_drop <= QUALITY_GATE["ssim_drop"]
             and (lpips_rise is None or lpips_rise <= QUALITY_GATE["lpips_rise"])
@@ -1106,19 +1406,67 @@ def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
         row["lpips_rise"] = lpips_rise if lpips_rise is not None else ""
         row["within_quality_gate"] = ok
         row["quality_gate_failure_reason"] = (
-            "non_finite_frames" if invalid_frames else
-            "incomplete_quality_coverage" if valid_frame_ratio < 1.0 else
+            "non_finite_frames" if int(r.get("total_nan_or_inf_frames", 0)) else
+            "non_finite_metrics" if not r.get("all_finite_metrics", False) else
+            "incomplete_quality_coverage" if float(r.get("valid_frame_ratio", 0.0)) != 1.0 else
+            "missing_expected_video" if not r.get("all_expected_videos_present", False) else
+            "video_set_mismatch_vs_baseline" if not same_video_set else
             "quality_threshold" if not ok else ""
         )
         in_budget.append(row)
 
     selected = [r for r in in_budget if r["within_quality_gate"]]
     pool = selected if selected else in_budget  # spec: if none qualify, report nearest, don't hide it
-    pool_sorted = sorted(pool, key=lambda r: r["mean_total_bundle_bytes"])
+    pool_sorted = sorted(pool, key=lambda r: r["mean_total_bundle_bytes_per_video"])
     for i, r in enumerate(pool_sorted):
         r["rank"] = i
         r["selected_as_smallest_in_budget"] = bool(selected) and i == 0
     return pool_sorted, baseline_info
+
+
+# Relative byte difference within which a fixed/SKEM pair at the same
+# keyframe count is actually called "rate-matched" (task requirement: never
+# use that label just because keyframe counts matched -- bytes must also be
+# close in practice).
+RATE_MATCH_BYTE_TOLERANCE = 0.10
+
+
+def _compute_rate_matching(per_video_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Per (video, channel), compare fixed_<channel> vs skem_<channel>: exact
+    keyframe counts, exact bytes/video and bytes/frame, and whether they are
+    close enough (``RATE_MATCH_BYTE_TOLERANCE``) to call "rate-matched" —
+    never inferred from keyframe_count_matched alone."""
+    by_video_channel: Dict[tuple, Dict[str, Dict[str, Any]]] = {}
+    for r in per_video_rows:
+        if r["channel"] == "awgn":
+            continue
+        by_video_channel.setdefault((r["video"], r["channel"]), {})[r["selector"]] = r
+
+    rows = []
+    for (video, channel), by_selector in sorted(by_video_channel.items()):
+        fixed_row = by_selector.get("fixed")
+        skem_row = by_selector.get("skem")
+        if fixed_row is None or skem_row is None:
+            continue
+        fixed_bytes = fixed_row["total_bundle_bytes"]
+        skem_bytes = skem_row["total_bundle_bytes"]
+        larger = max(fixed_bytes, skem_bytes)
+        byte_diff_ratio = (abs(fixed_bytes - skem_bytes) / larger) if larger > 0 else 0.0
+        keyframe_count_matched = fixed_row.get("keyframe_count_matched") is True
+        rows.append({
+            "video": video, "channel": channel,
+            "fixed_n_keyframes": fixed_row["n_keyframes_selected"],
+            "skem_n_keyframes": skem_row["n_keyframes_selected"],
+            "keyframe_count_matched": keyframe_count_matched,
+            "fixed_total_bundle_bytes": fixed_bytes,
+            "skem_total_bundle_bytes": skem_bytes,
+            "fixed_total_bundle_bytes_per_frame": fixed_row["total_bundle_bytes_per_frame"],
+            "skem_total_bundle_bytes_per_frame": skem_row["total_bundle_bytes_per_frame"],
+            "byte_diff_ratio": byte_diff_ratio,
+            "byte_diff_ratio_tolerance": RATE_MATCH_BYTE_TOLERANCE,
+            "rate_matched": keyframe_count_matched and byte_diff_ratio <= RATE_MATCH_BYTE_TOLERANCE,
+        })
+    return rows
 
 
 def _source_size_report(entries) -> List[Dict[str, Any]]:
@@ -1139,11 +1487,12 @@ def _source_size_report(entries) -> List[Dict[str, Any]]:
     return rows
 
 
-def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, baseline_info):
+def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, baseline_info, failed_pairs):
     summary = {
         "output_root": str(output_root),
         "configs_run": args.configs.split(","),
         "n_videos": len({r["video"] for r in per_video_rows}),
+        "n_failed_pairs": len(failed_pairs),
         "quality_gate": QUALITY_GATE,
         "pareto_baseline": baseline_info,
         "pareto_selected": next((r for r in pareto_rows if r.get("selected_as_smallest_in_budget")), None),
@@ -1152,94 +1501,91 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
         "use_scene_detector": bool(args.use_scene_detector),
         "bits_per_symbol": args.bits_per_symbol,
         "code_rate": args.code_rate,
+        "digital_step_policy": args.digital_step_policy,
+        "ablation_label": args.ablation_label,
+        "match_fixed_keyframes": bool(args.match_fixed_keyframes),
+        "seed": args.seed,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     (output_root / "summary.json").write_text(json.dumps(summary, indent=2, default=str), encoding="utf-8")
 
-    if not baseline_info["baseline_valid"]:
-        baseline_note = (
-            "Pareto baseline: unavailable. No `fixed_float32`/`fixed_int16`/`skem_float32`/"
-            "`skem_int16` config with zero non-finite frames was in this run's --configs — "
-            "AWGN is never used as a fallback (mixing analog noise with quantization loss is "
-            "not a meaningful reliable-digital reference). Include at least one such config."
-        )
-    else:
-        baseline_note = (
-            f"Pareto baseline: `{baseline_info['baseline_config']}` "
-            "(a reliable digital baseline — float32 lossless or int16 near-lossless — "
-            "never AWGN, and with zero non-finite frames)."
-        )
+    skem_backend_kinds = sorted({
+        r["psss_backend_kind"] for r in per_video_rows
+        if r["selector"] == "skem" and r.get("psss_backend_kind")
+    })
+    ablation_note = (
+        f"- **ablation 실행**: `--digital-step-policy {args.digital_step_policy}` "
+        f"(label: `{args.ablation_label}`) — quantization_effect.csv 비교에는 포함하지 말 것"
+        if args.digital_step_policy != "fixed_reference" else
+        "- 양자화 비교 policy: `fixed_reference` (모든 bit_depth를 동일 step으로 디코딩 — "
+        "decoder step 변화가 섞이지 않은 순수 양자화 효과)"
+    )
+    baseline_note = (
+        "- Pareto baseline: **unavailable** — `fixed_float32`/`fixed_int16`/`skem_float32`/"
+        "`skem_int16` 중 non-finite 0건·기대 영상 전부 완료인 config가 없음 "
+        "(AWGN은 baseline 후보에서 완전히 제외, fallback 없음)"
+        if not baseline_info["baseline_valid"] else
+        f"- Pareto baseline: `{baseline_info['baseline_config']}` "
+        "(reliable digital — float32 무손실 또는 int16 near-lossless, non-finite 0건, "
+        "기대 영상 전부 완료 — AWGN 아님)"
+    )
 
     readme = f"""# transmission_reduction run — {output_root.name}
 
-Real packet-bundle (all visual patches + per-patch captions + edge/uncertainty + manifest) transmission-size
-accounting, full-video quality via the real `TemporalPipeline` path, and
-SKEM/PSSS keyframe selection (optionally scene-change-combined). See the
-module docstring of `scripts/run_transmission_reduction_eval.py` for the
-exact-vs-estimate accounting boundaries and the digital bundle-only receiver boundary.
-
+- 개요
+  - 실제 packet bundle(visual latent + caption + edge/uncertainty + manifest)
+    전송량 회계, `TemporalPipeline` 전체 영상 품질, SKEM/PSSS keyframe 선택 비교
+  - exact-vs-estimate 회계 경계와 digital receiver bytes-only 경계는
+    `scripts/run_transmission_reduction_eval.py` 모듈 docstring 참고
+- run 상태
+  - 완료 (video, config) 쌍: {len(per_video_rows)}개
+  - 실패 (video, config) 쌍: {len(failed_pairs)}개 (`failed_pairs.csv`) — 첫 non-finite 발생 즉시
+    해당 pair 중단, 다음 pair로 진행(NaN placeholder로 계속 처리하지 않음)
+  - digital step 정책: `{args.digital_step_policy}`
+{ablation_note}
+  - keyframe 수 정합: `{"ON — FixedCountKeyframeSelector로 fixed를 SKEM과 정확히 동일 개수로 강제" if args.match_fixed_keyframes else "OFF"}`
 {baseline_note}
+- 산출물
+  - `per_video_metrics.csv` / `aggregate.csv` — 영상 전체 품질(PSNR/SSIM/LPIPS) +
+    정확한 전송 bytes. **`total_bundle_bytes`는 bytes/video**, **`total_bundle_bytes_per_frame`은
+    bytes/frame**(전체 프레임 기준) — 단위 혼동 금지
+  - `failed_pairs.csv` — 중단된 (video, config): 실패 stage·frame·NaN/Inf 수
+  - `rate_matching.csv` (`--match-fixed-keyframes` 사용 시) — 영상×channel별 fixed vs SKEM
+    keyframe 수·bytes/video·bytes/frame·byte 차이 비율. `rate_matched`는 keyframe 수가
+    맞고 **byte 차이가 {int(RATE_MATCH_BYTE_TOLERANCE * 100)}% 이내일 때만** true — keyframe 수만 맞다고
+    "rate-matched"라 부르지 않음
+  - `keyframe_selection.csv` — 프레임별 decision, 구조화된 `force_reason`,
+    5필드 회계 스키마, `psss_backend_kind`(`mock`|`proxy`|`real`)
+  - `packet_components.csv` — 실제 `.sgbundle` byte의 정확한 구성 breakdown
+  - `packets/<video>/<config>/frame_NNNNN.sgbundle` — 실제 직렬화 전송 bundle
+  - `recon_videos/<video>/<config>/recon.mp4` + `frame_*.png` — 전체 복원 영상
+  - `keyframe_sweep.csv` — PSSS threshold x max_segment_length grid (선택만, 복원 없음)
+  - `pareto_frontier.csv` — quality gate(PSNR 저하 <= {QUALITY_GATE['psnr_drop_db']}dB,
+    SSIM 저하 <= {QUALITY_GATE['ssim_drop']}, LPIPS 상승 <= {QUALITY_GATE['lpips_rise']}) 통과 config 중
+    bytes/video 최소. 유효 조건: non-finite 0·PSNR/SSIM/LPIPS 전부 finite·
+    valid_frame_ratio==1·기대 영상 전부 완료·baseline과 영상 집합 동일. 미달이어도
+    가장 가까운 후보를 숨기지 않고 나열
+  - `run_manifest_initial.json` / `run_manifest_final.json` (= `run_manifest.json`) /
+    `run_signature.json` — 재현성(commit·dataset/config/checkpoint hash·seed·환경) 및
+    resume 안전성 서명. `run_manifest.json`에 핵심 artifact SHA-256 포함
+  - `summary.json` — run 설정 + 선택된 config + baseline
 
-- `per_video_metrics.csv` / `aggregate.csv` — full-video quality (PSNR/SSIM/
-  LPIPS over every reconstructed frame, not just keyframes) + exact
-  transmission-bundle bytes per (video, config).
-- `keyframe_selection.csv` — per transmitting frame: decision, structured
-  `force_reason` (`first_frame`|`scene_change`|`max_segment_length`|`psss`|
-  `selected` — never inferred from prose), the 5-field measurement schema
-  (`latent_elements`/`analog_channel_symbols`/`source_packet_bits`/
-  `estimated_digital_channel_symbols`/`estimated_wire_bytes`), and
-  `psss_backend_kind` (`mock`|`proxy`|`real` — never conflated).
-- `packet_components.csv` — exact per-frame bundle byte breakdown (caption/
-  edge/edge-uncertainty/visual/manifest payloads + container overhead), with
-  `total_bundle_bytes` equal to the actual `.sgbundle` file size.
-- `packets/<video>/<config>/frame_NNNNN.sgbundle` — the actual serialized
-  transmission bundles (visual+caption+edge+manifest) a receiver would parse.
-- `recon_videos/<video>/<config>/recon.mp4` + `frame_*.png` — the FULL
-  reconstructed video (every frame, not just keyframes).
-- `keyframe_sweep.csv` — PSSS threshold x max_segment_length grid (selection
-  only, no reconstruction); reports `psss_backend_kind` per row.
-- `pareto_frontier.csv` — smallest-bytes config meeting the quality gate
-  (PSNR drop <= {QUALITY_GATE['psnr_drop_db']} dB, SSIM drop <= {QUALITY_GATE['ssim_drop']},
-  LPIPS rise <= {QUALITY_GATE['lpips_rise']}) against the reliable-digital
-  baseline above; if none qualify, the nearest candidates are still listed.
-- `source_size_report.csv` — exact source MP4 sizes only (see note above).
-- `summary.json` — run configuration + selected config + baseline used.
-
-Known limitations:
-- `--psss-backend {args.psss_backend}` was used for keyframe selection this
-  run — only `real` (with `--psss-model-id`) is genuine PSSS (an actual
-  causal-LM/VLM's yes/no token probability); `mock`/`proxy` are explicitly
-  NOT real PSSS (see `video/psss.py`'s module docstring) and every CSV/JSON
-  in this run tags rows with `psss_backend_kind` so this is never conflated.
-- `estimated_digital_channel_symbols`/`estimated_wire_bytes` are labeled
-  proxy estimates (`{'unavailable — no --bits-per-symbol given' if args.bits_per_symbol is None else f'bits_per_symbol={args.bits_per_symbol}'}`)
-  — no real modulator/FEC coder exists in this codebase.
-- Digital configs reconstruct from the exact `.sgbundle` bytes saved in this
-  run. AWGN cannot be reconstructed from a byte bundle because its visual
-  waveform is analog; for AWGN, `analog_channel_symbols_total` and the exact
-  digital caption/edge/manifest bytes are reported as separate domains.
-- **Digital blind-SNR NaN/Inf bug (fixed)**: `_compute_step()`
-  (`pipelines/infer_pipeline.py`) used to route every channel's received
-  latent through `jscc.snr_prediction_net` (trained only on AWGN-shaped
-  noise). On a quantized (digital_packet) latent this could predict a
-  signal_scale >= 1, making `10*log10(1/cur_step - 1)` evaluate `log10` of a
-  non-positive number -> NaN. The digital channel now uses a deterministic,
-  `bit_depth`-derived analytic SNR instead (`_digital_quant_snr_db` —
-  `20*log10(2**bit_depth - 1)`, clamped to [-20, 60] dB; the AWGN path is
-  untouched). Every intermediate stage (channel transmit / step match /
-  final decode) is additionally guarded by `assert_finite`
-  (`utils/finite_checks.py`), which raises immediately at the stage a
-  non-finite value first appears instead of letting it propagate through the
-  rest of a (possibly 50-step) diffusion decode. Any frame that still goes
-  non-finite for some OTHER reason is caught here (never a bare
-  `except Exception` — only `NonFiniteError`), recorded with its exact stage
-  in `nonfinite_stages` (per_video_metrics.csv/aggregate.csv, alongside
-  `n_nan_or_inf_frames`), excluded from the quality average, and the config
-  unconditionally fails the quality gate and cannot be Pareto-selected or
-  become the baseline (see `BASELINE_PREFERENCE` — float32/int16 only, and
-  only when `n_nan_or_inf_frames == 0`); no misleading `recon.mp4` is
-  written for a video with any such frame, and `valid_frame_ratio` remains
-  available as a finite-frame diagnostic.
+한계:
+- `--psss-backend {args.psss_backend}` 사용 — `real`(+`--psss-model-id`)만 진짜 PSSS이고
+  `mock`/`proxy`는 진짜 PSSS가 아님(`video/psss.py` 참고). 이번 run의 SKEM 행에 실제 관측된
+  backend: `{', '.join(skem_backend_kinds) if skem_backend_kinds else '(skem 행 없음)'}`
+  — `psss_backend_kind` 컬럼으로 항상 구분되며, `real`이 아니면 결과를 "real SKEM"으로
+  표기하지 않음
+- `estimated_digital_channel_symbols`/`estimated_wire_bytes`는 labeled proxy
+  (`{'unavailable — --bits-per-symbol 미지정' if args.bits_per_symbol is None else f'bits_per_symbol={args.bits_per_symbol}'}`)
+  — 실제 변조/FEC 코더 없음
+- digital config는 이번 run이 저장한 실제 `.sgbundle` byte로부터 복원. AWGN은 아날로그
+  파형이라 byte bundle로 복원 불가 — `analog_channel_symbols_total`과 digital
+  caption/edge/manifest byte를 별도 도메인으로 기록
+- `bitdepth_proxy` 정책은 bit_depth만으로 결정되는 휴리스틱이며 실측 채널 SNR이 아님
+  (`pipelines/infer_pipeline.py::_digital_quant_snr_db`). `quant_nmse` 정책만 송신단이
+  실측한 quantization SNR(패킷 metadata로 전송, receiver가 패킷 자체에서 읽음 — 전역
+  channel 객체 아님)을 사용
 """
     (output_root / "README.md").write_text(readme, encoding="utf-8")
 

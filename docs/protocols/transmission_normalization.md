@@ -2,21 +2,21 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 076a26d
+source_commit: cdcb7b9
 supersedes:
 ---
 
 > [← 문서 색인](../README.md)
 
-# 전송 실험 정상화 (digital blind-SNR NaN 수정 + 양자화/selector 효과 분리)
+# 전송 실험 정상화 (digital blind-SNR NaN 수정 + 재현성 + 양자화/selector 효과 분리)
 
 - 연결 문서
   - 전송 스윕 드라이버: [scripts/run_transmission_reduction_eval.py](../../scripts/run_transmission_reduction_eval.py)
   - 과거 실험 기록(불변): [experiments/2026-08-18_transmission_reduction.md](../experiments/2026-08-18_transmission_reduction.md)
-  - run manifest 절차: [results_registry.md](./results_registry.md)
+  - run manifest 절차(정식 의존성): [results_registry.md](./results_registry.md)
   - Tx/Rx 계약: [../architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md)
 
-## 배경 — 무엇이 고장났었나
+## 배경 — 무엇이 고장났었나, 어떻게 고쳤나
 
 - 증상
   - `digital_packet` 채널(4/6/8/16/32-bit 양자화)로 복원한 프레임 일부가 NaN/Inf
@@ -28,107 +28,174 @@ supersedes:
   - 양자화 latent는 AWGN과 통계 구조가 전혀 달라 `predicted_signal_scale >= 1`을
     예측하는 경우가 생기고 → `cur_step = 1 - predicted_signal_scale <= 0`
   - `cur_snr = 10*log10(1/cur_step - 1)`에서 `log10(비양수)` → NaN/Inf
-- 수정
-  - `jscc.channel_model`이 `DigitalPacketChannel`일 때만 blind 분기를 우회
-  - `_digital_quant_snr_db(bit_depth) = min(20*log10(2**bit_depth - 1), 60dB)`로
-    **양자화 metadata(bit_depth)만으로** 결정되는 SNR을 계산 — 데이터 의존성 없음,
-    항상 유한
-  - `bit_depth=32`(무손실 float32)는 상한(60dB)으로 고정
-  - `signal_scale = snr_scale/(snr_scale+1)`(기존 `use_gt_csi` 경로와 동일한, 항상
-    `(0,1)` 안에 머무는 공식)로 `cur_step`을 재사용 — 0/1 경계에 절대 닿지 않음
-  - AWGN 경로(`channel_model is None`)는 분기 자체를 타지 않음 — 수식·타입 100% 동일
-  - `discrete` step_style의 digital 분기도 동일한 analytic SNR로 교체
-  - `_apply_channel`/`_compute_step`/`_decode_diffusion` 출력에
-    `utils/finite_checks.py::assert_finite`를 추가 — stage 이름을 붙여 NaN/Inf가
-    생기는 즉시(전체 diffusion 루프를 다 돌리기 전에) 예외로 드러남
+- 1차 수정 (2026-08-26 오전)
+  - `jscc.channel_model`이 `DigitalPacketChannel`일 때만 blind 분기를 우회,
+    `_digital_quant_snr_db(bit_depth) = min(20*log10(2**bit_depth-1), 60dB)`로 계산
+  - `_apply_channel`/`_compute_step`/`_decode_diffusion` 출력에 `assert_finite` 추가
+- 2차 정상화 (2026-08-26 오후, 이 문서가 서술하는 범위) — 아래 각 절 참고
+  - digital step 정책을 `fixed_reference`/`bitdepth_proxy`/`quant_nmse` 3종으로 분리하고
+    양자화 비교의 기본값을 `fixed_reference`로 변경(decoder step 변화가 섞이지 않게)
+  - receiver가 **패킷 자체의 metadata**(bit_depth, 실측 quantization SNR)를 사용하도록
+    변경 — 더 이상 전역 `jscc.channel_model` 객체에 의존하지 않음
+  - non-finite 발생 시 해당 (video, config) 쌍을 **즉시 중단**(NaN placeholder로 계속
+    처리하지 않음)
+  - `run_manifest.py`를 소프트 의존성에서 **정식(하드) 의존성**으로 전환, 초기/최종
+    manifest + run signature 기반 resume 안전성 도입
+  - `FixedCountKeyframeSelector`로 fixed selector의 keyframe 수를 SKEM과 **정확히** 일치
+
+## digital step 정책 3종 (`--digital-step-policy`)
+
+`pipelines/infer_pipeline.py::DIGITAL_STEP_POLICIES`:
+
+| 정책 | 의미 | SNR 출처 |
+|---|---|---|
+| `fixed_reference` (기본, 양자화 비교용) | 모든 bit_depth를 float32 기준과 동일한 step으로 디코딩 — decoder step 변화가 섞이지 않은 순수 양자화 효과 | 항상 상한(60dB), bit_depth 무관 |
+| `bitdepth_proxy` | bit_depth만으로 결정되는 결정론적 휴리스틱 — **실측 SNR 아님**, 데이터 의존성 없음 | `20*log10(2**bit_depth-1)`, [-20,60]dB clamp |
+| `quant_nmse` | 송신단이 **실측한** quantization NMSE/SNR(패킷 metadata로 전송) | receiver가 패킷 자체에서 읽음, 없으면 즉시 `ValueError` |
+
+- `bit_depth=32`(float32, 무손실)는 정책과 무관하게 항상 상한 — lossless transport는
+  정책 선택 대상이 아니라 구조적 사실
+- `fixed_reference`가 아닌 정책으로 실행하려면 `--ablation-label`이 **필수**(양자화
+  비교(`quantization_effect.csv`)에 decoder-step ablation이 섞여 들어가지 않도록 강제)
+- `quant_nmse`의 실측값 계산: 송신단이 `quantize_tensor()` 직후 같은 텐서를
+  `dequantize_tensor()`로 복원해 `10*log10(signal_power/mse)`를 계산하고, 그 값을
+  packet의 JSON metadata에 실어 전송(byte도 실제로 카운트됨) —
+  `transmission/packet_bundle.py::measure_quantization_error`
+
+## receiver가 packet metadata를 쓴다 (전역 channel 객체 아님)
+
+- `transmission/packet_bundle.py::decode_frame_bundle`가 이제 `visual_metadata`(패치별
+  `bit_depth`/`quant_snr_db`/`quant_mse`)를 `visual_latents`와 함께 반환
+- `transmission/receiver_runtime.py::reconstruct_frame_from_bundle_bytes`가 이 metadata를
+  `_compute_step(..., digital_bit_depth=meta["bit_depth"], digital_quant_snr_db=meta["quant_snr_db"])`로
+  직접 전달 — `jscc.channel_model`을 절대 참조하지 않음(receiver 경계 유지)
+- (참고) `_encode_and_transmit`의 단순 in-process 경로(`DigitalPacketChannel.transmit()`이
+  텐서를 직접 반환하는, packet 경계가 없는 경로)는 여전히 `jscc.channel_model.bit_depth`를
+  읽는다 — 이건 "receiver가 packet만 봐야 한다"는 계약과 무관(애초에 packet 자체가 없는
+  경로이므로)
+
+## finite 검사 + 실패 처리 (abort-on-first-failure)
+
+- `utils/finite_checks.py::assert_finite`가 다음 stage마다 추가됨: encode latent, channel
+  output, power scalar, step/SNR, canny output, canny latent, diffusion latent(init +
+  water-filling + early-exit + 표준 경로 각각), VAE 최종 출력
+- non-finite 발생 시
+  - **NaN placeholder로 대체해 이후 프레임을 계속 처리하지 않는다** — 해당 (video,
+    config) 쌍을 그 자리에서 즉시 중단
+  - 실패 stage·frame index·NaN/Inf 수를 `failed_pairs.csv`에 기록하고 다음 pair로 이동
+  - 그 pair는 `per_video_metrics.csv`에 아예 행이 생기지 않음(baseline/Pareto/effect
+    비교에서 자동으로 배제됨)
+- 예상하지 못한 일반 예외(`NonFiniteError`가 아닌 모든 것)는 잡지 않고 그대로 전파 —
+  전체 실행이 실패함(pair 하나만 건너뛰지 않음)
+- 성공한 pair에서 사후적으로 non-finite recon이 다시 발견되면(있어서는 안 되는 상황)
+  이는 `assert_finite` stage 커버리지의 실제 공백이므로 조용히 넘기지 않고
+  `RuntimeError`로 즉시 실패
+
+## 재현성 — run manifest 정식 의존성 + seed + resume 안전성
+
+- `run_manifest.py`는 이제 **하드 의존성** — `scripts/run_transmission_reduction_eval.py`
+  모듈 최상단에서 직접 import, 모듈이 없으면 `--help`조차 즉시 실패(soft-fallback 없음)
+- `--seed`(기본 2025): Python/NumPy/PyTorch/CUDA 전역 seed +
+  `utils/seed.py::derive_frame_seed(base_seed, video_key, frame_index)`로 **영상·프레임별
+  결정적 seed** — 같은 (video, frame)을 다른 config가 복원할 때 동일 RNG 상태를 최대한
+  공유(비교가 채널/양자화/selector 차이만 반영하도록)
+- run signature (`run_signature.json`): commit·dataset/config/checkpoint hash·seed·영상
+  목록과 프레임 수·granularity·PSSS 설정·평가 옵션을 담음
+  - 최초 실행 시 생성
+  - `--resume` 시 현재 조건과 다르면 **즉시 거부**하고 차이를 출력(다른 run이 같은
+    디렉터리에 섞여 들어가는 것을 방지)
+- `run_manifest_initial.json`: 영상 처리 시작 **전**에 기록(의도한 run spec)
+- `run_manifest_final.json` (= `run_manifest.json`): 모든 산출물(CSV/JSON/README) 기록
+  **후**에 기록, `extra.output_artifact_sha256`에 핵심 artifact SHA-256 포함
+  (`_hash_output_artifacts` — 실제 존재하는 파일만, 없는 파일은 절대 조작하지 않음)
+
+## fixed/SKEM keyframe 수 정확히 일치 (`--match-fixed-keyframes`)
+
+- 기존: `max_gop` 근사값 계산(부정확)
+- 현재: `video/keyframe_extractor.py::FixedCountKeyframeSelector(count=N)`로 fixed
+  selector를 SKEM이 고른 keyframe 수와 **정확히** 동일하게 강제
+  (`keyframe.selector: fixed_count`)
+- 불가능한 경우(SKEM 개수가 0이거나 프레임 수를 초과) `--fixed-max-gop`로 폴백하고
+  `keyframe_count_matched=False`를 명시적으로 기록(숨기지 않음)
+- `rate_matching.csv`: 영상×channel별 fixed vs SKEM의 실제 keyframe 수·bytes/video·
+  bytes/frame·byte 차이 비율(`byte_diff_ratio`)을 기록. **byte 차이가
+  `RATE_MATCH_BYTE_TOLERANCE`(10%) 이내일 때만** `rate_matched=true` — keyframe 수만
+  맞다고 "rate-matched"라 부르지 않음
+- 양자화 효과(`quantization_effect.csv`)와 selector 효과(`selector_effect.csv`)는 여전히
+  별도 표로 유지(각각 selector 고정/bit_depth 고정)
+
+## bytes/video vs bytes/frame — 단위 혼동 금지
+
+- `per_video_metrics.csv`/`aggregate.csv`: `total_bundle_bytes`(**bytes/video**)와
+  `total_bundle_bytes_per_frame`(**bytes/frame**, 전체 프레임 기준)을 분리된 컬럼으로 기록
+- `aggregate.csv`의 `mean_total_bundle_bytes_per_video`/`mean_total_bundle_bytes_per_frame`도
+  동일 원칙(과거 `mean_total_bundle_bytes`라는 모호한 이름은 제거)
+
+## 유효성 조건 강화 (baseline / Pareto / effect 비교 공통)
+
+`run_transmission_reduction_eval.py::_pareto_frontier`의 `_row_is_valid`, 다음 전부 만족해야 유효:
+
+1. non-finite frame 0건 (`total_nan_or_inf_frames == 0`)
+2. PSNR·SSIM·LPIPS 전부 finite (`all_finite_metrics`)
+3. `valid_frame_ratio == 1`(전송 프레임 기준)
+4. 기대 영상이 모두 완료됨 (`all_expected_videos_present`)
+5. (baseline 대비 후보만) 후보의 영상 집합이 baseline의 영상 집합과 **동일**
+   (`video_set_mismatch_vs_baseline`)
+
+미달이면 baseline·Pareto·effect delta에서 제외하되 실패 이유(`quality_gate_failure_reason`)를
+남기고, 가장 가까운 후보라도 숨기지 않고 나열한다.
+
+## PSSS/SKEM 표기 — proxy를 real로 표기하지 않는다
+
+- one-command wrapper(`run_transmission_normalization.sh`)가
+  `--psss-backend`/`--psss-model-id`/`--psss-device`/`--psss-dtype`/`--psss-threshold`/
+  `--psss-max-segment-length`/`--use-scene-detector`를 그대로 전달
+- 모든 SKEM 행에 `psss_backend_kind`(`mock`|`proxy`|`real`) 컬럼이 항상 붙음 —
+  `real`이 아니면 절대 "real SKEM"으로 표기하지 않음
+- `selector_effect.csv`의 `skem_psss_backend_kind`, run README의 "이번 run의 SKEM 행에
+  실제 관측된 backend" 문구로 항상 명시
 
 ## 실행 스크립트 — `scripts/run_transmission_normalization.sh`
 
-- 단일 진입점
-  ```bash
-  bash scripts/run_transmission_normalization.sh
-  bash scripts/run_transmission_normalization.sh --preflight-only
-  bash scripts/run_transmission_normalization.sh --dry-run
-  bash scripts/run_transmission_normalization.sh --resume outputs/transmission_normalization_<timestamp>
-  ```
-- preflight (항상 먼저 실행, 실패 시 즉시 종료)
-  - 데이터: `<dataset-root>/manifest.csv` 존재 확인
-  - checkpoint: `JSCC_model.pth`/`diffusion_backbone.pth`/`diffusion_controlnet.pth`/
-    `muge-epoch-19-checkpoint.pth` 4종
-  - 디스크: 출력 경로 여유 공간 (기본 20GiB 미만이면 실패)
-  - GPU/CUDA/NVML: `nvidia-smi` 실행 확인 → `torch.cuda.is_available()` 확인 →
-    stderr에 `nvml` 문자열이 있으면 "드라이버/컨테이너 GPU passthrough 문제"로 별도 보고
-    (컨테이너 재생성 유도하지 않음, 상태만 보고하고 중단)
+```bash
+bash scripts/run_transmission_normalization.sh
+bash scripts/run_transmission_normalization.sh --preflight-only
+bash scripts/run_transmission_normalization.sh --dry-run
+bash scripts/run_transmission_normalization.sh --resume outputs/transmission_normalization_<timestamp>
+bash scripts/run_transmission_normalization.sh --digital-step-policy bitdepth_proxy --ablation-label bp_ablation_v1
+```
+
+- preflight (항상 먼저 실행, 실패 시 즉시 종료): 데이터 manifest, checkpoint 4종, 디스크
+  여유, `nvidia-smi`, `torch.cuda.is_available()`(NVML 오류는 별도로 명확히 보고, 컨테이너
+  재생성 유도하지 않음)
 - 기본 config grid (11개): `fixed_awgn, {fixed,skem}_{float32,int16,int8,int6,int4}`
-- `--match-fixed-keyframes`(기본 ON): 동일 영상에서 SKEM이 고른 keyframe 수에 맞춰
-  `fixed` selector의 `max_gop`을 자동 계산 — fixed vs SKEM을 **거의 동일 keyframe
-  수**로 비교 가능
-- resume: `run_transmission_reduction_eval.py`가 `--output-root`에 이미 있는
-  `per_video_metrics.csv`를 읽어 완료된 (video, config) 쌍을 건너뛰고, 매 쌍마다
-  CSV를 즉시 append/재기록 — 중단돼도 마지막으로 완료된 쌍부터 이어서 실행됨
-  (같은 `--resume DIR`로 재실행하면 됨; 별도 python 플래그 불필요)
-
-## 산출물 분리 — 양자화 효과 vs selector 효과
-
-`scripts/summarize_transmission_normalization.py --run-root <output_root>`가
-`aggregate.csv`에서 두 표를 분리 생성한다 (같은 스크립트가 정상화 스크립트
-마지막 단계로 자동 호출됨):
-
-- `quantization_effect.csv` — **selector 고정**, bit_depth만 변화
-  - selector별로 자기 자신의 float32(없으면 int16) 행을 기준으로 삼아
-    psnr_drop/ssim_drop/lpips_rise/byte_ratio 계산
-  - fixed의 양자화 효과와 skem의 양자화 효과가 서로 섞이지 않음(각자 자기 기준과만 비교)
-- `selector_effect.csv` — **bit_depth 고정**, selector만 변화(fixed vs skem)
-  - 같은 bit_depth의 fixed/skem 쌍만 비교, keyframe 수 delta도 함께 기록
-- 두 표 모두 `total_nan_or_inf_frames > 0`인 쪽이 끼면 `valid=false` + 사유를 남기고
-  delta 계산은 비움 — 숨기지 않고 나열만 함
-
-## baseline / Pareto 자격 규칙
-
-- `BASELINE_PREFERENCE = [fixed_float32, fixed_int16, skem_float32, skem_int16]`
-  — **AWGN은 baseline 후보에서 완전히 제외**(analog 잡음과 양자화 손실을 섞으면
-  "reliable digital 기준"이 될 수 없음), fallback도 없음
-- 후보가 `n_nan_or_inf_frames == 0`이 아니면 baseline도, Pareto 후보도 될 수 없음
-  (기존 "존재하면 AWGN으로 폴백" 동작 제거)
-- 아무 baseline도 유효하지 않으면 `pareto_frontier.csv`는 비고, `summary.json`에
-  이유가 명시됨(숨기지 않음)
-
-## run manifest
-
-- `run_transmission_reduction_eval.py`가 매 실행 종료 시
-  `<output_root>/run_manifest.json`을 `sgdjscc_lab.utils.run_manifest`로 생성
-  (soft dependency — 모듈이 없으면 `status: "unavailable"`만 남기고 스윕 자체는
-  실패시키지 않음)
-- 기록 항목: git commit/dirty, 실행 argv(`captured`), resolved config, seed
-  (`not_set` — 이 스크립트는 `--seed` 인자가 없음), dataset manifest sha256,
-  존재하는 checkpoint 4종의 sha256, Python/CUDA/GPU 환경, exact/proxy 필드 목록,
-  `total_nan_or_inf_frames`
+- resume: python 드라이버가 `run_signature.json`으로 조건 일치를 확인하고, 완료된
+  (video, config)는 건너뛰며, 매 pair마다 CSV를 원자적(`os.replace`)으로 즉시 갱신 —
+  중단돼도 마지막 완료 pair부터 이어서 실행됨
 
 ## 알려진 한계
 
-- **16GB급 단일 GPU에서 digital_packet 설정이 OOM 날 수 있음** — ModelBundle
-  (VAE + MDTv2 backbone + ControlNet + CLIP ViT-L/14 + MuGE Canny + 캡션 모델 +
-  LPIPS)만으로 이미 ~13GB를 점유, canny 재전송 net(WITT decoder) forward에서
-  추가 할당이 필요한 순간 여유가 없으면 `CUDA out of memory`가 남. AWGN 경로는
-  동일 GPU에서 안정적으로 통과했지만 digital 경로(양쪽 다 fresh process, 동일
-  프레임)는 재현적으로 실패해 — 이 코드 수정 자체의 결함이 아니라(NaN 재현 경로는
-  실제로 `_compute_step`을 지나 diffusion decode까지 정상 진입했다) 리소스 문제로
-  확인됨. 실측은 VRAM 여유가 큰 원격 다중-GPU 서버에서 수행할 것.
-- 확인 방법: `bash scripts/run_transmission_normalization.sh --video-ids
-  01_person_walk --max-frames 2 --configs fixed_int4 --device cuda:0` 형태의
-  최소 smoke만으로도 재현 가능 — 전체 스윕 전에 소형 GPU에서는 이 smoke조차
-  실패할 수 있다는 점을 인지할 것.
-- 과거 `results/transmission_20260818` run의 `int16: 52 NaN` 수치는 이 수정
-  **이전** 상태의 기록이다 — 재현 시도 시 새 run으로 남기고 과거 수치를 덮어쓰지 않음.
+- **16GB급 단일 GPU에서 digital_packet 설정이 OOM 날 수 있음** — ModelBundle만으로
+  이미 ~13GB 점유. AWGN 경로는 동일 GPU에서 안정적으로 통과 — 이 코드 수정 자체의
+  결함이 아니라 리소스 문제로 확인됨. 실측은 VRAM 여유가 큰 원격 다중-GPU 서버에서
+  수행할 것
+- 과거 `results/transmission_20260818` run의 `int16: 52 NaN` 수치는 이 수정 **이전**
+  상태의 기록이다 — 재현 시도 시 새 run으로 남기고 과거 수치를 덮어쓰지 않음
 
 ## 테스트
 
-- `tests/test_digital_step_matching.py` (32개) — `_digital_quant_snr_db`/
-  `_digital_signal_scale`의 전 bit_depth·경계값 finite 검증, AWGN 경로 수식 불변
-  회귀, `assert_finite`/`NonFiniteError` 유닛 테스트, canny 재전송이 기대하는
-  텐서 타입 회귀
-- `tests/test_transmission_reduction_eval.py` — baseline AWGN 배제, resume
-  CSV round-trip, run manifest 연동
-- `tests/test_summarize_transmission_normalization.py` — 양자화/selector 효과
-  표 분리 로직
+- `tests/test_digital_step_matching.py` — `_digital_quant_snr_db`/`_digital_effective_snr_db`/
+  `_digital_signal_scale`의 3개 정책·경계값 finite 검증, AWGN 경로 수식 불변 회귀,
+  `_compute_step`의 `digital_bit_depth`/`digital_policy` 명시적 override(전역 channel
+  객체 없이도 동작) 검증
+- `tests/test_packet_bundle.py` — `measure_quantization_error` 실측 NMSE/SNR,
+  `decode_frame_bundle`의 `visual_metadata` round-trip
+- `tests/test_receiver_runtime.py` — receiver가 패킷 metadata에서 bit_depth/policy를
+  도출하고 `jscc.channel_model`을 참조하지 않음을 명시적으로 검증
+- `tests/test_transmission_reduction_eval.py` — signature/resume 안전성, 유효성 조건
+  5가지, rate_matching, artifact hashing, run manifest hard-dependency
+- `tests/test_summarize_transmission_normalization.py` — bytes/video vs bytes/frame,
+  유효성 조건 재검증, skem backend 라벨링, ablation 정책 경고
+- `tests/test_run_manifest.py` (35개) — commit/dirty·seed·checkpoint hash·resolved
+  config 판정
 - GPU 불필요(전부 CPU) — 실제 모델 smoke는 위 "알려진 한계" 절 참고

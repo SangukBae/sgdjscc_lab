@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -29,13 +30,17 @@ mod = _load_module()
 
 
 def _row(selector, channel, bit_depth, psnr, ssim, lpips, bytes_, n_nan=0, n_kf=3):
+    bytes_per_frame = (bytes_ / 12) if bytes_ != "" else ""
     return {
         "config": f"{selector}_{channel}", "selector": selector, "channel": channel,
-        "bit_depth": bit_depth, "psss_backend_kind": "", "n_videos": 10,
+        "bit_depth": bit_depth, "psss_backend_kind": "", "digital_step_policy": "fixed_reference",
+        "n_videos": 10,
         "total_frames": 120, "total_quality_frames": 120, "valid_frame_ratio": 1.0,
+        "all_finite_metrics": True, "all_expected_videos_present": True,
         "mean_psnr": psnr, "mean_ssim": ssim, "mean_lpips": lpips,
-        "mean_latent_elements": 294912, "mean_total_bundle_bytes": bytes_,
-        "mean_n_keyframes_selected": n_kf,
+        "mean_latent_elements": 294912, "mean_total_bundle_bytes_per_video": bytes_,
+        "mean_total_bundle_bytes_per_frame": bytes_per_frame,
+        "mean_n_keyframes_selected": n_kf, "keyframe_count_matched": "",
         "analog_no_wire_bytes": (channel == "awgn"),
         "total_nan_or_inf_frames": n_nan, "nonfinite_stages": "step_match" if n_nan else "",
     }
@@ -144,6 +149,47 @@ class TestSelectorEffect:
         assert out[0]["psnr_delta_skem_minus_fixed"] == ""
         assert "non-finite" in out[0]["note"]
 
+    def test_skem_backend_kind_reported_never_labeled_real_when_proxy(self):
+        rows = [
+            _row("fixed", "int8", 8, 24.0, 0.79, 0.40, 40000),
+            {**_row("skem", "int8", 8, 24.3, 0.80, 0.38, 24000), "psss_backend_kind": "proxy"},
+        ]
+        out = mod.build_selector_effect(rows)
+        assert out[0]["skem_psss_backend_kind"] == "proxy"
+
+    def test_keyframe_count_matched_field_passed_through(self):
+        rows = [
+            {**_row("fixed", "int8", 8, 24.0, 0.79, 0.40, 40000), "keyframe_count_matched": "True"},
+            _row("skem", "int8", 8, 24.3, 0.80, 0.38, 24000),
+        ]
+        out = mod.build_selector_effect(rows)
+        assert out[0]["keyframe_count_matched"] == "True"
+
+
+class TestValidityConditions:
+    def test_non_finite_metrics_makes_row_invalid(self):
+        row = _row("fixed", "int8", 8, 24.0, 0.79, 0.40, 40000)
+        row["all_finite_metrics"] = "False"
+        assert mod._is_valid(row) is False
+
+    def test_incomplete_valid_frame_ratio_makes_row_invalid(self):
+        row = _row("fixed", "int8", 8, 24.0, 0.79, 0.40, 40000)
+        row["valid_frame_ratio"] = "0.8"
+        assert mod._is_valid(row) is False
+
+    def test_missing_expected_video_makes_row_invalid(self):
+        row = _row("fixed", "int8", 8, 24.0, 0.79, 0.40, 40000)
+        row["all_expected_videos_present"] = "False"
+        assert mod._is_valid(row) is False
+
+    def test_all_conditions_satisfied_is_valid(self):
+        row = _row("fixed", "int8", 8, 24.0, 0.79, 0.40, 40000)
+        assert mod._is_valid(row) is True
+
+    def test_missing_columns_default_to_valid_for_backward_compat(self):
+        row = {"total_nan_or_inf_frames": 0}
+        assert mod._is_valid(row) is True
+
 
 class TestRunCli:
     def test_run_writes_both_csvs_and_summary(self, tmp_path):
@@ -169,3 +215,19 @@ class TestRunCli:
         import pytest
         with pytest.raises(FileNotFoundError):
             mod.run(["--run-root", str(tmp_path)])
+
+    def test_run_reports_ablation_policies_in_summary(self, tmp_path, capsys):
+        rows = [
+            {**_row("fixed", "float32", 32, 24.5, 0.80, 0.38, 100000), "digital_step_policy": "fixed_reference"},
+            {**_row("fixed", "int8", 8, 24.0, 0.79, 0.40, 25000), "digital_step_policy": "bitdepth_proxy"},
+        ]
+        agg_path = tmp_path / "aggregate.csv"
+        with open(agg_path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+
+        mod.run(["--run-root", str(tmp_path)])
+        summary = json.loads((tmp_path / "normalization_effect_summary.json").read_text())
+        assert summary["ablation_policies_present"] == ["bitdepth_proxy"]
+        assert "ABLATION" in capsys.readouterr().err

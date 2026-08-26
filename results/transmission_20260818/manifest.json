@@ -1,0 +1,164 @@
+{
+  "schema_version": 2,
+  "run_id": "transmission_20260818",
+  "generated_at": "2026-08-26T05:21:28.069707+00:00",
+  "git": {
+    "commit": "unknown",
+    "dirty": "unknown",
+    "branch": "unknown"
+  },
+  "command": {
+    "text": "python scripts/run_transmission_reduction_eval.py --configs fixed_awgn,fixed_int16,fixed_int8,fixed_int6,fixed_int4,skem_int16,skem_int8,skem_int6,skem_int4 --device cuda:0 --output-root outputs/transmission_reduction_full_20260818_043425",
+    "argv": "unknown",
+    "source": "reconstructed"
+  },
+  "seed": "not_set",
+  "resolved_config": {
+    "status": "config_source_only",
+    "resolved": "unknown",
+    "config_source": {
+      "path": "results/transmission_20260818/config_source/composed.yaml",
+      "sha256": "ca8a8ad77166a29579c8c84998133ba46d7b2cf3e5688f607783915ece476950",
+      "note": "root config only (the _defaults_ list); this run executed 9 distinct --configs variants (fixed_awgn/int16/int8/int6/int4, skem_int16/int8/int6/int4) via CLI-level channel/selector/bit_depth overrides in scripts/run_transmission_reduction_eval.py, none of which are captured in this single saved file. The true per-variant resolved config cannot be reconstructed with confidence from this file alone."
+    }
+  },
+  "dataset": {
+    "ref": "data/etri_video_eval (10 videos, ETRI batch eval set)",
+    "hash": "unknown"
+  },
+  "checkpoints": {
+    "status": "unknown",
+    "items": {}
+  },
+  "environment": {
+    "python_version": "unknown",
+    "platform": "unknown",
+    "torch_version": "unknown",
+    "cuda_available": "unknown",
+    "cuda_version": "unknown",
+    "gpu_name": "unknown"
+  },
+  "evaluator_versions": {
+    "psnr": "unknown",
+    "ssim": "unknown",
+    "lpips": "unknown",
+    "sgdjscc_lab": "unknown"
+  },
+  "original_artifact_paths": {
+    "output_root": "outputs/transmission_reduction_full_20260818_043425",
+    "logs": "outputs/transmission_reduction_full_20260818_043425/logs",
+    "packets": "outputs/transmission_reduction_full_20260818_043425/packets",
+    "recon_videos": "outputs/transmission_reduction_full_20260818_043425/recon_videos",
+    "note": "large binary artifacts kept untracked under outputs/; only CSV/JSON/config copied into results/, README.md copied and then annotated (see artifacts.\"README.md\".matches)"
+  },
+  "artifacts": {
+    "README.md": {
+      "copied_path": "results/transmission_20260818/README.md",
+      "copied_sha256": "4ea2010741c7628310dcfc1f43348f2cb4fa4f3790a3b9ab66754307121b9a3d",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/README.md",
+      "original_sha256": "62970fa953d830dc05e29eb2230457891a1b7ec5295d27b4b680cae77043f53f",
+      "matches": false
+    },
+    "summary.json": {
+      "copied_path": "results/transmission_20260818/summary.json",
+      "copied_sha256": "6ea25d8838eb79ef7fbb1ab639199189c3c357b5cbb639b1b288a966aa2ca001",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/summary.json",
+      "original_sha256": "6ea25d8838eb79ef7fbb1ab639199189c3c357b5cbb639b1b288a966aa2ca001",
+      "matches": true
+    },
+    "aggregate.csv": {
+      "copied_path": "results/transmission_20260818/aggregate.csv",
+      "copied_sha256": "89a232091ec8a5a40b22f5622ff477feea6936e52befc73e590718a51f3e008a",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/aggregate.csv",
+      "original_sha256": "89a232091ec8a5a40b22f5622ff477feea6936e52befc73e590718a51f3e008a",
+      "matches": true
+    },
+    "pareto_frontier.csv": {
+      "copied_path": "results/transmission_20260818/pareto_frontier.csv",
+      "copied_sha256": "8194a171f81207d3b35c92604072423a0cd6d625156f4ed97b16de95202af9ba",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/pareto_frontier.csv",
+      "original_sha256": "8194a171f81207d3b35c92604072423a0cd6d625156f4ed97b16de95202af9ba",
+      "matches": true
+    },
+    "per_video_metrics.csv": {
+      "copied_path": "results/transmission_20260818/per_video_metrics.csv",
+      "copied_sha256": "0f8f120ec155c557880fbf2fb20f6c4b5c1665e9c3ccc6e57b1f2566dc09b176",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/per_video_metrics.csv",
+      "original_sha256": "0f8f120ec155c557880fbf2fb20f6c4b5c1665e9c3ccc6e57b1f2566dc09b176",
+      "matches": true
+    },
+    "packet_components.csv": {
+      "copied_path": "results/transmission_20260818/packet_components.csv",
+      "copied_sha256": "9f2bed6087dec41710d26c0dbe8f4d795ae72dfafd8aaffa35666e1cf344fb45",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/packet_components.csv",
+      "original_sha256": "9f2bed6087dec41710d26c0dbe8f4d795ae72dfafd8aaffa35666e1cf344fb45",
+      "matches": true
+    },
+    "keyframe_selection.csv": {
+      "copied_path": "results/transmission_20260818/keyframe_selection.csv",
+      "copied_sha256": "260e56ab1b2e3bd077989d598bc57ff3f7673dd54907d226b40216671ebe906c",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/keyframe_selection.csv",
+      "original_sha256": "260e56ab1b2e3bd077989d598bc57ff3f7673dd54907d226b40216671ebe906c",
+      "matches": true
+    },
+    "keyframe_sweep.csv": {
+      "copied_path": "results/transmission_20260818/keyframe_sweep.csv",
+      "copied_sha256": "c82175a5ca7b01cf13d7aad9b4d7f08290198a5709391ccaad425a8b269bb130",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/keyframe_sweep.csv",
+      "original_sha256": "c82175a5ca7b01cf13d7aad9b4d7f08290198a5709391ccaad425a8b269bb130",
+      "matches": true
+    },
+    "source_size_report.csv": {
+      "copied_path": "results/transmission_20260818/source_size_report.csv",
+      "copied_sha256": "7c66bb19bf7c69abc56571f8682ca18524b3fa214936efb329a2a2603c7ab6eb",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/source_size_report.csv",
+      "original_sha256": "7c66bb19bf7c69abc56571f8682ca18524b3fa214936efb329a2a2603c7ab6eb",
+      "matches": true
+    },
+    "config_source/composed.yaml": {
+      "copied_path": "results/transmission_20260818/config_source/composed.yaml",
+      "copied_sha256": "ca8a8ad77166a29579c8c84998133ba46d7b2cf3e5688f607783915ece476950",
+      "original_path": "outputs/transmission_reduction_full_20260818_043425/configs/composed.yaml",
+      "original_sha256": "ca8a8ad77166a29579c8c84998133ba46d7b2cf3e5688f607783915ece476950",
+      "matches": true
+    }
+  },
+  "accounting": {
+    "exact_fields": [
+      "aggregate.csv:mean_total_bundle_bytes (unit: bytes/video — mean of per-video total bundle bytes across the 10 videos)",
+      "per_video_metrics.csv:total_bundle_bytes",
+      "packet_components.csv:total_bundle_bytes (equals actual .sgbundle file size)",
+      "source_size_report.csv:* (exact source MP4 sizes)"
+    ],
+    "proxy_fields": [
+      "keyframe_selection.csv:estimated_digital_channel_symbols (unavailable — no --bits-per-symbol given)",
+      "keyframe_selection.csv:estimated_wire_bytes (unavailable — no --bits-per-symbol given)",
+      "keyframe_selection.csv / keyframe_sweep.csv:psss_backend_kind=proxy (CLIP proxy, not real PSSS VLM)",
+      "aggregate.csv/per_video_metrics.csv:fixed_awgn analog_channel_symbols_total (analog waveform, not a comparable digital byte count)"
+    ]
+  },
+  "nan_or_failure_counts": {
+    "fixed_awgn": 0,
+    "fixed_int16": 52,
+    "fixed_int8": 70,
+    "fixed_int6": 36,
+    "fixed_int4": 0,
+    "skem_int16": 52,
+    "skem_int8": 70,
+    "skem_int6": 36,
+    "skem_int4": 0
+  },
+  "extra": {
+    "seed_note": "scripts/run_transmission_reduction_eval.py takes no --seed argument; confirmed (grep of the script) that no global seed is set or recorded for this run — recorded as not_set, not unknown.",
+    "git_note": "commit/dirty state for the actual run was not captured at run time (2026-08-18, run on remote host per config_source's absolute paths under /home/wilco/...); recorded as unknown (include_git=False) rather than inferred from current HEAD, which postdates this run.",
+    "environment_note": "Python/CUDA/GPU environment for the actual run was not captured at run time; recorded as unknown rather than the current machine's environment, which is not necessarily the same as the remote host that ran this.",
+    "checkpoint_note": "checkpoint paths and hashes used by the historical remote run were not captured, and the pre-merge config source is insufficient to recover them confidently; checkpoints.status is therefore unknown rather than an empty list meaning no checkpoints were used.",
+    "command_note": "reconstructed from docs/experiments/2026-08-18_transmission_reduction.md's '실행' section, not captured live via sys.argv at run time (this run predates run_manifest.py). Flag order/exact form may not match what was actually typed; treat as a faithful paraphrase, not a verbatim log.",
+    "baseline_interpretation_note": "fixed_int16/skem_int16 DID run (they are in configs_run) but are excluded from 'reliable digital baseline' consideration because 52/1000 frames were NaN/Inf (see nan_or_failure_counts and per_video_metrics.csv/aggregate.csv's n_nan_or_inf_frames / total_nan_or_inf_frames columns). float32 digital was never run at all (not in configs_run). fixed_awgn (analog) was therefore used only as a provisional/temporary quality baseline, not a reliable digital one. The pareto_frontier.csv-selected skem_int4 is a provisional candidate, not a finalized operating point — see docs/experiments/2026-08-18_transmission_reduction.md's '해석 제한' section.",
+    "source_experiment_doc": "docs/experiments/2026-08-18_transmission_reduction.md",
+    "migrated_from": "outputs/transmission_reduction_full_20260818_043425",
+    "migrated_at": "2026-08-26",
+    "corrected_at": "2026-08-26",
+    "correction_note": "this manifest was regenerated to fix: (1) composed.yaml mislabeled as resolved config -> now config_source with resolved=unknown, (2) command presented as if captured -> now explicitly source=reconstructed with argv=unknown, (3) seed=null -> now not_set (distinct from unknown), (4) added per-artifact copied-vs-original hash comparison, (5) git fields forced unknown via include_git=False instead of reflecting the generating session's own HEAD, (6) clarified that NaN-clean int4 candidates existed but no pre-designated reliable-digital baseline was valid, and (7) checkpoints are explicitly status=unknown rather than an ambiguous empty object. No numeric result values were changed."
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "output_root": "outputs/transmission_reduction_full_20260818_043425",
+  "configs_run": [
+    "fixed_awgn",
+    "fixed_int16",
+    "fixed_int8",
+    "fixed_int6",
+    "fixed_int4",
+    "skem_int16",
+    "skem_int8",
+    "skem_int6",
+    "skem_int4"
+  ],
+  "n_videos": 10,
+  "quality_gate": {
+    "psnr_drop_db": 0.5,
+    "ssim_drop": 0.01,
+    "lpips_rise": 0.02
+  },
+  "pareto_baseline": {
+    "baseline_config": "fixed_awgn",
+    "baseline_is_analog": true,
+    "baseline_valid": true
+  },
+  "pareto_selected": {
+    "config": "skem_int4",
+    "selector": "skem",
+    "channel": "int4",
+    "bit_depth": 4,
+    "psss_backend_kind": "proxy",
+    "n_videos": 10,
+    "total_frames": 1000,
+    "total_quality_frames": 1000,
+    "valid_frame_ratio": 1.0,
+    "mean_psnr": 23.469648214340214,
+    "mean_ssim": 0.7335362510383129,
+    "mean_lpips": 0.25190738185495143,
+    "mean_latent_elements": 271974.4,
+    "mean_total_bundle_bytes": 2394550.1,
+    "analog_no_wire_bytes": false,
+    "total_nan_or_inf_frames": 0,
+    "baseline_config": "fixed_awgn",
+    "psnr_drop_db": -0.1343854122161936,
+    "ssim_drop": -0.004292944222688666,
+    "lpips_rise": -0.004277890585362876,
+    "within_quality_gate": true,
+    "quality_gate_failure_reason": "",
+    "rank": 0,
+    "selected_as_smallest_in_budget": true
+  },
+  "psss_backend_requested": "proxy",
+  "psss_model_id": null,
+  "use_scene_detector": true,
+  "bits_per_symbol": null,
+  "code_rate": 1.0,
+  "generated_at": "2026-08-18T06:55:21"
+}

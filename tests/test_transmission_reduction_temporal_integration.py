@@ -14,7 +14,10 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
 import torch
+from omegaconf import OmegaConf
+import types
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SRC = _REPO_ROOT / "src"
@@ -130,3 +133,67 @@ class TestTransmittingDecisionsFilter:
         records = sorted(result["records"], key=lambda r: r.index)
         assert all(r.recon is not None for r in records)
         assert all(r.recon.shape == frames[0].shape for r in records)
+
+
+class TestNonFiniteErrorAbortsPair:
+    """Task requirement: a NonFiniteError must abort the whole (video, config)
+    pair immediately (not substitute a NaN placeholder and keep going), and
+    must carry enough context (video/config/frame_index) for the caller
+    (run()'s per-config loop) to record the failure without re-deriving it."""
+
+    def test_nonfinite_error_propagates_with_video_config_frame_context(self, monkeypatch):
+        import sgdjscc_lab.pipelines.eval_pipeline as eval_pipeline
+        from sgdjscc_lab.utils.finite_checks import NonFiniteError
+
+        def _raise_on_first_frame(frame, models, run_cfg):
+            raise NonFiniteError("step_match", n_nan=1, n_inf=0, numel=10)
+
+        monkeypatch.setattr(eval_pipeline, "_reconstruct_with_cfg", _raise_on_first_frame)
+
+        frames = [torch.rand(1, 3, 32, 32) for _ in range(4)]
+        keyframe_extractor = KeyframeExtractor(SceneChangeDetector(), max_gop=4)
+        cfg = OmegaConf.create({})
+
+        with pytest.raises(NonFiniteError) as exc_info:
+            mod._run_temporal_pipeline(
+                frames, models=types.SimpleNamespace(device="cpu", text_extractor=None),
+                cfg=cfg, keyframe_extractor=keyframe_extractor,
+                channel_kind="awgn", video_key="v_test", config_name="fixed_awgn",
+                base_seed=1,
+            )
+        exc = exc_info.value
+        assert exc.stage == "step_match"
+        assert exc.context["video"] == "v_test"
+        assert exc.context["config"] == "fixed_awgn"
+        assert exc.context["frame_index"] == 0
+
+    def test_no_placeholder_substitution_exception_is_not_swallowed(self, monkeypatch):
+        # Regression: the old behavior caught NonFiniteError inside
+        # reconstruct_fn, substituted a NaN tensor, and returned normally so
+        # TemporalPipeline kept processing later frames. The new behavior
+        # must NOT catch-and-continue -- pipeline.run() itself must never
+        # return when a frame raises.
+        import sgdjscc_lab.pipelines.eval_pipeline as eval_pipeline
+        from sgdjscc_lab.utils.finite_checks import NonFiniteError
+
+        calls = {"n": 0}
+
+        def _raise_always(frame, models, run_cfg):
+            calls["n"] += 1
+            raise NonFiniteError("channel_transmit", n_nan=2, n_inf=0, numel=4)
+
+        monkeypatch.setattr(eval_pipeline, "_reconstruct_with_cfg", _raise_always)
+
+        frames = [torch.rand(1, 3, 32, 32) for _ in range(6)]
+        keyframe_extractor = KeyframeExtractor(SceneChangeDetector(), max_gop=6)
+        cfg = OmegaConf.create({})
+
+        with pytest.raises(NonFiniteError):
+            mod._run_temporal_pipeline(
+                frames, models=types.SimpleNamespace(device="cpu", text_extractor=None),
+                cfg=cfg, keyframe_extractor=keyframe_extractor,
+                channel_kind="awgn", video_key="v_test", config_name="fixed_awgn",
+            )
+        # Aborted at the FIRST failing call -- must not have kept retrying
+        # every remaining frame as if each were independently recoverable.
+        assert calls["n"] == 1

@@ -33,6 +33,16 @@ MATCH_FIXED_KEYFRAMES=1
 PREFLIGHT_ONLY=0
 DRY_RUN=0
 MIN_FREE_DISK_GIB=20
+SEED="${SEED:-2025}"
+DIGITAL_STEP_POLICY="${DIGITAL_STEP_POLICY:-fixed_reference}"
+ABLATION_LABEL="${ABLATION_LABEL:-}"
+PSSS_BACKEND="${PSSS_BACKEND:-proxy}"
+PSSS_MODEL_ID="${PSSS_MODEL_ID:-}"
+PSSS_DEVICE="${PSSS_DEVICE:-cpu}"
+PSSS_DTYPE="${PSSS_DTYPE:-fp32}"
+PSSS_THRESHOLD="${PSSS_THRESHOLD:-}"
+PSSS_MAX_SEGMENT_LENGTH="${PSSS_MAX_SEGMENT_LENGTH:-}"
+USE_SCENE_DETECTOR=0
 
 usage() {
   cat <<'EOF'
@@ -42,8 +52,11 @@ Usage: run_transmission_normalization.sh [options]
   --dry-run                   Print the exact commands that would run, without executing them.
   --resume DIR                Reuse an existing (possibly interrupted) output directory
                                instead of creating a new timestamped one. The underlying
-                               python driver skips (video, config) pairs already recorded
-                               in DIR/per_video_metrics.csv.
+                               python driver refuses to continue if the run's conditions
+                               (commit/dataset/config/checkpoint hash/seed/video list/
+                               granularity/PSSS settings) differ from run_signature.json
+                               already recorded there -- see docs/protocols/
+                               transmission_normalization.md.
   --device DEVICE             Default: cuda:0. Use "cpu" to skip GPU/CUDA/NVML checks
                                (not recommended for a real sweep).
   --configs CSV                Comma-separated config list (default: the full
@@ -52,9 +65,20 @@ Usage: run_transmission_normalization.sh [options]
   --max-frames N               Cap frames per video (smoke-test knob; default: all frames).
   --dataset-root PATH          Default: data/etri_video_eval under this checkout.
   --output-root PATH           Default: outputs/transmission_normalization_<timestamp>.
-  --no-match-fixed-keyframes   Disable rate/keyframe-count matching between fixed and SKEM
-                               (matching is ON by default -- see run_transmission_reduction_eval.py's
-                               --match-fixed-keyframes).
+  --no-match-fixed-keyframes   Disable exact keyframe-count matching between fixed and SKEM
+                               (ON by default -- FixedCountKeyframeSelector, see
+                               run_transmission_reduction_eval.py's --match-fixed-keyframes).
+  --seed N                     Base seed for Python/NumPy/PyTorch/CUDA (default: 2025).
+  --digital-step-policy NAME   fixed_reference (default) | bitdepth_proxy | quant_nmse.
+                               Anything but fixed_reference REQUIRES --ablation-label.
+  --ablation-label LABEL       Required when --digital-step-policy != fixed_reference.
+  --psss-backend NAME           mock | proxy (default) | real -- see --psss-model-id.
+  --psss-model-id ID            HF causal-LM/VLM id, required for --psss-backend real.
+  --psss-device DEVICE          Device for the PSSS backend (default: cpu).
+  --psss-dtype DTYPE            Dtype for the PSSS backend (default: fp32).
+  --psss-threshold FLOAT        PSSS/SKEM selection threshold (python default: 0.35).
+  --psss-max-segment-length N   PSSS/SKEM max segment length (python default: 16).
+  --use-scene-detector          Combine real scene-change detection with SKEM/PSSS.
   -h, --help                   Show this message.
 EOF
 }
@@ -71,6 +95,16 @@ while [ $# -gt 0 ]; do
     --dataset-root) DATASET_ROOT="$2"; shift 2 ;;
     --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
     --no-match-fixed-keyframes) MATCH_FIXED_KEYFRAMES=0; shift ;;
+    --seed) SEED="$2"; shift 2 ;;
+    --digital-step-policy) DIGITAL_STEP_POLICY="$2"; shift 2 ;;
+    --ablation-label) ABLATION_LABEL="$2"; shift 2 ;;
+    --psss-backend) PSSS_BACKEND="$2"; shift 2 ;;
+    --psss-model-id) PSSS_MODEL_ID="$2"; shift 2 ;;
+    --psss-device) PSSS_DEVICE="$2"; shift 2 ;;
+    --psss-dtype) PSSS_DTYPE="$2"; shift 2 ;;
+    --psss-threshold) PSSS_THRESHOLD="$2"; shift 2 ;;
+    --psss-max-segment-length) PSSS_MAX_SEGMENT_LENGTH="$2"; shift 2 ;;
+    --use-scene-detector) USE_SCENE_DETECTOR=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -177,15 +211,32 @@ else
   log "using output root: $OUTPUT_ROOT"
 fi
 
+if [ "$DIGITAL_STEP_POLICY" != "fixed_reference" ] && [ -z "$ABLATION_LABEL" ]; then
+  fail "--digital-step-policy $DIGITAL_STEP_POLICY requires --ablation-label (it is a decoder-step ablation, not the quantization comparison)"
+fi
+if [ "$PSSS_BACKEND" = "real" ] && [ -z "$PSSS_MODEL_ID" ]; then
+  fail "--psss-backend real requires --psss-model-id"
+fi
+
 SWEEP_CMD=("$PYTHON_BIN" scripts/run_transmission_reduction_eval.py
   --output-root "$OUTPUT_ROOT"
   --dataset-root "$DATASET_ROOT"
   --configs "$CONFIGS"
   --device "$DEVICE"
+  --seed "$SEED"
+  --digital-step-policy "$DIGITAL_STEP_POLICY"
+  --psss-backend "$PSSS_BACKEND"
+  --psss-device "$PSSS_DEVICE"
+  --psss-dtype "$PSSS_DTYPE"
 )
 [ -n "$VIDEO_IDS" ] && SWEEP_CMD+=(--video-ids "$VIDEO_IDS")
 [ -n "$MAX_FRAMES" ] && SWEEP_CMD+=(--max-frames "$MAX_FRAMES")
 [ "$MATCH_FIXED_KEYFRAMES" -eq 1 ] && SWEEP_CMD+=(--match-fixed-keyframes)
+[ -n "$ABLATION_LABEL" ] && SWEEP_CMD+=(--ablation-label "$ABLATION_LABEL")
+[ -n "$PSSS_MODEL_ID" ] && SWEEP_CMD+=(--psss-model-id "$PSSS_MODEL_ID")
+[ -n "$PSSS_THRESHOLD" ] && SWEEP_CMD+=(--psss-threshold "$PSSS_THRESHOLD")
+[ -n "$PSSS_MAX_SEGMENT_LENGTH" ] && SWEEP_CMD+=(--psss-max-segment-length "$PSSS_MAX_SEGMENT_LENGTH")
+[ "$USE_SCENE_DETECTOR" -eq 1 ] && SWEEP_CMD+=(--use-scene-detector)
 
 SUMMARIZE_CMD=("$PYTHON_BIN" scripts/summarize_transmission_normalization.py --run-root "$OUTPUT_ROOT")
 
@@ -212,9 +263,12 @@ if ! "${SUMMARIZE_CMD[@]}" 2>&1 | tee -a "$LOG_FILE"; then
 fi
 
 log "done. Results in $OUTPUT_ROOT:"
-log "  per_video_metrics.csv / aggregate.csv        -- full quality + byte accounting"
+log "  per_video_metrics.csv / aggregate.csv        -- full quality + bytes/video + bytes/frame"
+log "  failed_pairs.csv                             -- (video, config) aborted at first non-finite value"
 log "  quantization_effect.csv                      -- bit_depth effect, selector held constant"
 log "  selector_effect.csv                          -- fixed-vs-SKEM effect, bit_depth held constant"
+log "  rate_matching.csv                            -- fixed vs SKEM byte closeness at matched keyframe count"
 log "  pareto_frontier.csv / summary.json            -- Pareto candidate under the quality gate"
-log "  run_manifest.json                            -- commit/dirty, argv, resolved config, hashes, env"
-log "  README.md                                    -- this run's own description"
+log "  run_manifest_initial.json / run_manifest.json -- commit/dirty, argv, resolved config, hashes, env"
+log "  run_signature.json                           -- resume safety signature (refuses a mismatched resume)"
+log "  README.md                                    -- this run's own description (한국어)"

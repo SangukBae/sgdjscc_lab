@@ -58,6 +58,7 @@
 | [protocols/video_rate_benchmark.md](./protocols/video_rate_benchmark.md) | 의미통신 payload vs H.264/H.265/AV1 코덱 비교 방법 |
 | [protocols/datasets.md](./protocols/datasets.md) | 데이터셋 역할·stage 매핑·변환 워크플로 |
 | [protocols/reproducibility.md](./protocols/reproducibility.md) | checkpoint 선택 기준, `paper_mode` 사용법 |
+| [protocols/results_registry.md](./protocols/results_registry.md) | 추적 `results/` 구조, run manifest 스키마·생성 절차 |
 | [protocols/training.md](./protocols/training.md) | stage-aware 학습 CLI, export, real-model smoke 검증 |
 | [protocols/transmission_normalization.md](./protocols/transmission_normalization.md) | digital blind-SNR NaN 수정, `run_transmission_normalization.sh` 절차, 양자화/selector 효과 분리 |
 

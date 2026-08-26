@@ -26,10 +26,12 @@ if str(_SRC) not in sys.path:
 
 from sgdjscc_lab.channels import DigitalPacketChannel
 from sgdjscc_lab.pipelines.infer_pipeline import (
+    DIGITAL_STEP_POLICIES,
     _DIGITAL_SNR_CEIL_DB,
     _DIGITAL_SNR_FLOOR_DB,
     _apply_channel,
     _compute_step,
+    _digital_effective_snr_db,
     _digital_quant_snr_db,
     _digital_signal_scale,
 )
@@ -62,6 +64,106 @@ class TestDigitalQuantSnrDb:
             snr = _digital_quant_snr_db(bit_depth)
             assert _DIGITAL_SNR_FLOOR_DB <= snr <= _DIGITAL_SNR_CEIL_DB
             assert math.isfinite(snr)
+
+
+class TestDigitalEffectiveSnrDbPolicies:
+    def test_fixed_reference_always_returns_ceiling_regardless_of_bit_depth(self):
+        for bit_depth in (4, 6, 8, 16):
+            assert _digital_effective_snr_db(bit_depth, "fixed_reference") == _DIGITAL_SNR_CEIL_DB
+
+    def test_bitdepth_proxy_matches_the_proxy_formula(self):
+        for bit_depth in (4, 6, 8, 16):
+            assert _digital_effective_snr_db(bit_depth, "bitdepth_proxy") == _digital_quant_snr_db(bit_depth)
+
+    def test_lossless_bit_depth_always_ceiling_regardless_of_policy(self):
+        # float32 is a structural fact (no quantization error at all), not a
+        # policy choice -- every policy must agree it's the ceiling.
+        for policy in DIGITAL_STEP_POLICIES:
+            kwargs = {"quant_snr_db": 5.0} if policy == "quant_nmse" else {}
+            assert _digital_effective_snr_db(32, policy, **kwargs) == _DIGITAL_SNR_CEIL_DB
+
+    def test_quant_nmse_uses_the_supplied_measured_value(self):
+        assert _digital_effective_snr_db(8, "quant_nmse", quant_snr_db=17.3) == pytest.approx(17.3)
+
+    def test_quant_nmse_clamps_to_floor_and_ceiling(self):
+        assert _digital_effective_snr_db(8, "quant_nmse", quant_snr_db=-999.0) == _DIGITAL_SNR_FLOOR_DB
+        assert _digital_effective_snr_db(8, "quant_nmse", quant_snr_db=999.0) == _DIGITAL_SNR_CEIL_DB
+
+    def test_quant_nmse_without_a_measured_value_raises_not_silently_substitutes(self):
+        with pytest.raises(ValueError, match="quant_nmse"):
+            _digital_effective_snr_db(8, "quant_nmse", quant_snr_db=None)
+
+    def test_unknown_policy_raises(self):
+        with pytest.raises(ValueError, match="unknown digital_policy"):
+            _digital_effective_snr_db(8, "made_up_policy")
+
+
+class TestComputeStepDigitalPolicyDispatch:
+    """_compute_step must honor digital_bit_depth/digital_policy explicitly,
+    independent of jscc.channel_model (the receiver-uses-packet-metadata
+    contract)."""
+
+    def _pipe(self):
+        return types.SimpleNamespace(
+            scheduler=types.SimpleNamespace(alphas_cumprod=torch.linspace(0.999, 0.001, 1000))
+        )
+
+    def test_explicit_digital_bit_depth_overrides_missing_channel_model(self):
+        # jscc.channel_model is None (no DigitalPacketChannel at all) -- the
+        # explicit digital_bit_depth argument alone must still select the
+        # digital branch, exactly as a bundle receiver with no in-process
+        # channel object would call this.
+        jscc = _fake_jscc(channel_model=None, snr_prediction_net=lambda x: torch.full((x.shape[0],), 10.0))
+        cur_step, cur_snr = _compute_step(
+            jscc=jscc, encode_features_hat=torch.randn(1, 4, 4, 4), power_scalar=torch.tensor([1.0]),
+            signal_scale=torch.ones(1, 1), pipe=self._pipe(), step_style="continuous",
+            use_jscc_feat=True, use_gt_csi=False, device=torch.device("cpu"),
+            digital_bit_depth=8, digital_policy="bitdepth_proxy",
+        )
+        assert torch.isfinite(cur_step).all()
+        assert torch.allclose(cur_snr, torch.full_like(cur_snr, _digital_quant_snr_db(8)))
+
+    def test_fixed_reference_policy_gives_identical_step_across_bit_depths(self):
+        jscc = _fake_jscc(channel_model=None)
+        power_scalar = torch.tensor([50.0])
+        steps = []
+        for bit_depth in (4, 8, 16):
+            cur_step, _ = _compute_step(
+                jscc=jscc, encode_features_hat=torch.randn(1, 4, 4, 4), power_scalar=power_scalar,
+                signal_scale=torch.ones(1, 1), pipe=self._pipe(), step_style="continuous",
+                use_jscc_feat=True, use_gt_csi=False, device=torch.device("cpu"),
+                digital_bit_depth=bit_depth, digital_policy="fixed_reference",
+            )
+            steps.append(cur_step)
+        assert torch.allclose(steps[0], steps[1])
+        assert torch.allclose(steps[1], steps[2])
+
+    def test_bitdepth_proxy_policy_gives_different_steps_across_bit_depths(self):
+        jscc = _fake_jscc(channel_model=None)
+        power_scalar = torch.tensor([50.0])
+        cur_step_4, _ = _compute_step(
+            jscc=jscc, encode_features_hat=torch.randn(1, 4, 4, 4), power_scalar=power_scalar,
+            signal_scale=torch.ones(1, 1), pipe=self._pipe(), step_style="continuous",
+            use_jscc_feat=True, use_gt_csi=False, device=torch.device("cpu"),
+            digital_bit_depth=4, digital_policy="bitdepth_proxy",
+        )
+        cur_step_16, _ = _compute_step(
+            jscc=jscc, encode_features_hat=torch.randn(1, 4, 4, 4), power_scalar=power_scalar,
+            signal_scale=torch.ones(1, 1), pipe=self._pipe(), step_style="continuous",
+            use_jscc_feat=True, use_gt_csi=False, device=torch.device("cpu"),
+            digital_bit_depth=16, digital_policy="bitdepth_proxy",
+        )
+        assert not torch.allclose(cur_step_4, cur_step_16)
+
+    def test_quant_nmse_policy_uses_supplied_measured_snr(self):
+        jscc = _fake_jscc(channel_model=None)
+        cur_step, cur_snr = _compute_step(
+            jscc=jscc, encode_features_hat=torch.randn(1, 4, 4, 4), power_scalar=torch.tensor([1.0]),
+            signal_scale=torch.ones(1, 1), pipe=self._pipe(), step_style="continuous",
+            use_jscc_feat=True, use_gt_csi=False, device=torch.device("cpu"),
+            digital_bit_depth=8, digital_policy="quant_nmse", digital_quant_snr_db=22.0,
+        )
+        assert torch.allclose(cur_snr, torch.full_like(cur_snr, 22.0))
 
 
 class TestDigitalSignalScale:

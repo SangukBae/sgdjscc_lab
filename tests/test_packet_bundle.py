@@ -29,9 +29,11 @@ from sgdjscc_lab.transmission.packet_bundle import (
     build_frame_bundle,
     build_side_info_bundle,
     decode_frame_bundle,
+    measure_quantization_error,
     parse_bundle,
     serialize_bundle,
 )
+from sgdjscc_lab.transmission.quantization import quantize_tensor
 
 
 def _make_digital_bundle(keyframe_index=3, bit_depth=8):
@@ -94,6 +96,75 @@ class TestFullBundleRoundTrip:
         assert decoded["visual_latents"] is None
         assert decoded["visual_channel_symbols"] == 8 * 4096
         assert decoded["caption"] == "a car passing"
+
+
+class TestQuantizationMetadataRoundTrip:
+    """The receiver must be able to read each patch's real bit_depth and
+    measured quantization NMSE/SNR from the packet itself -- never from a
+    process-global channel object (see pipelines/infer_pipeline.py::
+    _compute_step's digital_bit_depth/digital_quant_snr_db contract)."""
+
+    def test_measure_quantization_error_lossy_gives_finite_positive_snr(self):
+        torch.manual_seed(0)
+        x = torch.randn(1, 16, 16, 16)
+        q = quantize_tensor(x, bit_depth=4, granularity="per_tensor")
+        metrics = measure_quantization_error(x, q)
+        assert metrics["quant_mse"] > 0
+        assert metrics["quant_signal_power"] > 0
+        assert metrics["quant_snr_db"] is not None
+        import math
+        assert math.isfinite(metrics["quant_snr_db"])
+
+    def test_measure_quantization_error_lossless_reports_none_snr_not_a_fabricated_number(self):
+        torch.manual_seed(0)
+        x = torch.randn(1, 16, 16, 16)
+        q = quantize_tensor(x, bit_depth=32)
+        metrics = measure_quantization_error(x, q)
+        assert metrics["quant_mse"] == 0.0
+        assert metrics["quant_snr_db"] is None
+
+    def test_finer_bit_depth_measures_higher_snr_than_coarser(self):
+        torch.manual_seed(0)
+        x = torch.randn(1, 16, 16, 16)
+        snr_4 = measure_quantization_error(x, quantize_tensor(x, bit_depth=4))["quant_snr_db"]
+        snr_8 = measure_quantization_error(x, quantize_tensor(x, bit_depth=8))["quant_snr_db"]
+        assert snr_8 > snr_4
+
+    def test_decoded_bundle_carries_per_patch_bit_depth_and_quant_snr(self):
+        bundle, visual, _edge = _make_digital_bundle(bit_depth=6)
+        decoded = decode_frame_bundle(serialize_bundle(bundle))
+        assert decoded["visual_metadata"] is not None
+        assert len(decoded["visual_metadata"]) == len(decoded["visual_latents"]) == 2
+        for i, meta in enumerate(decoded["visual_metadata"]):
+            assert meta["bit_depth"] == 6
+            assert meta["patch_index"] == i
+            assert "quant_snr_db" in meta
+            assert isinstance(meta["quant_snr_db"], float)
+
+    def test_lossless_bundle_reports_none_quant_snr_per_patch(self):
+        bundle, _visual, _edge = _make_digital_bundle(bit_depth=32)
+        decoded = decode_frame_bundle(serialize_bundle(bundle))
+        for meta in decoded["visual_metadata"]:
+            assert meta["bit_depth"] == 32
+            assert meta["quant_snr_db"] is None
+
+    def test_analog_bundle_has_no_visual_metadata(self):
+        bundle = build_frame_bundle(
+            visual_latent_patches=None, visual_is_analog=True, visual_bit_depth=None,
+            visual_granularity="per_tensor", visual_channel_dim=1,
+            visual_channel_symbols=8 * 4096, caption="x", edge_tensor=None,
+            edge_bit_depth=8, keyframe_index=0, manifest={},
+        )
+        decoded = decode_frame_bundle(serialize_bundle(bundle))
+        assert decoded["visual_metadata"] is None
+
+    def test_quant_metadata_bytes_are_counted_in_the_real_serialized_packet(self):
+        # The metadata isn't free -- it's part of the real per-patch WirePacket
+        # bytes, so byte_accounting.py's exact totals already include it.
+        bundle, _visual, _edge = _make_digital_bundle(bit_depth=8)
+        visual_item = bundle.get("visual_patch_000")
+        assert visual_item is not None
+        assert visual_item.byte_len > 0
 
 
 class TestExactByteAccounting:

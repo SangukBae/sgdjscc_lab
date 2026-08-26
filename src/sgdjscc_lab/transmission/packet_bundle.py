@@ -31,6 +31,7 @@ decoding and the round trip still succeeds).
 from __future__ import annotations
 
 import json
+import math
 import struct
 import zlib
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ from typing import Any, Dict, List, Optional
 
 from sgdjscc_lab.transmission.quantization import (
     LOSSLESS_BIT_DEPTH,
+    QuantizedTensor,
     dequantize_tensor,
     quantize_tensor,
 )
@@ -222,6 +224,39 @@ def _visual_elements(patches_shape) -> int:
     return int(n_patches) * int(c) * int(h) * int(w)
 
 
+def measure_quantization_error(original, q: QuantizedTensor) -> Dict[str, Any]:
+    """Real per-tensor quantization NMSE/SNR, measured at encode time.
+
+    Dequantizes *q* immediately (in-process, no extra transmission) and
+    compares it against *original* (the pre-quantization tensor). This is the
+    ACTUAL measured error for this exact packet — never the bitdepth-only
+    proxy formula in ``pipelines/infer_pipeline.py::_digital_quant_snr_db``
+    (labeled ``"bitdepth_proxy"`` there specifically so it is never confused
+    with a measurement).
+
+    Returns ``{"quant_mse", "quant_signal_power", "quant_snr_db"}``, embedded
+    into the packet's own ``metadata`` (so its bytes are counted like any
+    other metadata field — see ``transmission/byte_accounting.py``) and later
+    read back by the RECEIVER from the parsed packet (never assumed from a
+    process-global channel object — see ``pipelines/infer_pipeline.py::
+    _compute_step``'s ``digital_policy="quant_nmse"``).
+
+    ``quant_snr_db`` is ``None`` (never a fabricated number) for a lossless
+    packet (``bit_depth=32``, exact zero error) or a degenerate all-zero
+    *original* tensor (signal power 0, SNR undefined).
+    """
+    import torch
+
+    recon = dequantize_tensor(q, dtype=original.dtype, device=original.device)
+    mse = float(torch.mean((original - recon) ** 2).item())
+    signal_power = float(torch.mean(original ** 2).item())
+    if mse <= 0.0 or signal_power <= 0.0:
+        snr_db = None
+    else:
+        snr_db = 10.0 * math.log10(signal_power / mse)
+    return {"quant_mse": mse, "quant_signal_power": signal_power, "quant_snr_db": snr_db}
+
+
 def build_frame_bundle(
     visual_latent_patches,          # torch.Tensor [N,C,H,W] or None
     visual_is_analog: bool,
@@ -265,11 +300,12 @@ def build_frame_bundle(
             sample = visual_latent_patches[patch_idx:patch_idx + 1]
             q = quantize_tensor(sample, bit_depth=visual_bit_depth,
                                  granularity=visual_granularity, channel_dim=visual_channel_dim)
+            quant_metrics = measure_quantization_error(sample, q)
             packet = WirePacket(
                 bit_depth=q.bit_depth, granularity=q.granularity, channel_dim=q.channel_dim,
                 shape=q.shape, scale=q.scale, zero_point=q.zero_point, pad_bits=q.pad_bits,
                 n_elements=q.n_elements, payload=q.packed, keyframe_index=keyframe_index,
-                metadata={"patch_index": patch_idx},
+                metadata={"patch_index": patch_idx, **quant_metrics},
             )
             data = serialize_wire_packet(packet, compress_metadata=compress_metadata)
             items.append(BundleItem(name=f"visual_patch_{patch_idx:03d}", kind="wire_packet", data=data))
@@ -350,6 +386,13 @@ def decode_frame_bundle(data: bytes, dtype=None, device: str = "cpu") -> Dict[st
 
     Returns a dict with:
       ``visual_latents``: list[Tensor] (one per patch) or None (analog visual)
+      ``visual_metadata``: list[dict] (one per patch, same order/length as
+        ``visual_latents``) or None. Each entry is
+        ``{"bit_depth", "quant_mse", "quant_signal_power", "quant_snr_db",
+        "patch_index"}`` decoded from THIS packet's own header/metadata — the
+        receiver-side source of truth for a digital step policy that must not
+        read a process-global channel object (see ``pipelines/
+        infer_pipeline.py::_compute_step``).
       ``visual_channel_symbols``: int (exact, always present)
       ``visual_is_analog``: bool
       ``caption``: str
@@ -372,6 +415,7 @@ def decode_frame_bundle(data: bytes, dtype=None, device: str = "cpu") -> Dict[st
     )
 
     visual_latents = None
+    visual_metadata = None
     visual_is_analog = False
     visual_channel_symbols = 0
     if visual_item is not None and visual_item.is_analog:
@@ -379,10 +423,12 @@ def decode_frame_bundle(data: bytes, dtype=None, device: str = "cpu") -> Dict[st
         visual_channel_symbols = visual_item.channel_symbols
     elif visual_patch_items:
         visual_latents = []
+        visual_metadata = []
         for it in visual_patch_items:
             packet = parse_wire_packet(it.data)
             tensor = dequantize_tensor(packet.to_quantized_tensor(), dtype=dtype or torch.float32, device=device)
             visual_latents.append(tensor)
+            visual_metadata.append({"bit_depth": packet.bit_depth, **packet.metadata})
             visual_channel_symbols += packet.n_elements
 
     captions_item = bundle.get("captions")
@@ -417,6 +463,7 @@ def decode_frame_bundle(data: bytes, dtype=None, device: str = "cpu") -> Dict[st
 
     return {
         "visual_latents": visual_latents,
+        "visual_metadata": visual_metadata,
         "visual_is_analog": visual_is_analog,
         "visual_channel_symbols": visual_channel_symbols,
         "caption": caption,

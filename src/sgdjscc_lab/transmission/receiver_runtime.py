@@ -104,8 +104,17 @@ def encode_frame_to_bundle_bytes(
     return serialize_bundle(bundle), int(encode_features.numel())
 
 
-def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg):
-    """Receiver: reconstruct a full frame using only serialized bundle bytes."""
+def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg, digital_step_policy: str = "bitdepth_proxy"):
+    """Receiver: reconstruct a full frame using only serialized bundle bytes.
+
+    ``digital_step_policy`` selects how the diffusion decoder step is derived
+    from the digital channel (see ``pipelines/infer_pipeline.py::
+    DIGITAL_STEP_POLICIES``). The bit_depth and (for ``"quant_nmse"``) the
+    measured quantization SNR are read from EACH patch's own decoded packet
+    metadata (``decoded["visual_metadata"]``) — never from a process-global
+    channel object — so this receiver only ever uses what the received bytes
+    actually contain.
+    """
     import torch
 
     from sgdjscc_lab.pipelines.infer_pipeline import (
@@ -133,6 +142,13 @@ def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg):
     visual_latents = decoded["visual_latents"] or []
     if not visual_latents:
         raise ValueError("bundle contains no digital visual latent patches")
+    visual_metadata = decoded.get("visual_metadata") or []
+    if len(visual_metadata) != len(visual_latents):
+        raise ValueError(
+            f"visual metadata count {len(visual_metadata)} does not match "
+            f"visual patch count {len(visual_latents)} — cannot determine "
+            "each patch's bit_depth from its own packet"
+        )
 
     manifest = decoded.get("manifest") or {}
     layout = manifest.get("patch_layout") or {}
@@ -191,6 +207,7 @@ def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg):
             signal_scale = (snr_scale / (snr_scale + 1)) * torch.ones_like(
                 encode_features_hat[:, 0:1, 0, 0]
             )
+            meta_i = visual_metadata[i]
             cur_step, cur_snr = _compute_step(
                 jscc=jscc,
                 encode_features_hat=encode_features_hat,
@@ -201,6 +218,9 @@ def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg):
                 use_jscc_feat=bool(cfg.use_jscc_feature),
                 use_gt_csi=bool(cfg.use_gt_csi),
                 device=device,
+                digital_bit_depth=meta_i["bit_depth"],
+                digital_policy=digital_step_policy,
+                digital_quant_snr_db=meta_i.get("quant_snr_db"),
             )
             artifacts = ForwardArtifacts(
                 use_semantic=bool(cfg.use_semantic),

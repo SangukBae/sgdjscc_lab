@@ -144,10 +144,16 @@ bash scripts/run_transmission_normalization.sh --resume outputs/transmission_nor
 - digital 채널의 blind SNR 추정(`jscc.snr_prediction_net`, AWGN 전용 학습)을
   양자화 latent에 적용하던 NaN/Inf 원인을 수정했다 —
   [docs/protocols/transmission_normalization.md](./docs/protocols/transmission_normalization.md) 참고.
-- `run_transmission_reduction_eval.py`가 동일 디렉터리 재실행 시 완료된
-  (video, config) 쌍을 자동으로 건너뛴다(진짜 resume).
+- `--seed`(기본 2025) + 영상·프레임별 결정적 seed, `run_signature.json` 기반 resume
+  안전성 검증(조건이 다르면 즉시 거부), `run_manifest.py` 정식(하드) 의존성 + 핵심
+  artifact SHA-256 기록.
+- non-finite 발생 시 해당 (video, config)를 즉시 중단(`failed_pairs.csv`) — NaN
+  placeholder로 계속 처리하지 않는다.
+- `FixedCountKeyframeSelector`로 fixed selector의 keyframe 수를 SKEM과 정확히 일치,
+  `rate_matching.csv`로 byte 근접성까지 확인한 뒤에만 "rate-matched" 표기.
 - 결과: `quantization_effect.csv`(선택기 고정, bit_depth 효과) /
-  `selector_effect.csv`(bit_depth 고정, fixed vs SKEM 효과)로 두 효과를 분리 출력.
+  `selector_effect.csv`(bit_depth 고정, fixed vs SKEM 효과)로 두 효과를 분리 출력
+  (`bytes/video`·`bytes/frame` 단위 분리 포함).
 
 ### 학습
 
@@ -183,6 +189,8 @@ python -m pytest tests/ -q
 - 영상: 복원 프레임·MP4, `temporal_metrics.csv`, `segments.json`, 요약 리포트
 - 전송: 직렬화 `.sgbundle`, packet 구성 byte, Pareto 결과
 - 학습: `outputs/checkpoints/<stage>/`의 checkpoint와 `train_log.jsonl`
+- 재현성: `results/`에 핵심 CSV·JSON·run manifest를 git 추적 보존 —
+  [results/README.md](./results/README.md), [docs/protocols/results_registry.md](./docs/protocols/results_registry.md)
 
 ## 프로젝트 구조
 
@@ -190,6 +198,7 @@ python -m pytest tests/ -q
 configs/       기본·실험 설정
 data/          데이터 설명과 소규모 평가셋
 docs/          현재 상태·설계·절차·실험 기록
+results/       git 추적 재현성 결과 — 핵심 CSV·JSON·run manifest
 scripts/       추론·평가·학습 진입점
 src/           sgdjscc_lab 패키지
 tests/         CPU 중심 자동 테스트
@@ -223,6 +232,7 @@ transmission/  양자화·packet 직렬화
 | [docs/protocols/datasets.md](./docs/protocols/datasets.md) | 데이터 지침 |
 | [docs/protocols/evaluation.md](./docs/protocols/evaluation.md) | 평가 지침 |
 | [docs/protocols/reproducibility.md](./docs/protocols/reproducibility.md) | 재현성 지침 |
+| [docs/protocols/results_registry.md](./docs/protocols/results_registry.md) | `results/` 구조·run manifest 절차 |
 | [docs/protocols/training.md](./docs/protocols/training.md) | 학습 지침 |
 | [docs/protocols/transmission_normalization.md](./docs/protocols/transmission_normalization.md) | digital NaN 수정, fixed/SKEM x 양자화 스윕 절차 |
 | [docs/protocols/video_rate_benchmark.md](./docs/protocols/video_rate_benchmark.md) | 전송률 비교 절차 |
