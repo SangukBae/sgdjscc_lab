@@ -10,15 +10,26 @@ supersedes:
 
 # 파일별 프레임워크 역할
 
-- `sgdjscc_lab` 파일을 실행 흐름 순서로 정렬해 역할을 매핑한다. 핵심은 원본 SGDJSCC
-  알고리즘 경로를 보존하되 코드를 명시적 모듈로 재구성했다는 점이다.
+- 문서 역할
+  - 파일별 실행 순서
+  - 모듈별 책임
+- 구조 원칙
+  - 원본 SGD-JSCC 알고리즘 보존
+  - 명시적 모듈 분리
 
 > **역할**: 이 문서 = 파일별 **실행 흐름/역할 지도**(무엇이 언제 실행되는가).
 > 원본·논문 **대비 차이/정합**은 [paper_alignment.md](./paper_alignment.md).
 
-- 논문 Figure 1(b) 블록: `DeepJSCC Encoder` / `Semantic Extractor` /
-  `Semantic side info encoder·decoder` / `Wireless Channel` / `Diffusion Denoiser` /
-  `DeepJSCC Decoder`. 인프라 파일은 "Fig 1(b) 외부", 여러 블록을 조율하면 "오케스트레이션".
+- Figure 1(b) 블록
+  - `DeepJSCC Encoder`
+  - `Semantic Extractor`
+  - `Semantic side info encoder·decoder`
+  - `Wireless Channel`
+  - `Diffusion Denoiser`
+  - `DeepJSCC Decoder`
+- 분류 규칙
+  - 인프라: Figure 1(b) 외부
+  - 다중 block 조율: 오케스트레이션
 
 ## 1. 추론 프레임워크 (실행 순서)
 
@@ -45,8 +56,15 @@ infer_images.py → config.py → runtime.py → 모델 빌더 → io/preprocess
 | `guidance/text_extractor.py` | BLIP2 캡션(텍스트 가이드) | Semantic Extractor |
 | `guidance/edge_extractor.py` | MuGE soft edge + uncertainty map | Semantic Extractor |
 
-- **코어 forward** (`infer_pipeline`): soft edge 전처리 → VAE encode/normalize → AWGN →
-  mask/power scalar → step matching → canny 재전송 → canny latent → 확산 디노이징 → 최종 decode.
+- 코어 forward: `infer_pipeline`
+  1. soft edge 전처리
+  2. VAE encode·normalize
+  3. AWGN
+  4. mask·power scalar
+  5. step matching
+  6. canny 재전송·latent 생성
+  7. 확산 denoising
+  8. 최종 decode
 
 ## 2. 평가 프레임워크 (실행 순서)
 
@@ -93,12 +111,20 @@ evaluate.py → eval config → eval_pipeline.py → infer_pipeline.py
 
 ## 4. 호환성 shim
 
-- `pipeline.py`, `preprocessing.py`는 Phase 2 재구성 이전 import 경로를 유지하는 하위
-  호환 re-export다(실제 로직은 `pipelines/`, `utils/`에 있음). 메인 실행 경로가 아니다.
+- 대상: `pipeline.py`, `preprocessing.py`
+- 역할
+  - 이전 import 경로 호환
+  - `pipelines/`, `utils/` re-export
+- 주의
+  - 메인 실행 경로 아님
 
 ## 한 줄 정리
 
-- `scripts/`(진입) · `configs/`(설정) · `runtime/models/channels/guidance/`(모델 조립)
-  · `pipelines/`(오케스트레이션) · `evaluators/`(지표) · `utils/`(I/O·전처리·로깅) ·
-  shim(레거시 import). 즉 단일 모델 파일이 아니라 진입·설정·추론·평가·확장을 분리한
-  실험 프레임워크다.
+- 계층
+  - 진입: `scripts/`
+  - 설정: `configs/`
+  - 모델 조립: `runtime`, `models`, `channels`, `guidance`
+  - 오케스트레이션: `pipelines/`
+  - 지표: `evaluators/`
+  - I/O·전처리·로깅: `utils/`
+  - 레거시 호환: shim

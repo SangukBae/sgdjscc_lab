@@ -10,20 +10,22 @@ supersedes:
 
 # 논문 정합 정리
 
-- 이 문서는 기존 [프레임워크 비교 보관본](../archive/framework_comparison.md),
-  [paper gap closure 보관본](../archive/paper_gap_closure.md),
-  [paper training alignment 보관본](../archive/paper_training_alignment.md)을 합친
-  **논문 정합 단일 문서**다. 목적은 `sgdjscc_lab`이 SGD-JSCC 논문과 어디까지 같고,
-  어디서부터 근사/확장/미구현인지 한 번에 보게 하는 것이다.
+- 역할
+  - 논문 정합성 단일 기준
+  - 원본과 동일한 부분 구분
+  - 근사·확장·미구현 구분
 
-- 대상 논문: **"Semantics-Guided Diffusion for Deep Joint Source-Channel Coding in
-  Wireless Image Transmission"**.
+- 대상 논문
+  - *Semantics-Guided Diffusion for Deep Joint Source-Channel Coding in Wireless Image Transmission*
 
 ## 큰 그림
 
 - **추론 경로**는 원본 `SGDJSCC/` forward를 재사용하는 `paper-faithful` 경로다.
-- **학습 scaffold**, **채널 확장**, **평가 체계**는 논문 그대로가 아니라
-  `paper-like`, `scaffold`, `ETRI 확장`이 섞여 있다.
+- 비동일 범위
+  - 학습 scaffold
+  - 채널 확장
+  - 평가 체계
+  - 분류: paper-like·scaffold·ETRI 확장 혼합
 - `paper_mode: true`는 논문 재현 경로만 허용하도록 non-faithful 대체물을 차단한다.
 
 ## 원본 코드 vs `sgdjscc_lab`
@@ -36,8 +38,14 @@ supersedes:
 | 추론 알고리즘 | monolithic | 동일 수치를 유지한 모듈식 래핑 |
 | 원본 수정 | 직접 수정 필요 | `SGDJSCC/`는 읽기 전용, 확장은 `sgdjscc_lab/`에 구현 |
 
-- 보존되는 핵심 블록은 VAE encode/decode, scaling `15.45`, AWGN 손상, blind SNR
-  예측, step matching, canny/edge 조건화, MDTv2/ControlNet 복원이다.
+- 보존 블록
+  - VAE encode·decode
+  - scaling `15.45`
+  - AWGN
+  - blind SNR 예측
+  - step matching
+  - canny·edge 조건화
+  - MDTv2·ControlNet 복원
 
 ## 충실도 분류
 
@@ -78,8 +86,10 @@ supersedes:
 
 ## 하이퍼파라미터 출처
 
-- Ground truth 우선순위는 **공개 `SGDJSCC/` 코드 우선, 논문 table 차순, 미공개 값은
-  assumption**이다.
+- Ground truth 우선순위
+  1. 공개 `SGDJSCC/` 코드
+  2. 논문 표
+  3. 미공개 값에 대한 명시적 assumption
 
 | 항목 | repo 선택 | 근거 |
 |---|---|---|
@@ -92,11 +102,14 @@ supersedes:
 
 ## 학습 경로의 주요 비등가
 
-- Stage 1 paper config는 논문 구조에 맞춰 MSE+patch-GAN을 사용한다. 단,
-  GAN weight와 discriminator 세부값은 논문 미공개라 `paper_assumed_hparams`의
-  가정값이다. MSE-only는 paper-mode baseline이 아니라 ablation으로 둔다.
-- Stage 3 edge transport는 `edge_jscc` baseline과 `shared_vae` ablation을 함께 둔다.
-  paper_mode에서는 학습된 `edge_codec` checkpoint가 없는 `edge_jscc`를 거부한다.
+- Stage 1
+  - 기본: MSE + patch-GAN
+  - 가정값: GAN weight·discriminator 세부값
+  - MSE-only: ablation
+- Stage 3
+  - baseline: `edge_jscc`
+  - ablation: `shared_vae`
+  - `paper_mode`: 학습된 `edge_codec` checkpoint 필수
 - `end_to_end_ft`는 논문 baseline이 아니라 추가 실험이다.
 - 논문의 대규모(~14M pair, 250k step) 데이터/스케줄은 repo에 번들되지 않았다.
 - complex transport와 joint CSI는 layer 수준 scaffold이지 e2e faithful 재학습 경로는 아니다.
@@ -112,6 +125,3 @@ supersedes:
 - [../protocols/training.md](../protocols/training.md) — 학습 CLI + real-model smoke 검증
 - [framework_file_roles.md](./framework_file_roles.md)
 - [../architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md) — 채널 조건화 설계(구 phase5)
-- 보관본: [../archive/framework_comparison.md](../archive/framework_comparison.md),
-  [../archive/paper_gap_closure.md](../archive/paper_gap_closure.md),
-  [../archive/paper_training_alignment.md](../archive/paper_training_alignment.md)

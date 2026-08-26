@@ -192,14 +192,6 @@ transmission/  양자화·packet 직렬화
 | [docs/architecture/system.md](./docs/architecture/system.md) | 시스템 구조 |
 | [docs/architecture/tx_rx_contract.md](./docs/architecture/tx_rx_contract.md) | Tx/Rx 계약 |
 | [docs/archive/etri_implementation_log.md](./docs/archive/etri_implementation_log.md) | 구현 이력 |
-| [docs/archive/framework_comparison.md](./docs/archive/framework_comparison.md) | 과거 프레임워크 비교 |
-| [docs/archive/limitation_reference_map.md](./docs/archive/limitation_reference_map.md) | 과거 한계 근거 |
-| [docs/archive/paper_gap_closure.md](./docs/archive/paper_gap_closure.md) | 과거 논문 보완안 |
-| [docs/archive/paper_training_alignment.md](./docs/archive/paper_training_alignment.md) | 과거 학습 정합성 |
-| [docs/archive/phase4_2026-07.md](./docs/archive/phase4_2026-07.md) | Phase 4 기록 |
-| [docs/archive/phase5_2026-07.md](./docs/archive/phase5_2026-07.md) | Phase 5 기록 |
-| [docs/archive/phases_1to3.md](./docs/archive/phases_1to3.md) | Phase 1–3 기록 |
-| [docs/archive/video_extension_lgvsc_2026-07.md](./docs/archive/video_extension_lgvsc_2026-07.md) | 과거 LGVSC 설계 |
 | [docs/current/open_issues.md](./docs/current/open_issues.md) | 알려진 문제 |
 | [docs/current/roadmap.md](./docs/current/roadmap.md) | 향후 계획 |
 | [docs/current/status.md](./docs/current/status.md) | 현재 상태 |
@@ -221,9 +213,7 @@ transmission/  양자화·packet 직렬화
 | [docs/reference/paper_writing_notes.md](./docs/reference/paper_writing_notes.md) | 논문 작성 메모 |
 | [docs/reports/2026-08-16_etri/Appendix_Slide_Explanations_EN.md](./docs/reports/2026-08-16_etri/Appendix_Slide_Explanations_EN.md) | 영문 부록 설명 |
 | [docs/reports/2026-08-16_etri/Slide_Detailed_Notes_External_EN.md](./docs/reports/2026-08-16_etri/Slide_Detailed_Notes_External_EN.md) | 영문 외부 발표 노트 |
-| [docs/reports/2026-08-16_etri/Slide_Detailed_Notes_Internal_EN.md](./docs/reports/2026-08-16_etri/Slide_Detailed_Notes_Internal_EN.md) | 영문 내부 발표 노트 |
 | [docs/reports/2026-08-16_etri/부록슬라이드_상세설명_KO.md](./docs/reports/2026-08-16_etri/부록슬라이드_상세설명_KO.md) | 국문 부록 설명 |
-| [docs/reports/2026-08-16_etri/슬라이드상세설명_내부용_KO.md](./docs/reports/2026-08-16_etri/슬라이드상세설명_내부용_KO.md) | 국문 내부 발표 노트 |
 | [docs/reports/2026-08-16_etri/슬라이드상세설명_외부공유용_KO.md](./docs/reports/2026-08-16_etri/슬라이드상세설명_외부공유용_KO.md) | 국문 외부 발표 노트 |
 | [docs/reports/README.md](./docs/reports/README.md) | 보고 자료 안내 |
 | [docs/reports/etri_qna_reply.md](./docs/reports/etri_qna_reply.md) | 과제 Q&A |

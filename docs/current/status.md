@@ -10,12 +10,15 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 # 현재 구현 상태
 
-- 이 문서는 **지금 기준으로 무엇이 완료/PoC/스캐폴드인지**만 다룬다. 설계 자체는
-  [architecture/](../architecture/), 앞으로 할 일은 [roadmap.md](./roadmap.md), 알려진
-  한계·기술 부채는 [open_issues.md](./open_issues.md), 실험 근거는
-  `docs/experiments/`를 따른다. 과거 Phase 1~5 단위·1차~6차 구현 순서의 상세
-  로그는 `docs/archive/`에 있다 — 이 문서는 그 순서를 반복하지 않고 **연구 목표
-  기준**으로 정리한다.
+- 문서 범위
+  - 완료·PoC·스캐폴드 상태
+  - 연구 목표 기준 현황
+- 연결 문서
+  - 설계: [architecture/](../architecture/)
+  - 향후 작업: [roadmap.md](./roadmap.md)
+  - 한계·기술 부채: [open_issues.md](./open_issues.md)
+  - 실험 근거: `docs/experiments/`
+  - 과거 구현 순서: [etri_implementation_log.md](../archive/etri_implementation_log.md)
 
 ## 핵심 연구 문제별 대응 현황
 
@@ -31,37 +34,72 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 ### 이미지 추론·평가 코어
 
-- **완료.** 원본 SGD-JSCC forward pass 수치 보존 + 모듈 분리(`channels/guidance/models/pipelines`) +
-  평가기 세트(PSNR/SSIM/LPIPS/CLIP/SRS/FID) + SNR-sweep CSV + regeneration loop.
-  `use_phase4`/`use_phase5`가 모두 false면 원본과 byte 단위로 동일하게 동작한다.
+- 상태: 완료
+- 구성
+  - 원본 SGD-JSCC forward pass 수치 보존
+  - 모듈 분리: `channels`, `guidance`, `models`, `pipelines`
+  - 지표: PSNR·SSIM·LPIPS·CLIP·SRS·FID
+  - SNR sweep CSV
+  - regeneration loop
+- 호환성
+  - `use_phase4=false`, `use_phase5=false`: 원본과 byte 단위 동일
 
 ### 시맨틱 패킷 평가 (`use_packet_eval`)
 
-- **완료.** 시맨틱 패킷(캡션+객체/관계+가이드 요약) 구성, 원본 vs 복원 패킷 비교로
-  누락/추가 객체·관계/속성 오류를 개수로 집계, `srs_base`/`srs_packet` 확장, SNR
-  적응형 가이드(`use_adaptive_guidance`), 실패 양상별 regeneration(`use_packet_regeneration`).
-  게이트: `use_phase4` + 개별 플래그(기본 off). 실행 절차는 [protocols/evaluation.md](../protocols/evaluation.md).
+- 상태: 완료
+- 패킷 구성
+  - 캡션
+  - 객체·관계
+  - 가이드 요약
+- 평가
+  - 원본·복원 패킷 비교
+  - 누락·추가 객체와 관계·속성 오류 집계
+  - `srs_base`, `srs_packet`
+- 제어
+  - SNR 적응형 가이드: `use_adaptive_guidance`
+  - 실패 유형별 재생성: `use_packet_regeneration`
+- 게이트
+  - `use_phase4` + 개별 플래그
+  - 기본값: off
+- 실행: [평가 프로토콜](../protocols/evaluation.md)
 
 ### 채널 조건화 (`use_channel_conditioning`)
 
-- **구현 완료(adapter 레벨), 실 수치 검증은 부분적.** Rayleigh/fast-fading/packet-drop
-  채널 + `MeasurementBundle` + 채널 조건 인코더 + reliability-스케일 guidance/steps.
-  frozen SGD-JSCC denoiser가 조건 토큰을 직접 소비하지는 않는다(근사 지점 — 설계는
-  [architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md) §4). Fast-fading
-  water-filling(논문 Algorithm 4)은 배선·CPU stub 검증 완료, 실제 수치는 MDTv2
-  체크포인트 의존.
+- 상태
+  - adapter 레벨 구현 완료
+  - 실수치 검증 일부 완료
+- 구성
+  - Rayleigh·fast-fading·packet-drop
+  - `MeasurementBundle`
+  - 채널 조건 인코더
+  - reliability 기반 guidance·step 조절
+- 한계
+  - frozen denoiser가 조건 token을 직접 사용하지 않음
+  - water-filling은 배선·CPU stub만 검증
+  - 실제 수치는 MDTv2 checkpoint 의존
+- 설계: [Tx/Rx 계약 §4](../architecture/tx_rx_contract.md)
 
 ### 저지연 샘플링 (`acceleration.*`)
 
-- **구현 완료.** Step-budget/DDIM, 샘플러 내부 early-exit(`heuristic`/`srs`/`srs_v2`
-  기준 조기 종료), 지연 프로파일러, 벤치마크 CLI(`benchmark_latency.py`/`benchmark_sampling.py`).
-  학습된 consistency/distilled student는 placeholder(인터페이스만 완성).
+- 상태: 구현 완료
+- 기능
+  - Step-budget·DDIM
+  - sampler early-exit: `heuristic`, `srs`, `srs_v2`
+  - 지연 profiler
+  - CLI: `benchmark_latency.py`, `benchmark_sampling.py`
+- 한계
+  - 학습된 consistency/distilled student는 placeholder
 
 ### 강화 검증기 (VQA/SRS-v2, `use_srs_v2`)
 
-- **구현·연결 완료.** VQA 할루시네이션 검출(`mock`/`blip2`/`llava`/`mplug` backend),
-  SRS-v2(base+packet+temporal+VQA), regeneration search(여러 전략 중 `srs`/`srs_v2`
-  기준 최적 선택).
+- 상태: 구현·연결 완료
+- VQA backend
+  - `mock`
+  - `blip2`
+  - `llava`
+  - `mplug`
+- 결합 지표: SRS-v2(base + packet + temporal + VQA)
+- 탐색 기준: `srs`, `srs_v2`
 
 ### 영상 확장
 
@@ -84,27 +122,36 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 - **판정·로그 완료, 실제 sampler 개입 미구현.**
 
-- Packet Verifier(`evaluators/packet_verifier.py`) + 오류 유형별 controller
-  (`controllers/verifier_controller.py`: accept/suppress_extra/strengthen_missing/
-  strengthen_structure_guidance/fallback_recompute/keyframe_fallback) — 완료.
-- Presence backend 인터페이스(`clip`/`owlv2`/`vqa`/`gt`/`mock`) + ensemble
-  calibrator + held-out 재측정 — 완료, 실제 OWLv2/VQA weight로 10개 영상 재검증까지
-  완료([experiments/2026-07-28_owlv2_vqa_calibration.md](../experiments/2026-07-28_owlv2_vqa_calibration.md)).
-- **미구현**: candidate action(negative prompt 강화 등)을 실제 diffusion 샘플러에
-  주입하는 배선 — controller는 여전히 결정·로그만 남긴다([open_issues.md](./open_issues.md)).
+- Packet Verifier: 완료
+  - 구현: `evaluators/packet_verifier.py`
+  - controller: `controllers/verifier_controller.py`
+  - action: accept·suppress extra·strengthen missing·strengthen structure·fallback
+- Presence calibration: 완료
+  - backend: `clip`, `owlv2`, `vqa`, `gt`, `mock`
+  - ensemble calibrator·held-out 재측정
+  - 검증: [10개 영상 OWLv2/VQA 실험](../experiments/2026-07-28_owlv2_vqa_calibration.md)
+- 미구현
+  - candidate action의 실제 diffusion sampler 주입
+  - 현재 controller는 결정·로그만 수행
+  - 상세: [open_issues.md](./open_issues.md)
 
 ### 평가 체계
 
-- loop-internal(`srs_packet`/VQA)과 held-out(재생성에 관여하지 않은 지표) 분리
-  원칙과 `metric_role` 태깅 — 완료.
-- Temporal SRS Calibration(GT/VLM 기준 가중치 보정) — **스캐폴드만**, synthetic
-  target 기준 least-squares fitting 구조는 있으나 실제 GT/VLM 연결은 미완.
+- 지표 역할 분리: 완료
+  - loop-internal: `srs_packet`, VQA
+  - held-out: 재생성에 관여하지 않은 지표
+  - 태그: `metric_role`
+- Temporal SRS Calibration: scaffold
+  - 구현: synthetic target 기반 least-squares fitting
+  - 미구현: 실제 GT·VLM 연결
 - DISTS/downstream task 지표 — **미구현**.
 
 ### 전송량 절감
 
-- `semantic-unit 절감`, `channel-symbol 절감(PoC)`, `직렬화 packet byte 절감(실측)`을
-  구분해서 읽는다.
+- 해석 단위
+  - semantic-unit 절감
+  - channel-symbol 절감: PoC
+  - 직렬화 packet byte 절감: 실측
 
 | 단계 | 상태 |
 |---|---|
@@ -115,13 +162,21 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 ### 학습 CLI
 
-- **완료.** 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage(`edge_codec`/
-  `csi_estimation`) + 확장 실험(`end_to_end_ft`). DDP 지원, step/epoch 겸용,
-  auto-resume, 메모리 토글. 상세: [protocols/training.md](../protocols/training.md).
+- 상태: 완료
+- stage
+  - 논문 경로: `jscc`, `text_dm`, `controlnet`
+  - 보조 경로: `edge_codec`, `csi_estimation`
+  - 확장 실험: `end_to_end_ft`
+- 기능
+  - DDP
+  - step·epoch 실행
+  - auto-resume
+  - 메모리 toggle
+- 상세: [학습 프로토콜](../protocols/training.md)
 
 ## 관련 문서
 - [roadmap.md](./roadmap.md) — 향후 연구개발 계획
 - [open_issues.md](./open_issues.md) — 알려진 한계·기술 부채
 - [architecture/](../architecture/) — 장기 시스템 설계
 - `docs/experiments/` — 완료된 실험과 결과
-- `docs/archive/` — Phase 1~5, 1차~6차 구현 순서의 상세 이력(과거 스냅샷)
+- [etri_implementation_log.md](../archive/etri_implementation_log.md) — 과거 구현 요약

@@ -10,28 +10,37 @@ supersedes:
 
 # 논문 작성 보조 노트 (내부용)
 
-> repo-facing 문서가 아니라 논문 작성용 내부 메모다. `docs/current/status.md`에서
-> 설명하는 현재 구현 상태와 표현이 다를 수 있다 — 이 문서는 논문 투고 시 주장을
-> 어떻게 절제해서 쓸지에 대한 메모일 뿐, 최신 구현 상태의 근거가 아니다.
+- 문서 성격
+  - 논문 작성용 내부 draft
+  - 최신 구현 상태의 근거 아님
+  - 현재 상태 기준: [status.md](../current/status.md)
 
 ## Phase 4 포지셔닝
 
-- Phase 4는 **새 전송 알고리즘이 아니라 신뢰성 평가·제어 프레임워크 + 영상 확장**이다.
-  "더 나은 JSCC 전송 기법"으로 주장하면 안 되고, 다음 세 가지를 기여로 둔다.
+- 주장 범위
+  - 신뢰성 평가·제어 framework
+  - 영상 확장
+  - 새 JSCC 전송 알고리즘으로 주장하지 않음
 
-1. **신뢰성 평가의 세분화 (가장 강한 기여)** — SRS를 객체 누락/추가·관계·속성 오류로
-   분해(`srs_base` vs `srs_packet`)해 '그럴듯하지만 틀린' 복원을 정량 진단. 저 SNR에서
-   SRS는 비슷한데 객체 누락/할루시네이션이 급증하는 그림이 핵심 메시지.
-2. **채널 적응 제어의 효과 (ablation)** — 고정 가이드 대비 SNR 적응 가이드 +
-   실패유형별 regeneration이 같은 채널에서 SRS 개선.
-3. **영상 시맨틱 전송 효율 (4-B)** — 키프레임 + 델타 전송이 프레임별 전송 대비
-   오버헤드를 절감하면서 시간적 SRS 유지(`overhead_reduction`).
+1. **신뢰성 평가 세분화**
+   - 분해: 객체 누락·추가, 관계·속성 오류
+   - 비교: `srs_base` vs `srs_packet`
+   - 핵심 그림: 저 SNR의 객체 누락·할루시네이션 증가
+2. **채널 적응 제어 효과**
+   - 비교: 고정 guidance vs SNR 적응 guidance
+   - 추가: 실패 유형별 regeneration
+3. **영상 시맨틱 전송 효율**
+   - 방식: keyframe + delta
+   - 목표: overhead 절감 + temporal SRS 유지
 
-- **Limitations에 선제 공개**: 패킷은 평가/제어 메타데이터(채널 코딩 아님), 객체/관계는
-  CLIP/캡션 휴리스틱, 단계적 디노이징은 prompt 레벨, 인터프레임은 키프레임 복사.
+- 선제 공개 한계
+  - packet: 평가·제어 metadata
+  - 객체·관계: CLIP·caption heuristic
+  - 단계적 denoising: prompt 수준
+  - inter-frame: keyframe 복사
 
-- **실험 ablation** — ① baseline SGD-JSCC ② +적응형 가이드 ③ +패킷 검증기
-  ④ 키프레임 전용 full packet ⑤ 키프레임+델타 재사용.
+- **실험 ablation**
+  - ① baseline SGD-JSCC ② +적응형 가이드 ③ +패킷 검증기 ④ 키프레임 전용 full packet ⑤ 키프레임+델타 재사용.
 
 ### 그대로 쓸 수 있는 문장
 > "Rather than proposing a new transmission scheme, we build a *reliability-oriented

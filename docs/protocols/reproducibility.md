@@ -10,17 +10,24 @@ supersedes: docs/checkpoint_usage.md
 
 # 재현 절차 — checkpoint 선택과 `paper_mode`
 
-- 이 문서는 로컬/원격에서 서로 다른 가중치를 실수로 섞어 쓰지 않고, 논문 재현
-  경로와 확장 경로를 구분해 실행하기 위한 기준이다. 코드 수준의 충실도 분류
-  (paper-faithful/paper-like/scaffold/ETRI 확장)는 [reference/paper_alignment.md](../reference/paper_alignment.md)에 있다.
+- 목적
+  - 로컬·원격 checkpoint 혼용 방지
+  - 논문 재현·확장 경로 분리
+- 충실도 분류
+  - paper-faithful
+  - paper-like
+  - scaffold
+  - ETRI 확장
+  - 기준: [paper_alignment.md](../reference/paper_alignment.md)
 
 ## Checkpoint 핵심 결론
 
-- `configs/recipes/inference/composed.yaml`, `configs/recipes/video/composed_video.yaml`은
-  공개 baseline checkpoint를 쓰는 기본 config다.
-- `configs/recipes/inference/composed_paper_like_multi.yaml`,
-  `configs/recipes/video/composed_video_paper_like_multi.yaml`은 원격에서 학습한
-  paper-like multi-stage checkpoint를 쓰는 custom config다.
+- 공개 baseline config
+  - `configs/recipes/inference/composed.yaml`
+  - `configs/recipes/video/composed_video.yaml`
+- paper-like multi-stage config
+  - `configs/recipes/inference/composed_paper_like_multi.yaml`
+  - `configs/recipes/video/composed_video_paper_like_multi.yaml`
 - baseline과 custom 가중치를 같은 `checkpoints/` 폴더에서 덮어써서 관리하지 않는다.
 
 ### 디렉터리 역할
@@ -60,8 +67,8 @@ snr_estimator_checkpoint: "../outputs/checkpoints/csi_estimation/best.pth"
 
 ### Custom inference checkpoint 생성 방법
 
-- `text_dm`과 `controlnet` 학습 checkpoint는 그대로 inference loader에 넣을 수 없다. 반드시
-  `scripts/export_checkpoint.py`로 변환해야 한다.
+- export 대상: `text_dm`, `controlnet`
+- 변환 도구: `scripts/export_checkpoint.py`
 
 ```bash
 python scripts/export_checkpoint.py \
@@ -89,14 +96,17 @@ cp checkpoints/muge-epoch-19-checkpoint.pth checkpoints_custom/paper_like_multi/
 - `outputs/checkpoints/*/best.pth`는 학습 재개 또는 export 입력용이다.
 - `checkpoints/*.pth`와 `checkpoints_custom/*/*.pth`는 inference loader가 직접 읽는 파일이다.
 - 로컬과 원격에서 같은 결과를 비교하려면 반드시 같은 config를 써야 한다.
-- 특히 `configs/recipes/inference/composed.yaml`과 `configs/recipes/inference/composed_paper_like_multi.yaml`은
-  같은 입력을 줘도 서로 다른 diffusion 가중치를 쓰므로 결과가 달라질 수 있다.
+- config 비교 주의
+  - `composed.yaml`: baseline diffusion weight
+  - `composed_paper_like_multi.yaml`: custom diffusion weight
+  - 같은 입력이어도 결과가 달라질 수 있음
 - 학습 CLI와 stage별 export 매핑 전체는 [training.md](./training.md) 참고.
 
 ## `paper_mode` — 논문 재현 경로 강제
 
-- `paper_mode: true`는 확장 기능을 지우는 게 아니라 **논문 재현 실험과 ETRI 확장
-  실험이 섞이지 않게 guardrail을 거는 것**이다. 켜면:
+- `paper_mode: true`
+  - 목적: 논문 재현·ETRI 확장 실험 분리
+  - 적용 항목
 
 - auto-caption, `filename` caption source 차단
 - Canny stand-in 차단, MuGE sidecar 요구
@@ -108,9 +118,10 @@ cp checkpoints/muge-epoch-19-checkpoint.pth checkpoints_custom/paper_like_multi/
 - 확장 기능(Phase 4/5, packet, regeneration 등) 비활성 요구
 - eval metric set을 논문 보고 set에 맞춤
 
-- 무엇이 paper-faithful/paper-like/scaffold/ETRI 확장으로 분류되는지, 하이퍼파라미터
-  출처(공개 코드 vs 논문 표 vs assumption)는 [reference/paper_alignment.md](../reference/paper_alignment.md)의
-  전체 표를 기준으로 삼는다 — 이 문서에서 다시 나열하지 않는다.
+- 상세 기준
+  - 구현 충실도 분류
+  - hyperparameter 출처
+  - 기준 문서: [paper_alignment.md](../reference/paper_alignment.md)
 
 ## 관련 문서
 - [reference/paper_alignment.md](../reference/paper_alignment.md) — 충실도 분류, 하이퍼파라미터 출처

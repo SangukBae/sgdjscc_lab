@@ -10,10 +10,10 @@ supersedes: docs/video_extension_lgvsc.md, docs/phase4.md, docs/phase5.md
 
 # Tx/Rx 시스템 설계
 
-- 이 문서는 **장기적으로 유효한 설계**만 다룬다. 무엇이 실제로 구현·검증됐는지는
-  [current/status.md](../current/status.md), 실험 결과는 `docs/experiments/`,
-  Phase 4/5 시절의 상세 구현 기록은 `docs/archive/phase4_2026-07.md` /
-  `docs/archive/phase5_2026-07.md`(과거 스냅샷)를 참고한다.
+- 범위
+  - 장기 Tx/Rx 설계
+  - 구현 상태: [current/status.md](../current/status.md)
+  - 검증 결과: `docs/experiments/`
 
 ## 1. 이미지 경로 (Tx → Ch → Rx)
 
@@ -25,19 +25,25 @@ supersedes: docs/video_extension_lgvsc.md, docs/phase4.md, docs/phase5.md
     → 이미지 diffusion 복원          models/diffusion_wrapper.py (MDTv2+ControlNet)
 ```
 
-- 설계 원칙 — **이미지 경로는 한 줄도 바꾸지 않는다.** 새 기능은 전부 게이트
-  (`use_phase4`/`use_phase5`) 뒤에 두고 기본 off — 게이트가 꺼지면 원본 SGD-JSCC와
-  수치 동일.
+- 설계 원칙
+  - 원본 이미지 경로 보존
+  - 신규 기능: `use_phase4`, `use_phase5` 뒤에 배치
+  - 기본값: off
+  - gate off: 원본 SGD-JSCC와 수치 동일
 
 ## 2. 의미 단위(packet) 검증 계약 — Rx-legal self-verification
 
-- 전송 semantic packet(캡션·객체·장면·관계·속성·엣지/세그/depth 요약)과 복원
-  결과에서 재추출한 packet을 비교해 추가/누락 객체, 관계·구조 왜곡을 검출한다.
+- 비교 입력
+  - 전송 semantic packet
+  - 복원 결과에서 재추출한 packet
+- 검출 대상
+  - 객체 추가·누락
+  - 관계·구조 왜곡
 
-- 핵심 제약: **판정 기준은 원본 이미지가 아니라 수신단이 실제로 보유한 전송
-  packet이다.** 원본 프레임과의 직접 대조는 eval-only이며, 수신단 로직으로
-  배치할 수 없다(수신단은 원본을 가질 수 없으므로). 이 경계를 어기면 "Rx가
-  원본을 몰래 참조한다"는 실험 무결성 문제가 된다.
+- Rx-legal 제약
+  - 판정 기준: 수신단이 보유한 전송 packet
+  - 원본 직접 대조: eval-only
+  - 수신단 원본 참조: 금지
 
 ```text
 packet_verifier: 전송 packet vs 복원 packet 비교
@@ -46,15 +52,21 @@ packet_verifier: 전송 packet vs 복원 packet 비교
      strengthen_missing/strengthen_structure_guidance/fallback_recompute 결정
 ```
 
-- 객체 존재 판정은 여러 backend(`clip`/`owlv2`/`vqa`/`gt`)로 교체 가능하며,
-  어떤 backend를 쓰든 이 계약(전송 packet 기준 판정) 자체는 바뀌지 않는다 —
-  정의는 [metrics.md](./metrics.md).
+- 객체 판정 backend
+  - `clip`, `owlv2`, `vqa`, `gt`
+- 불변 계약
+  - 전송 packet 기준 판정
+  - 정의: [metrics.md](./metrics.md)
 
 ## 3. 적응형 가이드 계약
 
-- 추정 SNR에 따라 가이드 강도·확산 스텝을 조절한다: 저 SNR에서는 강한 가이드 +
-  최대 스텝, 고 SNR에서는 약한 가이드 또는 skip 경로. 이 결정은 이미지
-  복원 경로 자체를 바꾸지 않고, 그 경로가 **어떤 config로 실행될지**만 선택한다.
+- 입력: 추정 SNR
+- 정책
+  - 저 SNR: 강한 guidance + 최대 step
+  - 고 SNR: 약한 guidance 또는 skip
+- 불변 조건
+  - 이미지 복원 경로 유지
+  - 실행 config만 선택
 
 ## 4. 채널 조건화 계약 (DiffCom 영감)
 
@@ -67,19 +79,26 @@ channel.observe() → MeasurementBundle (received/equalized/gain/noise_var/mask/
   → diffusion_wrapper_channel.py (adapter 레벨 조건화)
 ```
 
-- 근사인 지점: 인코딩된 조건 토큰은 cfg에 부착되지만 **frozen SGD-JSCC denoiser가
-  소비하지 않는다** — FiLM/cross-attention/posterior-gradient guidance는 재학습된
-  조건 인식 denoiser가 있어야 가능하다. 현재는 received-latent init + reliability
-  스케일 guidance/steps로만 작동한다.
+- 현재 근사
+  - 조건 token: config에 부착
+  - frozen denoiser: 조건 token 미사용
+  - 실제 조건화: received-latent initialization + reliability 기반 guidance·step 조절
+- 향후 필요
+  - 조건 인식 denoiser 재학습
+  - FiLM·cross-attention·posterior-gradient guidance 검토
 
 ## 5. 영상 확장 — LGVSC 참고 설계
 
-- LGVSC 논문(Ma et al., "LGVSC: A Large-Model-Driven Generative Video Semantic
-  Communication Framework")의 구조를 참고해, 임의 길이 비디오의 전송·복원
-  설계에 대응시킨 것이다. **LGVSC의 faithful 재현이 아니라 LGVSC-inspired
-  extension**이다 — 논문의 핵심 3축(PSSS/SKEM, 키프레임·텍스트·사이드 분리 전송,
-  world model+DSA 세그먼트 생성)의 *역할과 인터페이스*를 sgdjscc_lab 구조에
-  옮겨오되, 개별 모듈은 논문과 동일 구현이 아닌 대응물이다.
+- 성격
+  - LGVSC-inspired extension
+  - faithful reproduction 아님
+- 대응 범위
+  - PSSS/SKEM
+  - 키프레임·텍스트·side-info 분리 전송
+  - world model + DSA 세그먼트 생성
+- 해석 원칙
+  - 역할·인터페이스만 대응
+  - 개별 모듈은 논문 구현과 다를 수 있음
 
 ### 5.1 LGVSC 파이프라인과 sgdjscc_lab 대응
 
@@ -113,13 +132,17 @@ SegmentGenerationRequest(
 ) → VideoGenerator.generate_segment() → SegmentGenerationResult
 ```
 
-- Rx-legal 경계: 요청 구조체에는 **원본(미전송) target 프레임 필드가 아예 없다**.
-  수신단은 자신이 복원한 keyframe과 전송받은 캡션/packet/side-info만으로
-  중간 프레임을 생성해야 한다 — 원본 대조는 eval-only.
+- Rx-legal 경계
+  - 요청 구조체에 원본 target frame 필드 없음
+  - 허용 입력: 복원 keyframe·caption·packet·side-info
+  - 원본 대조: eval-only
 
-- `validate_segment_result()`가 반환된 결과의 frame 수·순서·shape·metadata가
-  요청과 실제로 일치하는지 계약 수준에서 검사한다(외부 프로세스 backend는
-  신뢰 경계이므로 이 검증이 필수).
+- 결과 검증: `validate_segment_result()`
+  - frame 수
+  - 순서
+  - shape
+  - metadata
+  - 외부 process backend에는 필수 적용
 
 ### 5.3 3-way 프레임/세그먼트 정책
 
@@ -147,8 +170,11 @@ SegmentGenerationRequest(
                                                                             └──────────────────────────────────────────────┘
 ```
 
-- 평가 계층은 원본과 복원을 비교한다 — `evaluators/temporal_consistency.py`의
-  `temporal_srs`/`srs_flicker`/`PTC`/`SFR`/`SDI` (정의는 [metrics.md](./metrics.md)).
+- 평가 계층
+  - 비교: 원본 vs 복원
+  - 구현: `evaluators/temporal_consistency.py`
+  - 지표: `temporal_srs`, `srs_flicker`, `PTC`, `SFR`, `SDI`
+  - 정의: [metrics.md](./metrics.md)
 
 ## 6. 전제와 리스크 (설계 차원에서 항상 유효)
 
