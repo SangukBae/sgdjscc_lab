@@ -1,10 +1,10 @@
 # sgdjscc_lab 문서 색인
 
-`sgdjscc_lab`은 원본 `SGDJSCC/` 패키지를 **수정하지 않고** 확장하는 연구용 fork다.
-원본은 논문 베이스라인이자 읽기 전용 참조로 두고, 이 패키지는 모듈화·평가·연구
-확장을 위한 깨끗한 계층을 얹는다. 추론 forward-pass는 원본과 수치적으로 동일하다.
+- `sgdjscc_lab`은 원본 `SGDJSCC/` 패키지를 **수정하지 않고** 확장하는 연구용 fork다.
+  원본은 논문 베이스라인이자 읽기 전용 참조로 두고, 이 패키지는 모듈화·평가·연구
+  확장을 위한 깨끗한 계층을 얹는다. 추론 forward-pass는 원본과 수치적으로 동일하다.
 
-문서는 **역할별**로 나뉜다 — 한 문서가 여러 역할을 겸하지 않는다.
+- 문서는 **역할별**로 나뉜다 — 한 문서가 여러 역할을 겸하지 않는다.
 
 ## 연구개발할 때 먼저 볼 문서
 
@@ -16,9 +16,9 @@
 | 지표·평가 설계 | [architecture/metrics.md](./architecture/metrics.md) |
 | 실험 실행·비교 규약 | [protocols/evaluation.md](./protocols/evaluation.md) |
 
-일상적인 연구개발은 `roadmap.md`에서 시작한다. 작업 완료 후 `status.md`를 갱신하고,
-결과는 `experiments/YYYY-MM-DD_<name>.md`로 고정한다. `archive/`는 과거 근거를 찾을
-때만 사용하며 현재 계획의 기준으로 삼지 않는다.
+- 일상적인 연구개발은 `roadmap.md`에서 시작한다. 작업 완료 후 `status.md`를 갱신하고,
+  결과는 `experiments/YYYY-MM-DD_<name>.md`로 고정한다. `archive/`는 과거 근거를 찾을
+  때만 사용하며 현재 계획의 기준으로 삼지 않는다.
 
 | 폴더 | 역할 |
 |---|---|
@@ -56,8 +56,8 @@
 | [protocols/reproducibility.md](./protocols/reproducibility.md) | checkpoint 선택 기준, `paper_mode` 사용법 |
 | [protocols/training.md](./protocols/training.md) | stage-aware 학습 CLI, export, real-model smoke 검증 |
 
-데이터 디렉터리 자체 문서는 [../data/README.md](../data/README.md),
-ETRI 10-영상 평가셋은 [../data/etri_video_eval/README.md](../data/etri_video_eval/README.md).
+- 데이터 디렉터리 자체 문서는 [../data/README.md](../data/README.md),
+  ETRI 10-영상 평가셋은 [../data/etri_video_eval/README.md](../data/etri_video_eval/README.md).
 
 ## 4. 완료된 실험 (`experiments/`)
 
@@ -82,13 +82,13 @@ ETRI 10-영상 평가셋은 [../data/etri_video_eval/README.md](../data/etri_vid
 
 ## 6. 발표·보고 자료 (`reports/`)
 
-[reports/README.md](./reports/README.md) 참고 — 2026-08-16 슬라이드 상세설명(국/영문,
-내부/외부공유용)과 Q&A 문서, PPTX/ZIP 원본 관리 방침.
+- [reports/README.md](./reports/README.md) 참고 — 2026-08-16 슬라이드 상세설명(국/영문,
+  내부/외부공유용)과 Q&A 문서, PPTX/ZIP 원본 관리 방침.
 
 ## 7. 과거 문서 (`archive/`)
 
-더 이상 활성 상태가 아닌 과거 계획·Phase 단위 구현 기록. 현재 상태와 충돌하지
-않도록 분리했다 — 최신 판단 기준은 항상 `current/`다.
+- 더 이상 활성 상태가 아닌 과거 계획·Phase 단위 구현 기록. 현재 상태와 충돌하지
+  않도록 분리했다 — 최신 판단 기준은 항상 `current/`다.
 
 | 문서 | 내용 |
 |---|---|
@@ -97,8 +97,6 @@ ETRI 10-영상 평가셋은 [../data/etri_video_eval/README.md](../data/etri_vid
 | [archive/phase5_2026-07.md](./archive/phase5_2026-07.md) | Phase 5(채널 조건화·저지연·강화 검증) 구현 당시 스냅샷 |
 | [archive/video_extension_lgvsc_2026-07.md](./archive/video_extension_lgvsc_2026-07.md) | LGVSC 매핑 설계 + 로드맵 원안(현재는 `architecture/tx_rx_contract.md` + `current/roadmap.md`로 분리됨) |
 | [archive/phases_1to3.md](./archive/phases_1to3.md) | 초기 Phase 1~3 스냅샷 |
-| [archive/etri_development_plan_v2.md](./archive/etri_development_plan_v2.md) | 통합 전 개발계획서 보관본 |
-| [archive/etri_development_roadmap.md](./archive/etri_development_roadmap.md) | 통합 전 로드맵 보관본 |
 | [archive/limitation_reference_map.md](./archive/limitation_reference_map.md) | 통합 전 한계점 지도 보관본 |
 | [archive/framework_comparison.md](./archive/framework_comparison.md) | 통합 전 프레임워크 비교 보관본 |
 | [archive/paper_gap_closure.md](./archive/paper_gap_closure.md) | 통합 전 paper-mode 정책 문서 보관본 |
@@ -111,5 +109,5 @@ ETRI 10-영상 평가셋은 [../data/etri_video_eval/README.md](../data/etri_vid
    오케스트레이션은 `pipelines/`, 지표는 `evaluators/`로 독립 교체 가능하게 둔다.
 3. **원본 읽기 전용** — 새 아이디어는 `SGDJSCC/`가 아니라 `sgdjscc_lab/`에 구현한다.
 
-전체 디렉터리 구성과 Phase 게이트 규칙은 [architecture/system.md](./architecture/system.md)
-참고.
+- 전체 디렉터리 구성과 Phase 게이트 규칙은 [architecture/system.md](./architecture/system.md)
+  참고.

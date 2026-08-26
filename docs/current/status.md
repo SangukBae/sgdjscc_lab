@@ -10,16 +10,16 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 # 현재 구현 상태
 
-이 문서는 **지금 기준으로 무엇이 완료/PoC/스캐폴드인지**만 다룬다. 설계 자체는
-[architecture/](../architecture/), 앞으로 할 일은 [roadmap.md](./roadmap.md), 알려진
-한계·기술 부채는 [open_issues.md](./open_issues.md), 실험 근거는
-`docs/experiments/`를 따른다. 과거 Phase 1~5 단위·1차~6차 구현 순서의 상세
-로그는 `docs/archive/`에 있다 — 이 문서는 그 순서를 반복하지 않고 **연구 목표
-기준**으로 정리한다.
+- 이 문서는 **지금 기준으로 무엇이 완료/PoC/스캐폴드인지**만 다룬다. 설계 자체는
+  [architecture/](../architecture/), 앞으로 할 일은 [roadmap.md](./roadmap.md), 알려진
+  한계·기술 부채는 [open_issues.md](./open_issues.md), 실험 근거는
+  `docs/experiments/`를 따른다. 과거 Phase 1~5 단위·1차~6차 구현 순서의 상세
+  로그는 `docs/archive/`에 있다 — 이 문서는 그 순서를 반복하지 않고 **연구 목표
+  기준**으로 정리한다.
 
 ## 핵심 연구 문제별 대응 현황
 
-[architecture/system.md](../architecture/system.md)의 세 핵심 연구 문제에 대한 현재 대응.
+- [architecture/system.md](../architecture/system.md)의 세 핵심 연구 문제에 대한 현재 대응.
 
 | 연구 문제 | 현재 대응 |
 |---|---|
@@ -31,41 +31,41 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 ### 이미지 추론·평가 코어
 
-**완료.** 원본 SGD-JSCC forward pass 수치 보존 + 모듈 분리(`channels/guidance/models/pipelines`) +
-평가기 세트(PSNR/SSIM/LPIPS/CLIP/SRS/FID) + SNR-sweep CSV + regeneration loop.
-`use_phase4`/`use_phase5`가 모두 false면 원본과 byte 단위로 동일하게 동작한다.
+- **완료.** 원본 SGD-JSCC forward pass 수치 보존 + 모듈 분리(`channels/guidance/models/pipelines`) +
+  평가기 세트(PSNR/SSIM/LPIPS/CLIP/SRS/FID) + SNR-sweep CSV + regeneration loop.
+  `use_phase4`/`use_phase5`가 모두 false면 원본과 byte 단위로 동일하게 동작한다.
 
 ### 시맨틱 패킷 평가 (`use_packet_eval`)
 
-**완료.** 시맨틱 패킷(캡션+객체/관계+가이드 요약) 구성, 원본 vs 복원 패킷 비교로
-누락/추가 객체·관계/속성 오류를 개수로 집계, `srs_base`/`srs_packet` 확장, SNR
-적응형 가이드(`use_adaptive_guidance`), 실패 양상별 regeneration(`use_packet_regeneration`).
-게이트: `use_phase4` + 개별 플래그(기본 off). 실행 절차는 [protocols/evaluation.md](../protocols/evaluation.md).
+- **완료.** 시맨틱 패킷(캡션+객체/관계+가이드 요약) 구성, 원본 vs 복원 패킷 비교로
+  누락/추가 객체·관계/속성 오류를 개수로 집계, `srs_base`/`srs_packet` 확장, SNR
+  적응형 가이드(`use_adaptive_guidance`), 실패 양상별 regeneration(`use_packet_regeneration`).
+  게이트: `use_phase4` + 개별 플래그(기본 off). 실행 절차는 [protocols/evaluation.md](../protocols/evaluation.md).
 
 ### 채널 조건화 (`use_channel_conditioning`)
 
-**구현 완료(adapter 레벨), 실 수치 검증은 부분적.** Rayleigh/fast-fading/packet-drop
-채널 + `MeasurementBundle` + 채널 조건 인코더 + reliability-스케일 guidance/steps.
-frozen SGD-JSCC denoiser가 조건 토큰을 직접 소비하지는 않는다(근사 지점 — 설계는
-[architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md) §4). Fast-fading
-water-filling(논문 Algorithm 4)은 배선·CPU stub 검증 완료, 실제 수치는 MDTv2
-체크포인트 의존.
+- **구현 완료(adapter 레벨), 실 수치 검증은 부분적.** Rayleigh/fast-fading/packet-drop
+  채널 + `MeasurementBundle` + 채널 조건 인코더 + reliability-스케일 guidance/steps.
+  frozen SGD-JSCC denoiser가 조건 토큰을 직접 소비하지는 않는다(근사 지점 — 설계는
+  [architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md) §4). Fast-fading
+  water-filling(논문 Algorithm 4)은 배선·CPU stub 검증 완료, 실제 수치는 MDTv2
+  체크포인트 의존.
 
 ### 저지연 샘플링 (`acceleration.*`)
 
-**구현 완료.** Step-budget/DDIM, 샘플러 내부 early-exit(`heuristic`/`srs`/`srs_v2`
-기준 조기 종료), 지연 프로파일러, 벤치마크 CLI(`benchmark_latency.py`/`benchmark_sampling.py`).
-학습된 consistency/distilled student는 placeholder(인터페이스만 완성).
+- **구현 완료.** Step-budget/DDIM, 샘플러 내부 early-exit(`heuristic`/`srs`/`srs_v2`
+  기준 조기 종료), 지연 프로파일러, 벤치마크 CLI(`benchmark_latency.py`/`benchmark_sampling.py`).
+  학습된 consistency/distilled student는 placeholder(인터페이스만 완성).
 
 ### 강화 검증기 (VQA/SRS-v2, `use_srs_v2`)
 
-**구현·연결 완료.** VQA 할루시네이션 검출(`mock`/`blip2`/`llava`/`mplug` backend),
-SRS-v2(base+packet+temporal+VQA), regeneration search(여러 전략 중 `srs`/`srs_v2`
-기준 최적 선택).
+- **구현·연결 완료.** VQA 할루시네이션 검출(`mock`/`blip2`/`llava`/`mplug` backend),
+  SRS-v2(base+packet+temporal+VQA), regeneration search(여러 전략 중 `srs`/`srs_v2`
+  기준 최적 선택).
 
 ### 영상 확장
 
-**핵심 파이프라인 완료, LGVSC 재현선 준비 완료(실행은 사용자), 학습형 개선선은 미착수.**
+- **핵심 파이프라인 완료, LGVSC 재현선 준비 완료(실행은 사용자), 학습형 개선선은 미착수.**
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -82,7 +82,7 @@ SRS-v2(base+packet+temporal+VQA), regeneration search(여러 전략 중 `srs`/`s
 
 ### 할루시네이션 완화
 
-**판정·로그 완료, 실제 sampler 개입 미구현.**
+- **판정·로그 완료, 실제 sampler 개입 미구현.**
 
 - Packet Verifier(`evaluators/packet_verifier.py`) + 오류 유형별 controller
   (`controllers/verifier_controller.py`: accept/suppress_extra/strengthen_missing/
@@ -103,8 +103,8 @@ SRS-v2(base+packet+temporal+VQA), regeneration search(여러 전략 중 `srs`/`s
 
 ### 전송량 절감
 
-`semantic-unit 절감`, `channel-symbol 절감(PoC)`, `직렬화 packet byte 절감(실측)`을
-구분해서 읽는다.
+- `semantic-unit 절감`, `channel-symbol 절감(PoC)`, `직렬화 packet byte 절감(실측)`을
+  구분해서 읽는다.
 
 | 단계 | 상태 |
 |---|---|
@@ -115,9 +115,9 @@ SRS-v2(base+packet+temporal+VQA), regeneration search(여러 전략 중 `srs`/`s
 
 ### 학습 CLI
 
-**완료.** 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage(`edge_codec`/
-`csi_estimation`) + 확장 실험(`end_to_end_ft`). DDP 지원, step/epoch 겸용,
-auto-resume, 메모리 토글. 상세: [protocols/training.md](../protocols/training.md).
+- **완료.** 논문 3-stage(`jscc`/`text_dm`/`controlnet`) + 보조 stage(`edge_codec`/
+  `csi_estimation`) + 확장 실험(`end_to_end_ft`). DDP 지원, step/epoch 겸용,
+  auto-resume, 메모리 토글. 상세: [protocols/training.md](../protocols/training.md).
 
 ## 관련 문서
 - [roadmap.md](./roadmap.md) — 향후 연구개발 계획

@@ -11,10 +11,10 @@ supersedes:
 
 # 직렬화 packet 전송량 Pareto sweep (2026-08-18)
 
-`transmission/` 패키지(실제 4/6/8/16-bit 양자화 + binary packet bundling)를 써서,
-SKEM/fixed keyframe 선택 × 채널 bit-depth 조합의 **전송 bundle byte 수 대 전체
-영상 화질(PSNR/SSIM/LPIPS)** trade-off를 10개 영상 전체에서 실측한 실험이다.
-`docs/current/status.md`의 "전송량 절감 → 실제 binary packet 전송" 항목의 근거.
+- `transmission/` 패키지(실제 4/6/8/16-bit 양자화 + binary packet bundling)를 써서,
+  SKEM/fixed keyframe 선택 × 채널 bit-depth 조합의 **전송 bundle byte 수 대 전체
+  영상 화질(PSNR/SSIM/LPIPS)** trade-off를 10개 영상 전체에서 실측한 실험이다.
+  `docs/current/status.md`의 "전송량 절감 → 실제 binary packet 전송" 항목의 근거.
 
 ## Config·명령
 
@@ -51,9 +51,9 @@ outputs/transmission_reduction_full_20260818_043425/
 
 ## 핵심 결과 (10개 영상, 영상당 100프레임)
 
-`aggregate.csv`의 `mean_total_bundle_bytes`는 **프레임당 값이 아니라 영상당 총
-bundle byte의 10개 영상 평균**이다. 아래 프레임당 값은 이를 100으로 나눈 단순
-환산값이다.
+- `aggregate.csv`의 `mean_total_bundle_bytes`는 **프레임당 값이 아니라 영상당 총
+  bundle byte의 10개 영상 평균**이다. 아래 프레임당 값은 이를 100으로 나눈 단순
+  환산값이다.
 
 | config | bit depth | PSNR | SSIM | LPIPS | exact bundle bytes/video | bytes/frame | valid ratio |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -67,11 +67,11 @@ bundle byte의 10개 영상 평균**이다. 아래 프레임당 값은 이를 10
 | `skem_int6` | 6 | 23.71 | 0.7363 | 0.2402 | 2,462,544 | 24,625 | 0.964 |
 | **`skem_int4`**(잠정 후보) | 4 | 23.47 | 0.7335 | 0.2519 | 2,394,550 | 23,946 | 1.000 |
 
-`fixed_awgn`의 `mean_total_bundle_bytes=2,251,907`은 analog visual waveform을
-포함하지 않은 digital side-information만의 값이므로 디지털 bundle과 직접 비교하지
-않는다. `skem_int4`는 이 analog AWGN 임시 기준 대비 ΔPSNR −0.13dB / ΔSSIM
-−0.004 / ΔLPIPS −0.004로 픽셀 품질 gate를 통과한 가장 작은 **잠정 후보**다.
-`fixed_int4`와 거의 같은 결과이므로 이 sweep만으로 SKEM의 이점도 확인되지 않았다.
+- `fixed_awgn`의 `mean_total_bundle_bytes=2,251,907`은 analog visual waveform을
+  포함하지 않은 digital side-information만의 값이므로 디지털 bundle과 직접 비교하지
+  않는다. `skem_int4`는 이 analog AWGN 임시 기준 대비 ΔPSNR −0.13dB / ΔSSIM
+  −0.004 / ΔLPIPS −0.004로 픽셀 품질 gate를 통과한 가장 작은 **잠정 후보**다.
+  `fixed_int4`와 거의 같은 결과이므로 이 sweep만으로 SKEM의 이점도 확인되지 않았다.
 
 ## 읽을 때 주의할 점 (README.md와 동일한 경고)
 

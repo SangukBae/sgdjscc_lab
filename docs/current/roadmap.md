@@ -10,13 +10,13 @@ supersedes:
 
 # 향후 연구개발 계획
 
-이 문서는 **아직 완료되지 않은 것**만 다룬다. 완료된 항목과 그 근거는
-[status.md](./status.md)(현재 상태)와
-[../archive/etri_implementation_log.md](../archive/etri_implementation_log.md)(상세 이력)를
-참고한다. 알려진 한계·기술 부채는 [open_issues.md](./open_issues.md). 아래는
-[architecture/system.md](../architecture/system.md)의 핵심 연구 문제 3가지(시간축·영상 /
-할루시네이션 / 평가 신뢰도) + 전송량 절감이라는 **연구 목표 기준**으로 남은 과제를
-정리한 것이며, Phase 번호나 1차~6차 같은 과거 구현 순서로 나누지 않는다.
+- 이 문서는 **아직 완료되지 않은 것**만 다룬다. 완료된 항목과 그 근거는
+  [status.md](./status.md)(현재 상태)와
+  [../archive/etri_implementation_log.md](../archive/etri_implementation_log.md)(상세 이력)를
+  참고한다. 알려진 한계·기술 부채는 [open_issues.md](./open_issues.md). 아래는
+  [architecture/system.md](../architecture/system.md)의 핵심 연구 문제 3가지(시간축·영상 /
+  할루시네이션 / 평가 신뢰도) + 전송량 절감이라는 **연구 목표 기준**으로 남은 과제를
+  정리한 것이며, Phase 번호나 1차~6차 같은 과거 구현 순서로 나누지 않는다.
 
 > **연구개발 메인 문서:** 앞으로 구현할 작업과 우선순위는 이 문서를 기준으로
 > 갱신한다. 구현이 끝나면 [status.md](./status.md)로 옮기고, 검증 결과는 날짜가
@@ -34,14 +34,14 @@ supersedes:
 | 6 | 정책 조합 비교 | static/SNR-only/severity-only/combined × regeneration ON/OFF |
 | 7 | 최종 검증 | ETRI 10영상 paired 평가 후 별도 held-out 영상 재검증 |
 
-하이퍼파라미터 조합을 반복 실행하는 책임은 **평가 harness**에 둔다. controller는
-한 시점의 관측값으로 예산·행동을 결정할 뿐, 스스로 실험 sweep을 수행하지 않는다.
+- 하이퍼파라미터 조합을 반복 실행하는 책임은 **평가 harness**에 둔다. controller는
+  한 시점의 관측값으로 예산·행동을 결정할 뿐, 스스로 실험 sweep을 수행하지 않는다.
 
 ## 1. 시간축·영상 신뢰성 고도화 (한계 1 후속)
 
-LGVSC 1A/1B는 검증 완료, 1C는 config·batch driver 준비 완료다. real MLLM PSSS와
-10영상×4모드 재현 실행은 아직 남아 있다. 그 위에 붙는 **ETRI 딥러닝 개선선**도
-후속 과제다.
+- LGVSC 1A/1B는 검증 완료, 1C는 config·batch driver 준비 완료다. real MLLM PSSS와
+  10영상×4모드 재현 실행은 아직 남아 있다. 그 위에 붙는 **ETRI 딥러닝 개선선**도
+  후속 과제다.
 
 - **Learned bidirectional keyframe adapter** — 현재는 mock 보간/Wan 등 고정 backend만
   사용. 통신 조건을 반영해 학습되는 decoder adapter 필요.
@@ -69,9 +69,9 @@ LGVSC 1A/1B는 검증 완료, 1C는 config·batch driver 준비 완료다. real 
 
 ## 3. 전송량-신뢰도 공동 최적화 (한계 3 + 전송량)
 
-`transmission/` 패키지로 4~16bit 양자화와 직렬화 packet byte 집계까지는 완료됐다.
-물리 채널 symbol/FEC는 아직 proxy다. 남은 것은 "무엇을 얼마나 보낼지"를 신뢰도
-신호와 함께 동적으로 정하는 부분이다.
+- `transmission/` 패키지로 4~16bit 양자화와 직렬화 packet byte 집계까지는 완료됐다.
+  물리 채널 symbol/FEC는 아직 proxy다. 남은 것은 "무엇을 얼마나 보낼지"를 신뢰도
+  신호와 함께 동적으로 정하는 부분이다.
 
 - **Learnable keyframe/side-info selector** — 현재 SKEM/비트뎁스 선택은 오프라인
   Pareto sweep으로 고정값을 고르는 방식. 채널·검증 신호를 함께 보는 학습형 selector로
@@ -100,8 +100,8 @@ LGVSC 1A/1B는 검증 완료, 1C는 config·batch driver 준비 완료다. real 
 
 ## 일정
 
-7~8월 계획(SNR 스윕, channel-symbol 절감 1차 PoC, `PTC`/`SFR`/`SDI` 초기 결과)은
-완료됐다 — [status.md](./status.md) 참고. 남은 일정:
+- 7~8월 계획(SNR 스윕, channel-symbol 절감 1차 PoC, `PTC`/`SFR`/`SDI` 초기 결과)은
+  완료됐다 — [status.md](./status.md) 참고. 남은 일정:
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|

@@ -12,8 +12,8 @@ supersedes: docs/etri_overview.md
 
 ## 과제 목표
 
-생성 AI 기반 **시맨틱 미디어 전송 신뢰성(Semantic Media Transmission Reliability)**을
-정량 평가하는 End-to-End 시뮬레이션 프레임워크 개발.
+- 생성 AI 기반 **시맨틱 미디어 전송 신뢰성(Semantic Media Transmission Reliability)**을
+  정량 평가하는 End-to-End 시뮬레이션 프레임워크 개발.
 
 > 핵심: 선명한 복원(PSNR 최대화)이 아니라, **노이즈 채널을 통과한 뒤에도 원본의
 > 의미(semantic intent)가 얼마나 신뢰성 있게 전달되는가**를 측정한다.
@@ -29,9 +29,9 @@ supersedes: docs/etri_overview.md
    의미 drift를 충분히 설명하지 못한다. 재생성 판단에 쓰는 지표와 최종 평가
    지표가 같으면 순환 평가가 생긴다.
 
-세 문제에 대해 지금 무엇이 구현/검증됐는지는 [current/status.md](../current/status.md),
-남은 과제는 [current/roadmap.md](../current/roadmap.md)를 따른다. 세 문제의 원인·해법
-설계는 [tx_rx_contract.md](./tx_rx_contract.md)에 있다.
+- 세 문제에 대해 지금 무엇이 구현/검증됐는지는 [current/status.md](../current/status.md),
+  남은 과제는 [current/roadmap.md](../current/roadmap.md)를 따른다. 세 문제의 원인·해법
+  설계는 [tx_rx_contract.md](./tx_rx_contract.md)에 있다.
 
 ## 시스템 파이프라인
 
@@ -44,7 +44,7 @@ Original Image / Keyframe
   → outputs/results.csv
 ```
 
-공식 지표 정의(SRS, CSV 컬럼, `PTC`/`SFR`/`SDI`)는 [metrics.md](./metrics.md) 참고.
+- 공식 지표 정의(SRS, CSV 컬럼, `PTC`/`SFR`/`SDI`)는 [metrics.md](./metrics.md) 참고.
 
 ## 저장소 & 모듈 구조
 
@@ -56,7 +56,7 @@ Semantic/
 └── reference/           ← 매뉴스크립트 + 참고 코드
 ```
 
-`src/sgdjscc_lab/` 디렉터리 구성:
+- `src/sgdjscc_lab/` 디렉터리 구성:
 
 ```text
 src/sgdjscc_lab/
@@ -78,8 +78,8 @@ src/sgdjscc_lab/
 └── utils/          preprocessing · csv_logger · metrics_io · metric_profiles · packet_io · seed
 ```
 
-파일별 실행 흐름과 역할 지도는 [reference/framework_file_roles.md](../reference/framework_file_roles.md)에
-있다.
+- 파일별 실행 흐름과 역할 지도는 [reference/framework_file_roles.md](../reference/framework_file_roles.md)에
+  있다.
 
 ## 개발 원칙
 
@@ -89,10 +89,10 @@ src/sgdjscc_lab/
    오케스트레이션은 `pipelines/`, 지표는 `evaluators/`로 독립 교체 가능하게 둔다.
 3. **원본 읽기 전용** — 새 아이디어는 `SGDJSCC/`가 아니라 `sgdjscc_lab/`에 구현한다.
 
-모든 opt-in 확장(패킷 검증, 채널 조건화, 영상 확장, 저지연 샘플링 등)은 상위
-게이트(`use_phase4`/`use_phase5`, `phase_gates.py`)가 꺼져 있으면 원본 SGD-JSCC
-추론과 수치적으로 동일하게 동작한다. `paper_mode`(`paper_mode.py`)는 별도로
-논문 재현 경로만 허용하는 guardrail이다 — [protocols/reproducibility.md](../protocols/reproducibility.md) 참고.
+- 모든 opt-in 확장(패킷 검증, 채널 조건화, 영상 확장, 저지연 샘플링 등)은 상위
+  게이트(`use_phase4`/`use_phase5`, `phase_gates.py`)가 꺼져 있으면 원본 SGD-JSCC
+  추론과 수치적으로 동일하게 동작한다. `paper_mode`(`paper_mode.py`)는 별도로
+  논문 재현 경로만 허용하는 guardrail이다 — [protocols/reproducibility.md](../protocols/reproducibility.md) 참고.
 
 ## 관련 문서
 - [metrics.md](./metrics.md) — SRS·CSV 컬럼·시간축 지표 정의

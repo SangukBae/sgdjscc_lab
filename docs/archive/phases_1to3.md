@@ -10,8 +10,8 @@
 
 ## Phase 1 — AWGN 추론 CLI
 
-최소 실행 가능한 패키지를 구축했다: config 기반 CLI로 AWGN 단일 이미지/폴더 추론,
-출력 저장, 원본 추론 경로 보존.
+- 최소 실행 가능한 패키지를 구축했다: config 기반 CLI로 AWGN 단일 이미지/폴더 추론,
+  출력 저장, 원본 추론 경로 보존.
 
 ```bash
 python scripts/infer_images.py --config configs/base/default.yaml
@@ -19,7 +19,7 @@ python scripts/infer_images.py --config configs/base/default.yaml
 
 ## Phase 2 — 모듈화
 
-단일 스크립트 구조를 모듈형 패키지로 재구성했다(알고리즘은 그대로, 구조만 분리).
+- 단일 스크립트 구조를 모듈형 패키지로 재구성했다(알고리즘은 그대로, 구조만 분리).
 
 | 이전 | 이후 |
 |---|---|
@@ -29,24 +29,24 @@ python scripts/infer_images.py --config configs/base/default.yaml
 | script/util 혼재 전처리 | `utils/preprocessing.py` + `utils/{seed,memory}.py` |
 | fragment config 없음 | `config.py`의 `_defaults_` 합성 |
 
-editable install 지원, config/IO/AWGN 단위 테스트 추가.
+- editable install 지원, config/IO/AWGN 단위 테스트 추가.
 
 ## Phase 3 — 평가 프레임워크
 
-실제 연구-평가 기반을 구축했다.
+- 실제 연구-평가 기반을 구축했다.
 
-**평가기** (`evaluators/`)
+- **평가기** (`evaluators/`)
 - `quality.py` — PSNR / SSIM / LPIPS
 - `clip_score.py` — CLIP 이미지-이미지 / 텍스트-이미지 유사도
 - `object_preservation.py` — 객체 보존율
 - `hallucination.py` — 할루시네이션 점수
 - `semantic_reliability.py` — Semantic Reliability Score (SRS)
 
-**가이드 확장** — `depth_extractor.py`(DPT 단안 깊이), `segmentation_extractor.py`(SegFormer).
+- **가이드 확장** — `depth_extractor.py`(DPT 단안 깊이), `segmentation_extractor.py`(SegFormer).
 
-**평가 파이프라인** — `eval_pipeline.py`(단일 SNR + SNR-sweep), `regeneration_loop.py`(SRS 기반 재시도), CLI `evaluate.py`.
+- **평가 파이프라인** — `eval_pipeline.py`(단일 SNR + SNR-sweep), `regeneration_loop.py`(SRS 기반 재시도), CLI `evaluate.py`.
 
-**데이터셋 config** — Kodak / COCO val2017 / ADE20K validation.
+- **데이터셋 config** — Kodak / COCO val2017 / ADE20K validation.
 
 ### Semantic Reliability Score
 
@@ -64,5 +64,5 @@ SRS = 0.30 × clip_image_image
 - depth/seg 모델은 최초 사용 시 외부 다운로드 필요
 - regeneration loop는 경량 프로토타입
 
-이후 phase가 패킷 인식 검증, 시간적 지표, VQA 할루시네이션, SRS-v2, 채널 조건화,
-저지연/early-exit를 추가한다.
+- 이후 phase가 패킷 인식 검증, 시간적 지표, VQA 할루시네이션, SRS-v2, 채널 조건화,
+  저지연/early-exit를 추가한다.

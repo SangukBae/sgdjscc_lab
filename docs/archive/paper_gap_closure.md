@@ -4,11 +4,11 @@
 
 > 보관본. 최신 요약은 [paper_alignment.md](../reference/paper_alignment.md)를 우선 참조.
 
-대상 논문: **"Semantics-Guided Diffusion for Deep Joint Source-Channel Coding
-in Wireless Image Transmission"** (Zhang et al., arXiv:2501.01138).
+- 대상 논문: **"Semantics-Guided Diffusion for Deep Joint Source-Channel Coding
+  in Wireless Image Transmission"** (Zhang et al., arXiv:2501.01138).
 
-**무엇이 paper-faithful / paper-like / unsupported인지**, 그리고 `paper_mode`
-guardrail이 재현 경로를 어떻게 강제하는지에 대한 single source of truth.
+- **무엇이 paper-faithful / paper-like / unsupported인지**, 그리고 `paper_mode`
+  guardrail이 재현 경로를 어떻게 강제하는지에 대한 single source of truth.
 
 > **역할**: 이 문서 = 논문 재현 **정책**(충실도 분류 · `paper_mode` guardrail · DDP).
 > 하이퍼파라미터 **수치의 출처**(공개코드/논문표/가정값)는
@@ -25,10 +25,10 @@ guardrail이 재현 경로를 어떻게 강제하는지에 대한 single source 
 
 ## `paper_mode` (핵심 축)
 
-`paper_mode: true`(top-level config; 기본 `false`)는 `paper_mode.py`가 논문 config를
-**강제**하고 non-faithful 대체물을 **차단**하게 하며, *어떤 checkpoint 로드보다 먼저*
-`PaperModeError`를 raise한다. 두 CLI에 hook됨: `scripts/train.py`
-(`paper_mode.enforce`), `scripts/evaluate.py`(`enforce_eval`). 강제 항목:
+- `paper_mode: true`(top-level config; 기본 `false`)는 `paper_mode.py`가 논문 config를
+  **강제**하고 non-faithful 대체물을 **차단**하게 하며, *어떤 checkpoint 로드보다 먼저*
+  `PaperModeError`를 raise한다. 두 CLI에 hook됨: `scripts/train.py`
+  (`paper_mode.enforce`), `scripts/evaluate.py`(`enforce_eval`). 강제 항목:
 
 - **caption** — *알려진* auto-generated caption(`_AUTOCAPTION_PROVENANCE.json`
   sentinel 경유)과 `filename` source를 차단. 손으로 둔 `sidecar`/`manifest` `.txt`가
@@ -40,10 +40,10 @@ guardrail이 재현 경로를 어떻게 강제하는지에 대한 single source 
   PSNR/LPIPS/CLIP×2/FID), `--profile`/`--no-clip` *이후* 강제 — 따라서 `paper_mode`
   하에서 축소 set이나 `--no-clip`은 거부됨.
 
-`paper_mode`는 어떤 확장도 **삭제하지 않는다** — 모든 경로는 `paper_mode: false`에서
-그대로 동작. 논문 경로는
-`configs/experiments/paper_reproduction/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml` + `paper_eval_awgn.yaml`에
-번들됨.
+- `paper_mode`는 어떤 확장도 **삭제하지 않는다** — 모든 경로는 `paper_mode: false`에서
+  그대로 동작. 논문 경로는
+  `configs/experiments/paper_reproduction/paper_train_{jscc,text_dm,edge_codec,controlnet}.yaml` + `paper_eval_awgn.yaml`에
+  번들됨.
 
 ## 항목별 상태 (8개 task)
 
@@ -94,10 +94,10 @@ python scripts/evaluate.py --config configs/experiments/paper_reproduction/paper
 
 ## Multi-GPU training (DDP)
 
-`torchrun` 기반 PyTorch DDP; single-process / CPU 경로는 불변(모든 DDP helper는
-no-op으로 degrade). `train.batch_size`는 **per-rank**:
-`global_batch = batch_size × world_size × grad_accum_steps`(paper-like 64를 3 GPU에서
-쓰려면 `batch_size≈21`).
+- `torchrun` 기반 PyTorch DDP; single-process / CPU 경로는 불변(모든 DDP helper는
+  no-op으로 degrade). `train.batch_size`는 **per-rank**:
+  `global_batch = batch_size × world_size × grad_accum_steps`(paper-like 64를 3 GPU에서
+  쓰려면 `batch_size≈21`).
 
 ```bash
 torchrun --standalone --nproc_per_node=3 scripts/train.py \
@@ -105,7 +105,7 @@ torchrun --standalone --nproc_per_node=3 scripts/train.py \
     --train-list data/coco/train2017 --val-list data/coco/val2017 --batch-size 21
 ```
 
-**상태:**
+- **상태:**
 - **Stage 2 (`text_dm`) — 지원 & 검증됨.** DDP-wrap된 denoiser + learned CFG null
   token gradient-sync; world_size=2 Gloo CPU smoke와 3×GPU box(NCCL)로 검증.
 - **Stage 3 (`controlnet`) — 구조 준비됨.** 동일 배선;
@@ -114,12 +114,12 @@ torchrun --standalone --nproc_per_node=3 scripts/train.py \
 - **Stage 1 (`jscc`) / `edge_codec` — DDP 미검증.** generic 배선이나 GAN 경로와
   self-contained codec은 DDP에서 미검증.
 
-주요 파일: `distributed.py`(helper), `scripts/train.py`(torchrun init/cleanup),
-`data/datasets.py`(DistributedSampler), `train_pipeline.py`(rank0 save/log,
-`set_epoch`, sample-weighted validation 평균 + global `best.pth` 지표),
-`stage_runners.py`(DDP-wrap denoiser, `no_sync` grad-accum, eager DDP-safe null
-token). Export + evaluation은 single-process 유지. `DistributedSampler` padding
-중복에서 잔여 bias가 남음. Test: `tests/test_ddp.py`.
+- 주요 파일: `distributed.py`(helper), `scripts/train.py`(torchrun init/cleanup),
+  `data/datasets.py`(DistributedSampler), `train_pipeline.py`(rank0 save/log,
+  `set_epoch`, sample-weighted validation 평균 + global `best.pth` 지표),
+  `stage_runners.py`(DDP-wrap denoiser, `no_sync` grad-accum, eager DDP-safe null
+  token). Export + evaluation은 single-process 유지. `DistributedSampler` padding
+  중복에서 잔여 bias가 남음. Test: `tests/test_ddp.py`.
 
 ## 파일 (요약)
 

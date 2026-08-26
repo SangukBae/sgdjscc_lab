@@ -11,12 +11,12 @@ supersedes:
 
 # 1C — LGVSC 재현선 검증 준비 (reproduction-baseline readiness)
 
-이 문서는 [과거 구현 로그](../archive/etri_implementation_log.md)의 "후속 딥러닝 4단계" 중 **1C (LGVSC 재현선
-검증)** 준비 상태를 정리한다. **실제 검증 실행은 사용자가 직접 한다** — 이
-작업의 목적은 검증을 "명령어 한 줄이면 되는" 상태로 만드는 것이지, 검증
-결과 자체를 만드는 것이 아니다. 1B가 완성한 것(mock/SVD/Wan start-only/Wan
-bidirectional의 real-GPU 검증)을 그대로 재사용해 4개의 재현 가능한 baseline
-config + batch driver + summary 생성기를 만들었다.
+- 이 문서는 [과거 구현 로그](../archive/etri_implementation_log.md)의 "후속 딥러닝 4단계" 중 **1C (LGVSC 재현선
+  검증)** 준비 상태를 정리한다. **실제 검증 실행은 사용자가 직접 한다** — 이
+  작업의 목적은 검증을 "명령어 한 줄이면 되는" 상태로 만드는 것이지, 검증
+  결과 자체를 만드는 것이 아니다. 1B가 완성한 것(mock/SVD/Wan start-only/Wan
+  bidirectional의 real-GPU 검증)을 그대로 재사용해 4개의 재현 가능한 baseline
+  config + batch driver + summary 생성기를 만들었다.
 
 > **업데이트(PSSS/SKEM 단계, 후속 작업):** 이 문서가 정의한 4개 모드
 > (`mock_baseline`/`svd_start_only`/`wan_skim_sfa`/`wan_skem_dsa`)는 **여전히
@@ -27,12 +27,12 @@ config + batch driver + summary 생성기를 만들었다.
 > 실제로 다르게 동작**한다 — 자세한 내용과 mock/proxy/real PSSS 구분은
 > [lgvsc_psss_skem_readiness.md](./2026-07_lgvsc_psss_skem.md) 참조.
 
-**이 문서 전체에서 반복하는 핵심 경고: 아래 어떤 config/모드도 LGVSC 논문의
-faithful reproduction이 아니다.** LGVSC의 `SKIM`/`SKEM` keyframe 선택,
-`SFA`/`DSA` decoder adapter, PSSS 점수화, side-info 인코딩은 논문에 세부
-구현이 공개돼 있지 않다. 아래 네 모드는 "LGVSC-style reproducible
-baseline"이며, 정확히 어느 부분이 실제 대응이고 어느 부분이 근사인지 이
-문서와 각 config 파일 헤더에 명시한다.
+- **이 문서 전체에서 반복하는 핵심 경고: 아래 어떤 config/모드도 LGVSC 논문의
+  faithful reproduction이 아니다.** LGVSC의 `SKIM`/`SKEM` keyframe 선택,
+  `SFA`/`DSA` decoder adapter, PSSS 점수화, side-info 인코딩은 논문에 세부
+  구현이 공개돼 있지 않다. 아래 네 모드는 "LGVSC-style reproducible
+  baseline"이며, 정확히 어느 부분이 실제 대응이고 어느 부분이 근사인지 이
+  문서와 각 config 파일 헤더에 명시한다.
 
 ## 1C 모드 정의
 
@@ -43,14 +43,14 @@ baseline"이며, 정확히 어느 부분이 실제 대응이고 어느 부분이
 | `wan_skim_sfa` | `SKIM+SFA`의 **SFA(Start-frame Adapter)** 측 | `WanImageToVideoPipeline`, 시작 keyframe + caption 조건화 (real, 1B에서 실제 GPU 검증됨) | **SKIM(keyframe 선택)은 대응되지 않음** — 아래 "keyframe 선택은 4개 모드 전부 동일" 참조. `side_infos`는 accepted이지만 조건화에 안 씀(PSSS/side-info adapter 없음) |
 | `wan_skem_dsa` | `SKEM+DSA`의 **DSA(Dual-side Adapter)** 측 | `WanImageToVideoPipeline`, 시작+끝 keyframe + caption 조건화 (real, 1B에서 실제 GPU 검증됨 — segment별 체크포인트 자동 선택) | **SKEM(의미 기반 keyframe 선택)은 대응되지 않음** — 아래 참조. `side_infos` 미사용은 wan_skim_sfa와 동일 |
 
-**keyframe 선택(SKIM vs SKEM)은 네 모드 전부 동일하다.** 이 저장소는
-`configs/base/video/default.yaml`의 `keyframe.max_gop`(고정 간격) + scene-change
-detector(히스토그램 기반) 하나만 갖고 있고, 이는 SKIM에 가까운 방식이지
-LGVSC의 SKEM이 뜻하는 의미/PSSS 기반 keyframe 선택과 동일하지 않다. 네
-config 어느 것도 "SKEM 방식으로 keyframe을 골랐다"는 뜻이 아니다 — `wan_skim_sfa`와
-`wan_skem_dsa`의 실제 차이는 오직 **decoder 측 조건화**(단일 keyframe vs
-두 keyframe)뿐이다. 이는 과장이 아니라 정확한 서술이다 — 결과표를 인용할
-때 반드시 이 구분을 함께 적을 것.
+- **keyframe 선택(SKIM vs SKEM)은 네 모드 전부 동일하다.** 이 저장소는
+  `configs/base/video/default.yaml`의 `keyframe.max_gop`(고정 간격) + scene-change
+  detector(히스토그램 기반) 하나만 갖고 있고, 이는 SKIM에 가까운 방식이지
+  LGVSC의 SKEM이 뜻하는 의미/PSSS 기반 keyframe 선택과 동일하지 않다. 네
+  config 어느 것도 "SKEM 방식으로 keyframe을 골랐다"는 뜻이 아니다 — `wan_skim_sfa`와
+  `wan_skem_dsa`의 실제 차이는 오직 **decoder 측 조건화**(단일 keyframe vs
+  두 keyframe)뿐이다. 이는 과장이 아니라 정확한 서술이다 — 결과표를 인용할
+  때 반드시 이 구분을 함께 적을 것.
 
 ## Config ↔ 소스 대응
 
@@ -61,12 +61,12 @@ config 어느 것도 "SKEM 방식으로 keyframe을 골랐다"는 뜻이 아니�
 | `configs/experiments/lgvsc_1c/etri_lgvsc_1c_wan_skim_sfa.yaml` | `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml` (worker 블록 그대로 복사 — `tests/test_batch_lgvsc_1c_reproduce.py`가 두 파일의 `video_generator.worker`가 일치하는지 검증) |
 | `configs/experiments/lgvsc_1c/etri_lgvsc_1c_wan_skem_dsa.yaml` | `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml` (worker 블록 그대로 복사, segment별 `Wan2.1-I2V-14B-480P`/`Wan2.1-FLF2V-14B-720P` 자동 선택 로직 포함 — 동일하게 테스트로 검증) |
 
-각 config는 (1) `configs/`에 직접 두고 단일 영상 수동 실행에도 쓸 수 있고,
-(2) `scripts/batch_lgvsc_1c_reproduce.py`가 이 파일을 **base template**으로
-읽어 영상별로 output-path만 다시 쓴 생성 config를
-`outputs/etri_video_eval/lgvsc_1c_reproduce/_generated_configs/<mode>/<video_id>.yaml`에
-써서 그걸 실제로 `evaluate_video.py --config`에 넘긴다 — 배치 실행에서
-실제로 쓰이는 파일은 후자다.
+- 각 config는 (1) `configs/`에 직접 두고 단일 영상 수동 실행에도 쓸 수 있고,
+  (2) `scripts/batch_lgvsc_1c_reproduce.py`가 이 파일을 **base template**으로
+  읽어 영상별로 output-path만 다시 쓴 생성 config를
+  `outputs/etri_video_eval/lgvsc_1c_reproduce/_generated_configs/<mode>/<video_id>.yaml`에
+  써서 그걸 실제로 `evaluate_video.py --config`에 넘긴다 — 배치 실행에서
+  실제로 쓰이는 파일은 후자다.
 
 ## 실행 명령어
 
@@ -79,9 +79,9 @@ python scripts/batch_lgvsc_1c_reproduce.py \
     --max-frames 14 --device cuda:0 --dry-run
 ```
 
-실행될 정확한 `evaluate_video.py` 명령어와 output 경로만 출력한다 —
-subprocess를 전혀 실행하지 않는다(`tests/test_batch_lgvsc_1c_reproduce.py::TestDryRun`로
-보장).
+- 실행될 정확한 `evaluate_video.py` 명령어와 output 경로만 출력한다 —
+  subprocess를 전혀 실행하지 않는다(`tests/test_batch_lgvsc_1c_reproduce.py::TestDryRun`로
+  보장).
 
 ### Smoke (GPU 없이, 빠르게 — mock_baseline만 진짜 실행 비용이 없음)
 
@@ -95,11 +95,11 @@ python scripts/batch_lgvsc_1c_reproduce.py \
 
 #### RTX 4090 3장 서버: 한 Wan 파이프라인을 세 GPU에 분산
 
-호스트 RAM이 62 GiB이고 swap이 없는 현재 서버에서는 Wan 작업 세 개를 GPU별
-독립 프로세스로 동시에 띄우지 않는다. 각 프로세스가 별도의 14B 체크포인트와
-CPU offload 메모리를 요구하기 때문이다. 대신 아래 옵션으로 **한 작업의 Wan
-파이프라인을 GPU 0/1/2에 분산**하고, 영상과 모드는 순차 처리한다. GPU 0에는
-SGD-JSCC/PSSS 실행 공간을 남기고 GPU 1/2에 더 많은 메모리를 배정한다.
+- 호스트 RAM이 62 GiB이고 swap이 없는 현재 서버에서는 Wan 작업 세 개를 GPU별
+  독립 프로세스로 동시에 띄우지 않는다. 각 프로세스가 별도의 14B 체크포인트와
+  CPU offload 메모리를 요구하기 때문이다. 대신 아래 옵션으로 **한 작업의 Wan
+  파이프라인을 GPU 0/1/2에 분산**하고, 영상과 모드는 순차 처리한다. GPU 0에는
+  SGD-JSCC/PSSS 실행 공간을 남기고 GPU 1/2에 더 많은 메모리를 배정한다.
 
 ```bash
 export CUDA_VISIBLE_DEVICES=0,1,2
@@ -113,13 +113,13 @@ python scripts/batch_lgvsc_1c_reproduce.py \
     --worker-max-memory '{"0":"8GiB","1":"22GiB","2":"22GiB","cpu":"40GiB"}'
 ```
 
-`CUDA_VISIBLE_DEVICES`를 `0` 하나로 제한하면 worker가 GPU 1/2를 볼 수 없으므로
-위 값을 유지한다. 생성 config에서는 기존 `offload_mode: sequential`이 제거되고
-`device_map: balanced`가 적용된다. 메모리 부족 시 GPU 0 한도를 먼저 6 GiB로
-낮추고 CPU 한도는 호스트의 다른 프로세스를 고려해 40 GiB 이상 올리지 않는다.
+- `CUDA_VISIBLE_DEVICES`를 `0` 하나로 제한하면 worker가 GPU 1/2를 볼 수 없으므로
+  위 값을 유지한다. 생성 config에서는 기존 `offload_mode: sequential`이 제거되고
+  `device_map: balanced`가 적용된다. 메모리 부족 시 GPU 0 한도를 먼저 6 GiB로
+  낮추고 CPU 한도는 호스트의 다른 프로세스를 고려해 40 GiB 이상 올리지 않는다.
 
-위 smoke가 성공한 뒤 실제 비교는 `skem_dsa_psss`를 먼저 실행하고, 그 결과의
-keyframe 수에 맞춰 `skim_sfa_fixed`를 실행한다.
+- 위 smoke가 성공한 뒤 실제 비교는 `skem_dsa_psss`를 먼저 실행하고, 그 결과의
+  keyframe 수에 맞춰 `skim_sfa_fixed`를 실행한다.
 
 ```bash
 python scripts/batch_lgvsc_1c_reproduce.py \
@@ -160,14 +160,14 @@ python scripts/batch_lgvsc_1c_reproduce.py --modes all --device cuda:0 --continu
 
 ### `--no-models`의 의미 (중요)
 
-`--no-models`는 `evaluate_video.py`의 SGD-JSCC 본체(keyframe 복원 모델)만
-끈다 — identity 복원으로 대체될 뿐이다. `svd_start_only`/`wan_skim_sfa`/
-`wan_skem_dsa`의 generate-branch worker는 완전히 별도 프로세스(별도 conda
-env, 기본 `semantic-diffusers`)이므로 `--no-models`를 줘도 **실제 GPU
-생성 모델은 그대로 실행된다.** 즉 이 세 모드에 `--no-models`를 줘도 여전히
-실제 GPU 비용이 든다 — SGD-JSCC 쪽 복원만 건너뛰어 조금 더 빨라질 뿐이다.
-GPU 비용 없이 확인하고 싶다면 `--dry-run`을 쓰거나 `mock_baseline`만
-돌린다.
+- `--no-models`는 `evaluate_video.py`의 SGD-JSCC 본체(keyframe 복원 모델)만
+  끈다 — identity 복원으로 대체될 뿐이다. `svd_start_only`/`wan_skim_sfa`/
+  `wan_skem_dsa`의 generate-branch worker는 완전히 별도 프로세스(별도 conda
+  env, 기본 `semantic-diffusers`)이므로 `--no-models`를 줘도 **실제 GPU
+  생성 모델은 그대로 실행된다.** 즉 이 세 모드에 `--no-models`를 줘도 여전히
+  실제 GPU 비용이 든다 — SGD-JSCC 쪽 복원만 건너뛰어 조금 더 빨라질 뿐이다.
+  GPU 비용 없이 확인하고 싶다면 `--dry-run`을 쓰거나 `mock_baseline`만
+  돌린다.
 
 ### summary만 재생성 (실행 없이, 디스크에 있는 결과로부터)
 
@@ -189,20 +189,20 @@ outputs/etri_video_eval/lgvsc_1c_reproduce/
   summary_metrics.csv / .md / .json 비교 결과표 (아래 컬럼)
 ```
 
-`summary_metrics.*`의 컬럼: `mode`, `video_id`, `status`, `n_frames`,
-`n_keyframes`, `n_interframes`, `n_generate`, `n_reused`,
-`n_recompute_semantic`, `n_recompute_motion`, `temporal_srs`, `srs_flicker`,
-`ptc`, `sfr`, `sdi`, `temporal_hallucination_rate`, `transmitted_units`,
-`naive_units`, `overhead_reduction`, `generated_frame_count`,
-`conditioning_modes_observed`(해당 영상에서 실제 관측된 conditioning_mode
-집합), `backends_observed`(실제 관측된 backend 문자열 집합 — 모델 ID까지
-포함), `has_end_keyframe`(해당 영상의 어느 segment든 end keyframe이 있었는지),
-`error_log_path`(실패 시 `run.log` 경로).
+- `summary_metrics.*`의 컬럼: `mode`, `video_id`, `status`, `n_frames`,
+  `n_keyframes`, `n_interframes`, `n_generate`, `n_reused`,
+  `n_recompute_semantic`, `n_recompute_motion`, `temporal_srs`, `srs_flicker`,
+  `ptc`, `sfr`, `sdi`, `temporal_hallucination_rate`, `transmitted_units`,
+  `naive_units`, `overhead_reduction`, `generated_frame_count`,
+  `conditioning_modes_observed`(해당 영상에서 실제 관측된 conditioning_mode
+  집합), `backends_observed`(실제 관측된 backend 문자열 집합 — 모델 ID까지
+  포함), `has_end_keyframe`(해당 영상의 어느 segment든 end keyframe이 있었는지),
+  `error_log_path`(실패 시 `run.log` 경로).
 
-`status`는 `ok`(성공) / `failed`(subprocess가 non-zero로 종료) /
-`skipped`(`--skip-existing`으로 건너뜀) / `dry_run`(`--dry-run`으로 실행
-안 함) / `missing`(이 (mode, video) 조합이 아직 한 번도 시도되지 않음) 중
-하나다.
+- `status`는 `ok`(성공) / `failed`(subprocess가 non-zero로 종료) /
+  `skipped`(`--skip-existing`으로 건너뜀) / `dry_run`(`--dry-run`으로 실행
+  안 함) / `missing`(이 (mode, video) 조합이 아직 한 번도 시도되지 않음) 중
+  하나다.
 
 ## 결과 해석 시 주의사항
 
@@ -245,15 +245,15 @@ python -m pytest tests/test_batch_lgvsc_1c_reproduce.py tests/test_video_generat
 python -m pytest tests/ -q
 ```
 
-`tests/test_batch_lgvsc_1c_reproduce.py`(29개 — PSSS/SKEM 단계에서 9개 추가)는
-모드→config 선택, output 경로 격리, dry-run이 subprocess를 호출하지 않음,
-`--max-frames`/`--device`/`--no-models`가 명령어에 반영됨, `--summary-only`가
-디스크의 기존 결과에서 summary를 재생성함, `--continue-on-error`로 실패 job
-이후에도 다음 job이 실행됨, `wan_skim_sfa`/`wan_skem_dsa`/`svd_start_only`
-config가 각각의 1B 검증 완료 config를 기반으로 함, 그리고(PSSS/SKEM 단계 추가분)
-새 4모드의 selector/psss config provenance, 확장된 summary 필드, aggregate
-비교표를 검증한다. 실제 GPU 실행/전체 batch run은 이 테스트 범위 밖이다 —
-사용자가 직접 실행해서 확인한다.
+- `tests/test_batch_lgvsc_1c_reproduce.py`(29개 — PSSS/SKEM 단계에서 9개 추가)는
+  모드→config 선택, output 경로 격리, dry-run이 subprocess를 호출하지 않음,
+  `--max-frames`/`--device`/`--no-models`가 명령어에 반영됨, `--summary-only`가
+  디스크의 기존 결과에서 summary를 재생성함, `--continue-on-error`로 실패 job
+  이후에도 다음 job이 실행됨, `wan_skim_sfa`/`wan_skem_dsa`/`svd_start_only`
+  config가 각각의 1B 검증 완료 config를 기반으로 함, 그리고(PSSS/SKEM 단계 추가분)
+  새 4모드의 selector/psss config provenance, 확장된 summary 필드, aggregate
+  비교표를 검증한다. 실제 GPU 실행/전체 batch run은 이 테스트 범위 밖이다 —
+  사용자가 직접 실행해서 확인한다.
 
 ## 관련 문서
 

@@ -11,20 +11,20 @@ supersedes:
 
 # PSSS/SKEM 준비 상태 — variable-length SKEM selector + SKIM/SFA vs SKEM/DSA 비교
 
-이 문서는 [1C 재현 문서](./2026-07_lgvsc_1c_reproduction.md)가 명시했던 미완료 항목 —
-**"keyframe 선택(SKIM vs SKEM)은 네 모드 전부 동일하다"** — 을 메운 작업을
-정리한다. [과거 구현 로그](../archive/etri_implementation_log.md) "후속 딥러닝 4단계" 1단계의 연장(1C 다음
-단계)이며, 이 저장소에서는 **PSSS/SKEM 단계**로 부른다.
+- 이 문서는 [1C 재현 문서](./2026-07_lgvsc_1c_reproduction.md)가 명시했던 미완료 항목 —
+  **"keyframe 선택(SKIM vs SKEM)은 네 모드 전부 동일하다"** — 을 메운 작업을
+  정리한다. [과거 구현 로그](../archive/etri_implementation_log.md) "후속 딥러닝 4단계" 1단계의 연장(1C 다음
+  단계)이며, 이 저장소에서는 **PSSS/SKEM 단계**로 부른다.
 
-**핵심 경고(반복): 이 작업으로도 LGVSC의 SKEM/PSSS를 faithful하게 재현한 것이
-아니다.** 논문은 InternVL2-8B 기반 captioning + PSSS 프롬프트의 정확한
-하이퍼파라미터·후처리를 공개하지 않았다. 이 저장소가 완성한 것은 (1) 논문
-Eq.1-2 그대로의 **PSSS 수식**(yes/no 최종 텍스트 비교가 아니라 실제 다음-토큰
-확률로 계산), (2) 그 PSSS로 keyframe을 자동회귀적으로 고르는 **SKEM selector**
-(가변 길이 segment 생성), (3) 기존 fixed selector(SKIM에 가까운 근사)와
-비교하는 batch driver/summary 확장이다. mock/proxy PSSS 백엔드는 구조 검증용일
-뿐 실제 LGVSC PSSS 성능의 근거가 아니며, real 백엔드도 캡션 모델·MLLM 선택이
-논문과 다를 수 있어 수치를 논문과 직접 비교할 수 없다.
+- **핵심 경고(반복): 이 작업으로도 LGVSC의 SKEM/PSSS를 faithful하게 재현한 것이
+  아니다.** 논문은 InternVL2-8B 기반 captioning + PSSS 프롬프트의 정확한
+  하이퍼파라미터·후처리를 공개하지 않았다. 이 저장소가 완성한 것은 (1) 논문
+  Eq.1-2 그대로의 **PSSS 수식**(yes/no 최종 텍스트 비교가 아니라 실제 다음-토큰
+  확률로 계산), (2) 그 PSSS로 keyframe을 자동회귀적으로 고르는 **SKEM selector**
+  (가변 길이 segment 생성), (3) 기존 fixed selector(SKIM에 가까운 근사)와
+  비교하는 batch driver/summary 확장이다. mock/proxy PSSS 백엔드는 구조 검증용일
+  뿐 실제 LGVSC PSSS 성능의 근거가 아니며, real 백엔드도 캡션 모델·MLLM 선택이
+  논문과 다를 수 있어 수치를 논문과 직접 비교할 수 없다.
 
 > **코드 리뷰 반영(2026-07 후속):** 최초 구현에 대한 리뷰에서 High 1건 +
 > Medium 4건 + Low 1건이 지적됐다 — 전부 실제로 수정하고 회귀 테스트로
@@ -53,35 +53,35 @@ Eq.1-2 그대로의 **PSSS 수식**(yes/no 최종 텍스트 비교가 아니라 
 | Medium | `summary_metrics.csv`의 `psss_score_mean/min/max`가 keyframe을 실제로 발생시킨 score만 집계해(`segments.json`의 `keyframe_selection`에는 트리거 score만 붙음) 전체 PSSS 분포처럼 오인될 수 있었다 | `keyframes.json`의 **전체** `psss_scores`(continue_segment 포함)를 읽어 population 통계(`psss_score_mean/min/max/n`)로 삼고, 기존 트리거-only 값은 `trigger_psss_score_mean/min/max`로 이름을 분리했다. CPU 스모크 재실행에서 `skem_dsa_proxy_psss`처럼 threshold를 한 번도 못 넘은 실행도 이제 의미 있는 `psss_score_mean`(예: 약 -0.90)을 보고한다 — 예전에는 트리거가 0건이라 빈 값이었다 |
 | Low | PSSS가 꺼진(기존 `fixed` selector) 기본 경로에서도 `segments.json`에 `keyframe_selection: null`이 항상 추가돼 "결과 불변"이 엄밀하지 않았다 | `SegmentRecord.to_dict()`가 `keyframe_selection`이 `None`일 때 그 키 자체를 아예 생략하도록 수정 — 기존 fixed selector 실행의 `segments.json` 키 집합이 완전히 예전과 동일해졌다(값이 같다는 정도가 아니라 스키마 자체가 동일) |
 
-전체 회귀: `conda run -n ptest python -m pytest tests/ -q` → **1090 passed, 0 failed**.
+- 전체 회귀: `conda run -n ptest python -m pytest tests/ -q` → **1090 passed, 0 failed**.
 
 ### 2차 코드 리뷰 반영 — CBR 매칭 + 문서 정정 (2026-07 후속)
 
-1차 리뷰 수정 이후 재검토에서 Medium 1건 + Low 1건이 추가로 지적됐다 —
-"blocking defect는 없다"는 평가였지만 둘 다 실제로 수정했다.
+- 1차 리뷰 수정 이후 재검토에서 Medium 1건 + Low 1건이 추가로 지적됐다 —
+  "blocking defect는 없다"는 평가였지만 둘 다 실제로 수정했다.
 
 | 심각도 | 문제 | 수정 |
 |---|---|---|
 | Medium | `fixed_interval: 12`(SKIM)과 `max_segment_length: 12`(SKEM)는 **최대 길이만** 같다 — SKEM은 PSSS 판단에 따라 12프레임보다 훨씬 이전에도 keyframe을 추가하므로, 실제 keyframe 개수/CBR은 두 비교선이 다를 수 있다. | 최초 보정안은 `interval=ceil(n_frames/n_keyframes)`를 사용했지만, 10프레임/6 keyframe처럼 정수 interval로 표현할 수 없는 조합이 존재하므로 폐기했다. 현재 `--keyframe-count-match-from <mode>`는 완료된 source SKEM의 `keyframes.json`과 `temporal_metrics.csv`가 같은 clip 길이를 보고하는지 확인하고, target 길이도 같은 경우에만 `FixedCountKeyframeSelector`로 정확히 K개를 균등 배치한다. source keyframe/metrics/generated-config fingerprint를 기록하고 실행 후 source 불변성, target 프레임 수, 실제 keyframe 수를 다시 검증하며 불일치는 job 실패로 처리한다. summary의 `keyframe_match_status`/`requested_keyframes`/`actual_fixed_keyframes`/`keyframe_count_delta`가 이 검증을 담는다. 동일 keyframe 수는 동일 실제 CBR의 충분조건이 아니다. per-run channel-symbol accounting이 없거나 `proxy_fraction > 0`이면 `cbr_match_status=count_only`, exact accounting에서 symbol 수까지 같을 때만 `verified`, symbol 수가 다르면 `mismatch`로 기록한다. |
 | Low | 문서가 "`fixed`/`fixed_interval` 둘 다 `keyframe_selection`을 생략한다"고 잘못 서술했다 — 실제로는 `FixedIntervalKeyframeSelector`도 `structure["selector"]`를 채우므로 `segment.py::_keyframe_selection_summary`가 non-None을 반환해 `keyframe_selection`이 실제로는 붙는다(`backend_kind: "not_applicable"`, `psss_score`/`reason`은 `None`) | 위 "무엇이 새로 생겼는가" 표의 서술을 "**`fixed`(기존 `KeyframeExtractor`)에서만** 생략, `fixed_interval`은 selector provenance를 기록"으로 정정. 회귀 테스트: `tests/test_skem_selector.py::test_fixed_interval_selector_segments_DO_have_keyframe_selection` |
 
-이 후속 수정의 집중 회귀:
-`conda run -n ptest python -m pytest tests/test_skem_selector.py tests/test_batch_lgvsc_1c_reproduce.py -q`
-→ **90 passed, 0 failed**.
-전체 회귀: `conda run -n ptest python -m pytest tests/ -q`
-→ **1117 passed, 0 failed, 3 warnings**(기존 Transformer nested-tensor 경고).
+- 이 후속 수정의 집중 회귀:
+  `conda run -n ptest python -m pytest tests/test_skem_selector.py tests/test_batch_lgvsc_1c_reproduce.py -q`
+  → **90 passed, 0 failed**.
+  전체 회귀: `conda run -n ptest python -m pytest tests/ -q`
+  → **1117 passed, 0 failed, 3 warnings**(기존 Transformer nested-tensor 경고).
 
 ## PSSS 계산 방식 (`video/psss.py`)
 
-논문 Eq.1-2:
+- 논문 Eq.1-2:
 
 ```
 S_abs = P("Yes" | Info A, Info B, Semantic Focus)          ∈ [0, 1)
 S_rel = P("No"  | ...) - P("Yes" | ...)                     ∈ (-1, 1)
 ```
 
-`MllmTokenProbPsssBackend`(`backend_kind="real"`)는 이를 **문자열 비교가 아니라
-실제 모델의 다음-토큰 로짓**으로 계산한다:
+- `MllmTokenProbPsssBackend`(`backend_kind="real"`)는 이를 **문자열 비교가 아니라
+  실제 모델의 다음-토큰 로짓**으로 계산한다:
 
 1. 논문의 프롬프트 템플릿("Info A, Info B. Determine whether they are similar
    from the perspective of Semantic Focus, use yes or no to answer.")을
@@ -99,11 +99,11 @@ S_rel = P("No"  | ...) - P("Yes" | ...)                     ∈ (-1, 1)
    사용된 프롬프트, 표면형별 토큰 ID/로그확률을 전부 `PsssScoreResult.raw_logits`
    / `.evidence`에 기록한다.
 
-**Unavailable 처리:** `transformers`가 없거나, `model_id` 가중치를 로드하지
-못하거나, 주입된 model/tokenizer가 다음-토큰 로짓을 못 주면(호출 자체가
-실패하거나 `.logits`가 없는 출력을 반환하면) `PsssBackendUnavailableError`를
-던진다 — mock 결과로 조용히 대체하지 않는다(`tests/test_psss.py::
-TestMllmTokenProbPsssBackendUnavailable`로 검증).
+- **Unavailable 처리:** `transformers`가 없거나, `model_id` 가중치를 로드하지
+  못하거나, 주입된 model/tokenizer가 다음-토큰 로짓을 못 주면(호출 자체가
+  실패하거나 `.logits`가 없는 출력을 반환하면) `PsssBackendUnavailableError`를
+  던진다 — mock 결과로 조용히 대체하지 않는다(`tests/test_psss.py::
+  TestMllmTokenProbPsssBackendUnavailable`로 검증).
 
 ## mock / proxy / real 구분
 
@@ -113,9 +113,9 @@ TestMllmTokenProbPsssBackendUnavailable`로 검증).
 | `ClipTextProxyPsssBackend` | `proxy` | 이 저장소의 기존 CLIP 텍스트 인코더로 두 캡션의 코사인 유사도를 계산해 같은 스키마로 사상 | ❌ yes/no 프롬프트도, 토큰 확률도 없음 — "이미 사용 가능한 모델"을 재사용한 근사일 뿐 |
 | `MllmTokenProbPsssBackend` | `real` | 위 "PSSS 계산 방식" 그대로 — 실제 MLLM/causal-LM의 P(Yes)/P(No) | ✅ 논문 Eq.1-2를 그대로 구현 |
 
-세 백엔드 모두 `PsssScoreResult.backend_kind`/`.notes`에 자신의 정체를 명시하며,
-`proxy`는 `.proxy_of = "clip_text_similarity"`까지 못박는다 — 어떤 산출물에서도
-proxy/mock 결과를 real PSSS로 착각할 수 없다.
+- 세 백엔드 모두 `PsssScoreResult.backend_kind`/`.notes`에 자신의 정체를 명시하며,
+  `proxy`는 `.proxy_of = "clip_text_similarity"`까지 못박는다 — 어떤 산출물에서도
+  proxy/mock 결과를 real PSSS로 착각할 수 없다.
 
 ## Fixed segment vs Variable-length segment
 
@@ -144,28 +144,28 @@ proxy/mock 결과를 real PSSS로 착각할 수 없다.
   segment 7개, `02_car_pass`는 [4,6] 프레임 segment 3개가 나왔다(둘 다 fixed
   selector로는 [2,12] 동일 패턴). 아래 "직접 검증 결과" 참조.
 
-`SegmentGenerationRequest`/`generate_segment()`(1A) 계약은 애초에 GOP 길이에
-대해 아무 가정도 하지 않으므로(각 GOP의 `target_indices`/`segment_length`는
-호출마다 다를 수 있음), variable-length segment를 흘려보내기 위해
-`video_generator.py`/`lgvsc_generate_worker.py`를 전혀 수정하지 않았다 — 이번
-작업으로 확인한 것은 "이미 가변 길이를 지원하던 계약에 실제로 가변 길이
-selector를 연결"이다.
+- `SegmentGenerationRequest`/`generate_segment()`(1A) 계약은 애초에 GOP 길이에
+  대해 아무 가정도 하지 않으므로(각 GOP의 `target_indices`/`segment_length`는
+  호출마다 다를 수 있음), variable-length segment를 흘려보내기 위해
+  `video_generator.py`/`lgvsc_generate_worker.py`를 전혀 수정하지 않았다 — 이번
+  작업으로 확인한 것은 "이미 가변 길이를 지원하던 계약에 실제로 가변 길이
+  selector를 연결"이다.
 
 ## Wan start/end checkpoint 연결 방식 (변경 없음, 재확인만 함)
 
-1B가 이미 구현한 대로: `scripts/lgvsc_generate_worker.py::run_wan_backend`가
-segment마다 `end_keyframe_image` 존재 여부로 체크포인트를 자동 선택한다 —
-있으면 `Wan2.1-FLF2V-14B-720P`(bidirectional), 없으면 `Wan2.1-I2V-14B-480P`
-(start-only). PSSS selector가 만든 segment도 이 로직을 그대로 통과한다(코드
-변경 없음). **마지막 open GOP**(다음 keyframe이 없는 마지막 segment)는 여전히
-`end_keyframe_image`가 없으므로 자동으로 start-only 체크포인트로 라우팅되고,
-mock 경로에서는 `BidirectionalInterpolationGenerator(missing_end_policy=
-"fallback_start_only")`가 `conditioning_mode="start_only"`로 명확히 강등해
-기록한다(`generation.conditioning_mode`가 실제 사용된 조건화를 정직하게
-반영 — 요청이 bidirectional이었다는 사실은 잃지 않고
-`n_fallback_segments`로 batch summary에 집계됨). 회귀 테스트:
-`tests/test_skem_selector.py::TestTemporalPipelineWithPsssSelector::
-test_variable_length_generate_branch_and_last_gop_fallback`.
+- 1B가 이미 구현한 대로: `scripts/lgvsc_generate_worker.py::run_wan_backend`가
+  segment마다 `end_keyframe_image` 존재 여부로 체크포인트를 자동 선택한다 —
+  있으면 `Wan2.1-FLF2V-14B-720P`(bidirectional), 없으면 `Wan2.1-I2V-14B-480P`
+  (start-only). PSSS selector가 만든 segment도 이 로직을 그대로 통과한다(코드
+  변경 없음). **마지막 open GOP**(다음 keyframe이 없는 마지막 segment)는 여전히
+  `end_keyframe_image`가 없으므로 자동으로 start-only 체크포인트로 라우팅되고,
+  mock 경로에서는 `BidirectionalInterpolationGenerator(missing_end_policy=
+  "fallback_start_only")`가 `conditioning_mode="start_only"`로 명확히 강등해
+  기록한다(`generation.conditioning_mode`가 실제 사용된 조건화를 정직하게
+  반영 — 요청이 bidirectional이었다는 사실은 잃지 않고
+  `n_fallback_segments`로 batch summary에 집계됨). 회귀 테스트:
+  `tests/test_skem_selector.py::TestTemporalPipelineWithPsssSelector::
+  test_variable_length_generate_branch_and_last_gop_fallback`.
 
 ## Config 4종
 
@@ -176,38 +176,38 @@ test_variable_length_generate_branch_and_last_gop_fallback`.
 | `etri_lgvsc_1c_skem_dsa_mock_psss.yaml` | `psss` | `mock` | mock bidirectional interpolation | CPU, 다운로드 없음 — 항상 실행 가능 |
 | `etri_lgvsc_1c_skem_dsa_proxy_psss.yaml` | `psss` | `proxy`(CLIP) | mock bidirectional interpolation | CPU, CLIP 가중치만 (경량) |
 
-`skim_sfa_fixed`/`skem_dsa_psss`가 "최소 두 실험 모드" 요구사항이고, 나머지
-둘은 진단용(mock/proxy)이다. 각 config 헤더에 정확히 이 표와 같은 구분을
-반복해 적어 두었다 — config만 읽어도 실제/proxy/mock을 헷갈릴 수 없다.
+- `skim_sfa_fixed`/`skem_dsa_psss`가 "최소 두 실험 모드" 요구사항이고, 나머지
+  둘은 진단용(mock/proxy)이다. 각 config 헤더에 정확히 이 표와 같은 구분을
+  반복해 적어 두었다 — config만 읽어도 실제/proxy/mock을 헷갈릴 수 없다.
 
 ## Batch driver + summary 확장
 
-`scripts/batch_lgvsc_1c_reproduce.py`의 `MODES`가 8개로 늘었다(기존 4 +
-신규 4). `collect_run_metrics()`가 (1) 생성된 per-video config를 다시 읽어
-`selector_backend`/`psss_backend_kind`(`not_applicable` when 비-`psss`)를,
-(2) `segments.json`의 `keyframe_selection`/`generation`을 집계해
-`n_segments`/`segment_length_{min,max,mean,std}`/
-`n_start_only_segments`/`n_bidirectional_segments`/`n_fallback_segments`/
-`worker_model_id`를, (3) **`keyframes.json`의 전체 `psss_scores`**(PSSS가
-평가한 모든 프레임 — keyframe을 실제로 발생시켰는지와 무관)를 읽어
-population 통계 `psss_score_{mean,min,max,n}`을, 그리고 keyframe을 실제로
-발생시킨 score만의 `trigger_psss_score_{mean,min,max}`을 **별도로** 채운다
-(둘을 섞으면 편향 — 위 "코드 리뷰에서 발견·수정된 문제" 참조), (4) 실행
-로그/결과 경로(`run_log_path`/`segments_json_path`/`keyframes_json_path`/
-`recon_video_path`)를 채운다.
-`build_aggregate_comparison(rows, modes_pair=("skim_sfa_fixed",
-"skem_dsa_psss"))`가 영상별 + `MEAN` 행으로 두 모드를 나란히 놓은
-`summary_aggregate_comparison.csv/.md/.json`을 만든다(영상이 없거나 두 모드
-중 하나도 실행되지 않았으면 빈 리스트 — 파일을 쓰지 않는다).
+- `scripts/batch_lgvsc_1c_reproduce.py`의 `MODES`가 8개로 늘었다(기존 4 +
+  신규 4). `collect_run_metrics()`가 (1) 생성된 per-video config를 다시 읽어
+  `selector_backend`/`psss_backend_kind`(`not_applicable` when 비-`psss`)를,
+  (2) `segments.json`의 `keyframe_selection`/`generation`을 집계해
+  `n_segments`/`segment_length_{min,max,mean,std}`/
+  `n_start_only_segments`/`n_bidirectional_segments`/`n_fallback_segments`/
+  `worker_model_id`를, (3) **`keyframes.json`의 전체 `psss_scores`**(PSSS가
+  평가한 모든 프레임 — keyframe을 실제로 발생시켰는지와 무관)를 읽어
+  population 통계 `psss_score_{mean,min,max,n}`을, 그리고 keyframe을 실제로
+  발생시킨 score만의 `trigger_psss_score_{mean,min,max}`을 **별도로** 채운다
+  (둘을 섞으면 편향 — 위 "코드 리뷰에서 발견·수정된 문제" 참조), (4) 실행
+  로그/결과 경로(`run_log_path`/`segments_json_path`/`keyframes_json_path`/
+  `recon_video_path`)를 채운다.
+  `build_aggregate_comparison(rows, modes_pair=("skim_sfa_fixed",
+  "skem_dsa_psss"))`가 영상별 + `MEAN` 행으로 두 모드를 나란히 놓은
+  `summary_aggregate_comparison.csv/.md/.json`을 만든다(영상이 없거나 두 모드
+  중 하나도 실행되지 않았으면 빈 리스트 — 파일을 쓰지 않는다).
 
-**버그 수정(이번 작업 중 발견):** `--output-root`에 상대경로를 주면
-생성 config의 절대경로 계산이 `_generated_configs/<mode>/` 기준으로 다시
-해석되어 출력 경로가 중첩 이중화되는 문제가 있었다(`output_root` 자체가
-상대경로였던 경우에만 발생 — 기본값은 항상 절대경로라 기존 4모드
-문서화된 사용법에서는 드러나지 않았다). `main()`에서 `output_root =
-Path(args.output_root).resolve()`로 고정해 근본 수정했다 — "생성 config는
-영상별 절대 output 경로를 사용한다" 요구사항을 상대경로 CLI 입력에도
-보장한다.
+- **버그 수정(이번 작업 중 발견):** `--output-root`에 상대경로를 주면
+  생성 config의 절대경로 계산이 `_generated_configs/<mode>/` 기준으로 다시
+  해석되어 출력 경로가 중첩 이중화되는 문제가 있었다(`output_root` 자체가
+  상대경로였던 경우에만 발생 — 기본값은 항상 절대경로라 기존 4모드
+  문서화된 사용법에서는 드러나지 않았다). `main()`에서 `output_root =
+  Path(args.output_root).resolve()`로 고정해 근본 수정했다 — "생성 config는
+  영상별 절대 output 경로를 사용한다" 요구사항을 상대경로 CLI 입력에도
+  보장한다.
 
 ## 테스트
 
@@ -239,8 +239,8 @@ conda run -n ptest python -m pytest tests/test_psss.py tests/test_skem_selector.
   trigger-only PSSS score 통계가 실제로 다른 값을 내는지**, aggregate 비교
   표, dry-run/두 영상×두 모드 summary isolation.
 
-`conda run -n ptest python -m pytest tests/ -q` → **1090 passed, 0 failed**
-(회귀 없음).
+- `conda run -n ptest python -m pytest tests/ -q` → **1090 passed, 0 failed**
+  (회귀 없음).
 
 ## 직접 검증 결과 (이번 세션에서 실행)
 
@@ -254,7 +254,7 @@ conda run -n ptest python scripts/batch_lgvsc_1c_reproduce.py \
     --max-frames 14 --no-models
 ```
 
-→ 6/6 성공. 관측된 `summary_metrics.csv`(발췌):
+- → 6/6 성공. 관측된 `summary_metrics.csv`(발췌):
 
 | mode | video | selector_backend | psss_backend_kind | n_segments | segment_length min/max/mean | psss_score_mean (population) |
 |---|---|---|---|---|---|---|
@@ -265,20 +265,20 @@ conda run -n ptest python scripts/batch_lgvsc_1c_reproduce.py \
 | skem_dsa_proxy_psss | 01_person_walk | psss | proxy | 2 | 2/12/7.0 | -0.901 (n=10) |
 | skem_dsa_proxy_psss | 02_car_pass | psss | proxy | 2 | 2/12/7.0 | -0.907 (n=10) |
 
-**같은 두 영상, 같은 `--max-frames 14`에서 fixed selector는 두 영상 모두
-동일한 [2, 12] 분할을 냈지만, PSSS(mock) selector는 영상마다 실제로 다른
-개수·길이의 segment를 만들었다(7개 vs 3개)** — variable-length 동작이 구조가
-아니라 실행 결과로 확인됨. `skem_dsa_proxy_psss`가 fixed와 같은 분할 패턴을
-보인 이유는, population 통계 수정(위 "코드 리뷰에서 발견·수정된 문제") 이후
-정량적으로 확인됐다 — CLIP 텍스트 인코더가 이 저장소의 frame-statistics
-placeholder 캡션("frame N stats ...")들을 일관되게 "매우 유사"(`s_rel` 평균
-약 -0.90, 전부 `threshold=0.35`에 한참 못 미침)로 판단해 `max_segment_length`
-강제 외에는 keyframe을 전혀 추가하지 않았기 때문이다. proxy 백엔드가 real
-PSSS의 성능 대리 지표가 될 수 없다는 것을 보여주는 사례이지 버그가 아니다
-(진짜 캡션이 있으면 CLIP 텍스트 유사도도 더 잘 갈릴 것으로 기대되지만, 이
-또한 검증되지 않았다). 이 수정 전에는 트리거가 0건이라 `psss_score_mean`이
-빈 값으로 나와 이 원인을 전혀 알 수 없었다는 점도 population 통계 수정의
-실질적 효과다.
+- **같은 두 영상, 같은 `--max-frames 14`에서 fixed selector는 두 영상 모두
+  동일한 [2, 12] 분할을 냈지만, PSSS(mock) selector는 영상마다 실제로 다른
+  개수·길이의 segment를 만들었다(7개 vs 3개)** — variable-length 동작이 구조가
+  아니라 실행 결과로 확인됨. `skem_dsa_proxy_psss`가 fixed와 같은 분할 패턴을
+  보인 이유는, population 통계 수정(위 "코드 리뷰에서 발견·수정된 문제") 이후
+  정량적으로 확인됐다 — CLIP 텍스트 인코더가 이 저장소의 frame-statistics
+  placeholder 캡션("frame N stats ...")들을 일관되게 "매우 유사"(`s_rel` 평균
+  약 -0.90, 전부 `threshold=0.35`에 한참 못 미침)로 판단해 `max_segment_length`
+  강제 외에는 keyframe을 전혀 추가하지 않았기 때문이다. proxy 백엔드가 real
+  PSSS의 성능 대리 지표가 될 수 없다는 것을 보여주는 사례이지 버그가 아니다
+  (진짜 캡션이 있으면 CLIP 텍스트 유사도도 더 잘 갈릴 것으로 기대되지만, 이
+  또한 검증되지 않았다). 이 수정 전에는 트리거가 0건이라 `psss_score_mean`이
+  빈 값으로 나와 이 원인을 전혀 알 수 없었다는 점도 population 통계 수정의
+  실질적 효과다.
 
 ### 2) 실제 CUDA 디바이스에서의 PSSS device-placement 회귀 (fake model, 가중치 다운로드 없음)
 
@@ -286,11 +286,11 @@ PSSS의 성능 대리 지표가 될 수 없다는 것을 보여주는 사례이�
 conda run -n ptest python -m pytest tests/test_psss.py -k cuda -q
 ```
 
-→ 1 passed (이 세션의 실제 GPU에서 실행됨, skip되지 않음). 모델을
-`cuda:0`에 두고 `MllmTokenProbPsssBackend.score()`를 호출해 device mismatch
-없이 완료되는지 확인 — High 심각도로 지적된 버그의 실제 CUDA 환경에서의
-직접 재현·수정 확인이다. 실제 MLLM 가중치는 쓰지 않았으므로 "real PSSS의
-실제 GPU 전체 실행"과는 다르다(아래 "아직 하지 않은 것" 참조).
+- → 1 passed (이 세션의 실제 GPU에서 실행됨, skip되지 않음). 모델을
+  `cuda:0`에 두고 `MllmTokenProbPsssBackend.score()`를 호출해 device mismatch
+  없이 완료되는지 확인 — High 심각도로 지적된 버그의 실제 CUDA 환경에서의
+  직접 재현·수정 확인이다. 실제 MLLM 가중치는 쓰지 않았으므로 "real PSSS의
+  실제 GPU 전체 실행"과는 다르다(아래 "아직 하지 않은 것" 참조).
 
 ### 3) 실제 GPU smoke — `skim_sfa_fixed`(이제 `fixed_interval` selector)를 실제 Wan 14B로 실행
 
@@ -300,18 +300,18 @@ conda run -n ptest python scripts/batch_lgvsc_1c_reproduce.py \
     --max-frames 14 --no-models
 ```
 
-이 머신에 이미 캐시된 `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`(1B에서 다운로드)를
-사용해 두 영상 모두 실제 GPU(RTX 4080)에서 완주했다. `01_person_walk`의
-`segments.json`에서 확인:
+- 이 머신에 이미 캐시된 `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`(1B에서 다운로드)를
+  사용해 두 영상 모두 실제 GPU(RTX 4080)에서 완주했다. `01_person_walk`의
+  `segments.json`에서 확인:
 
 ```
 segment 0: conditioning_mode=start_only backend=external_segment_worker:wan:Wan-AI/Wan2.1-I2V-14B-480P-Diffusers mock=false
 segment 1: conditioning_mode=start_only backend=external_segment_worker:wan:Wan-AI/Wan2.1-I2V-14B-480P-Diffusers mock=false
 ```
 
-`recon.mp4`/`temporal_metrics.csv`/`n_generate=12` 모두 정상 산출 — 새 config가
-1B에서 검증된 것과 동일하게 실제 GPU에서 동작함을 재확인했다(코드 재사용이라
-당연하지만, config 헤더의 주장을 실행으로 검증했다는 의미).
+- `recon.mp4`/`temporal_metrics.csv`/`n_generate=12` 모두 정상 산출 — 새 config가
+  1B에서 검증된 것과 동일하게 실제 GPU에서 동작함을 재확인했다(코드 재사용이라
+  당연하지만, config 헤더의 주장을 실행으로 검증했다는 의미).
 
 ### 아직 하지 않은 것 (실제 GPU/실제 MLLM 필요)
 
@@ -355,12 +355,12 @@ conda run -n ptest python scripts/batch_lgvsc_1c_reproduce.py \
     --keyframe-count-match-from skem_dsa_psss
 ```
 
-`outputs/etri_video_eval/lgvsc_1c_reproduce/summary_aggregate_comparison.csv`의
-`skem_dsa_psss.segment_length_std` > `skim_sfa_fixed.segment_length_std`(둘 다
-0에 가깝지 않고, PSSS 쪽이 실제로 더 가변적)이면 "SKEM이 SKIM보다 의미
-경계에 더 잘 맞춰 segment를 나눈다"는 구조적 신호로 볼 수 있다 — 이것이
-LGVSC의 정성적 주장을 재현하는 것과 같은 뜻은 아니다(논문의 정량 결과와
-직접 비교 불가, 위 "무엇이 새로 생겼는가" 서두 참조).
+- `outputs/etri_video_eval/lgvsc_1c_reproduce/summary_aggregate_comparison.csv`의
+  `skem_dsa_psss.segment_length_std` > `skim_sfa_fixed.segment_length_std`(둘 다
+  0에 가깝지 않고, PSSS 쪽이 실제로 더 가변적)이면 "SKEM이 SKIM보다 의미
+  경계에 더 잘 맞춰 segment를 나눈다"는 구조적 신호로 볼 수 있다 — 이것이
+  LGVSC의 정성적 주장을 재현하는 것과 같은 뜻은 아니다(논문의 정량 결과와
+  직접 비교 불가, 위 "무엇이 새로 생겼는가" 서두 참조).
 
 ## 남은 제한사항 (숨기지 않고 명시)
 

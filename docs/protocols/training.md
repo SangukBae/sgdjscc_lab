@@ -10,8 +10,8 @@ supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
 
 # 학습 지침
 
-`scripts/train.py`는 논문 3-stage 학습과 보조 실험을 같은 CLI로 실행한다.
-추론·평가 경로에는 영향을 주지 않는다.
+- `scripts/train.py`는 논문 3-stage 학습과 보조 실험을 같은 CLI로 실행한다.
+  추론·평가 경로에는 영향을 주지 않는다.
 
 ## Stage 구성
 
@@ -24,8 +24,8 @@ supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
 | supporting | `csi_estimation` | SNR estimator | 이미지 |
 | extension | `end_to_end_ft` | 선택한 JSCC/DM 모듈 | 이미지+캡션 |
 
-권장 순서는 `jscc` → `text_dm` → `edge_codec` → `controlnet`이다.
-`end_to_end_ft`는 baseline 학습 이후의 확장 실험이다.
+- 권장 순서는 `jscc` → `text_dm` → `edge_codec` → `controlnet`이다.
+  `end_to_end_ft`는 baseline 학습 이후의 확장 실험이다.
 
 ## 기본 실행
 
@@ -51,9 +51,9 @@ python scripts/train.py \
     --train-list /data/train --device cuda:0
 ```
 
-`--stage`로 config의 stage를 덮어쓰고, `--max-steps` 또는 `--epochs`로 종료
-조건을 정한다. `--resume latest`는 최근 checkpoint를 찾고, `--no-models`는 모델을
-로드하지 않고 설정과 배선만 검사한다.
+- `--stage`로 config의 stage를 덮어쓰고, `--max-steps` 또는 `--epochs`로 종료
+  조건을 정한다. `--resume latest`는 최근 checkpoint를 찾고, `--no-models`는 모델을
+  로드하지 않고 설정과 배선만 검사한다.
 
 ## 데이터와 Config
 
@@ -61,13 +61,13 @@ python scripts/train.py \
 - edge: `canny`, `sidecar`, `muge_sidecar`
 - 입력: 폴더 또는 file list
 
-stage별 composed config는 `configs/recipes/training/composed_train_*.yaml`에 있다.
-데이터 형식과 생성 도구는 [datasets.md](./datasets.md)를 참고한다. 잘못된 stage,
-누락된 caption/edge, 학습 대상 0개 설정은 checkpoint 로딩 전에 실패한다.
+- stage별 composed config는 `configs/recipes/training/composed_train_*.yaml`에 있다.
+  데이터 형식과 생성 도구는 [datasets.md](./datasets.md)를 참고한다. 잘못된 stage,
+  누락된 caption/edge, 학습 대상 0개 설정은 checkpoint 로딩 전에 실패한다.
 
 ## Checkpoint와 Export
 
-학습 결과는 기본적으로 다음 위치에 저장된다.
+- 학습 결과는 기본적으로 다음 위치에 저장된다.
 
 ```text
 outputs/checkpoints/<stage>/
@@ -76,7 +76,7 @@ outputs/checkpoints/<stage>/
 └── train_log.jsonl
 ```
 
-추론용 checkpoint로 변환할 때는 export 스크립트를 사용한다.
+- 추론용 checkpoint로 변환할 때는 export 스크립트를 사용한다.
 
 ```bash
 python scripts/export_checkpoint.py \
@@ -91,8 +91,8 @@ python scripts/export_checkpoint.py \
 | `text_dm` | `checkpoints/diffusion_backbone.pth` |
 | `controlnet` | `checkpoints/diffusion_controlnet.pth` |
 
-기존 파일은 `--force` 없이는 덮어쓰지 않는다. baseline과 custom checkpoint를
-구분하는 방법은 [reproducibility.md](./reproducibility.md)를 따른다.
+- 기존 파일은 `--force` 없이는 덮어쓰지 않는다. baseline과 custom checkpoint를
+  구분하는 방법은 [reproducibility.md](./reproducibility.md)를 따른다.
 
 ## Multi-GPU
 
@@ -102,13 +102,13 @@ torchrun --standalone --nproc_per_node=3 scripts/train.py \
     --train-list /data/train --val-list /data/val
 ```
 
-`batch_size`는 rank별 값이며 전역 batch는
-`batch_size × world_size × grad_accum_steps`다. export와 평가는 단일 프로세스로
-실행한다.
+- `batch_size`는 rank별 값이며 전역 batch는
+  `batch_size × world_size × grad_accum_steps`다. export와 평가는 단일 프로세스로
+  실행한다.
 
 ## Smoke 검증
 
-실제 가중치의 forward/backward와 저장·복원을 1~2 step으로 확인한다.
+- 실제 가중치의 forward/backward와 저장·복원을 1~2 step으로 확인한다.
 
 ```bash
 python scripts/make_tiny_dataset.py \
@@ -120,8 +120,8 @@ python scripts/train.py \
     --device cpu --max-steps 2 --log-every-steps 1 --save-every-steps 2
 ```
 
-다른 stage는 config와 device만 바꿔 같은 방식으로 확인한다. 다음 조건을 모두
-만족하면 배선 검증을 통과한 것으로 본다.
+- 다른 stage는 config와 device만 바꿔 같은 방식으로 확인한다. 다음 조건을 모두
+  만족하면 배선 검증을 통과한 것으로 본다.
 
 1. loss가 NaN/Inf 없이 기록된다.
 2. 정확한 step에서 종료된다.
@@ -133,5 +133,5 @@ python scripts/train.py \
 python -m pytest tests/test_train_stages.py -q
 ```
 
-논문과 다른 학습 옵션 및 freeze 정책은
-[paper_alignment.md](../reference/paper_alignment.md)를 참고한다.
+- 논문과 다른 학습 옵션 및 freeze 정책은
+  [paper_alignment.md](../reference/paper_alignment.md)를 참고한다.

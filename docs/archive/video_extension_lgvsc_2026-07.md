@@ -13,14 +13,14 @@ supersedes: docs/architecture/tx_rx_contract.md
 
 # LGVSC를 참고한 비디오 전송·복원 확장 설계
 
-LGVSC 논문(Ma et al., "LGVSC: A Large-Model-Driven Generative Video Semantic
-Communication Framework", IEEE)의 구조를 현재 `sgdjscc_lab` 코드에 대응시켜,
-어떤 모듈을 재사용·확장·신설하면 임의 길이 비디오의 전송과 복원이 가능해지는지
-정리한 **시스템 구조/설계 매핑** 문서다. [etri_strategy.md](../current/status.md)의
-핵심 한계 3(정지 이미지 중심 한계)의 장기 해결 축(video diffusion)에 해당한다.
-현재 완료/미완료 상태는 이 문서가 아니라 `etri_strategy.md`(현재 상태)와
-[roadmap.md](../current/roadmap.md)(향후 계획)를 기준으로 본다 — 이 문서의 상태 표기는
-설계 맥락 설명용이다.
+- LGVSC 논문(Ma et al., "LGVSC: A Large-Model-Driven Generative Video Semantic
+  Communication Framework", IEEE)의 구조를 현재 `sgdjscc_lab` 코드에 대응시켜,
+  어떤 모듈을 재사용·확장·신설하면 임의 길이 비디오의 전송과 복원이 가능해지는지
+  정리한 **시스템 구조/설계 매핑** 문서다. [etri_strategy.md](../current/status.md)의
+  핵심 한계 3(정지 이미지 중심 한계)의 장기 해결 축(video diffusion)에 해당한다.
+  현재 완료/미완료 상태는 이 문서가 아니라 `etri_strategy.md`(현재 상태)와
+  [roadmap.md](../current/roadmap.md)(향후 계획)를 기준으로 본다 — 이 문서의 상태 표기는
+  설계 맥락 설명용이다.
 
 - 논문 원문: `reference/paper/LGVSC…/main.tex`
 - 시각화 원본(Artifact): <https://claude.ai/code/artifact/deee634a-9077-4d44-b3ae-2f2a76a8d1b0>
@@ -46,7 +46,7 @@ Communication Framework", IEEE)의 구조를 현재 `sgdjscc_lab` 코드에 대�
 > 섞이지 않도록 model ID, conditioning, 학습 여부, 전송 payload와 재현 수준을 모든
 > 결과에 기록한다.
 
-**작업 구분 범례** — 문서 전체에서 다음 표기를 쓴다.
+- **작업 구분 범례** — 문서 전체에서 다음 표기를 쓴다.
 
 | 표기 | 의미 |
 |---|---|
@@ -56,13 +56,13 @@ Communication Framework", IEEE)의 구조를 현재 `sgdjscc_lab` 코드에 대�
 
 ## 1. LGVSC 논문의 파이프라인
 
-핵심 아이디어 세 가지 — ① MLLM 확률 기반 의미 유사도(PSSS)로 키프레임을
-고르고(SKEM), ② 키프레임·캡션·사이드 정보를 **서로 다른 전송 경로**로 보내고,
-③ 수신단의 world model(Open-Sora)이 가변 길이 어댑터(DSA)로 세그먼트를
-**생성**해 이어붙인다. CBR 10⁻⁴~10⁻³ 수준의 초저대역 전송을 달성한다.
+- 핵심 아이디어 세 가지 — ① MLLM 확률 기반 의미 유사도(PSSS)로 키프레임을
+  고르고(SKEM), ② 키프레임·캡션·사이드 정보를 **서로 다른 전송 경로**로 보내고,
+  ③ 수신단의 world model(Open-Sora)이 가변 길이 어댑터(DSA)로 세그먼트를
+  **생성**해 이어붙인다. CBR 10⁻⁴~10⁻³ 수준의 초저대역 전송을 달성한다.
 
-PSSS: `S_rel = P("No") − P("Yes")` — MLLM의 yes/no 토큰 확률차를 연속 유사도
-점수로 사용. `η_th = 0.35` 초과 시 새 키프레임.
+- PSSS: `S_rel = P("No") − P("Yes")` — MLLM의 yes/no 토큰 확률차를 연속 유사도
+  점수로 사용. `η_th = 0.35` 초과 시 새 키프레임.
 
 ```text
 [송신단]
@@ -83,10 +83,10 @@ PSSS: `S_rel = P("No") − P("Yes")` — MLLM의 yes/no 토큰 확률차를 연�
 
 ## 2. 현재 sgdjscc_lab 구조
 
-모델은 **이미지 단위**로만 동작한다. 비디오 계층(`video/`)은 그 위의
-오케스트레이션으로, inter-frame을 "키프레임 복원 **복사**" 아니면 이미지
-파이프라인 **재계산** 둘 중 하나로 처리한다 — 생성으로 메꾸는 경로가 없어
-정지-점프와 깜빡임이 생긴다.
+- 모델은 **이미지 단위**로만 동작한다. 비디오 계층(`video/`)은 그 위의
+  오케스트레이션으로, inter-frame을 "키프레임 복원 **복사**" 아니면 이미지
+  파이프라인 **재계산** 둘 중 하나로 처리한다 — 생성으로 메꾸는 경로가 없어
+  정지-점프와 깜빡임이 생긴다.
 
 > **2026-07 ETRI 1차 구현 반영** — 아래 §6.3 로드맵의 1~3단계에 해당하는
 > 기반은 구현됐다: mp4 입출력(`utils/video_io.py`), 복원 frame/mp4 저장,
@@ -187,11 +187,11 @@ PSSS: `S_rel = P("No") − P("Yes")` — MLLM의 yes/no 토큰 확률차를 연�
 
 ## 3. 제안: LGVSC 매핑 목표 구조 (실행 흐름 기준)
 
-설계 원칙 — **이미지 경로는 한 줄도 바꾸지 않는다.** 키프레임 전송은 LGVSC의
-NTSCC 자리에 기존 SGD-JSCC 경로를 그대로 쓰고(교체 불필요), 캡션·사이드는 기존
-가이드 손상 규칙(AWGN 금지, dropout 계열)을 따른다. 새 기능은 전부 게이트
-(`use_video_gen`) 뒤에 두고 기본 off — 게이트가 꺼지면 현재 Phase 4-B와 수치
-동일.
+- 설계 원칙 — **이미지 경로는 한 줄도 바꾸지 않는다.** 키프레임 전송은 LGVSC의
+  NTSCC 자리에 기존 SGD-JSCC 경로를 그대로 쓰고(교체 불필요), 캡션·사이드는 기존
+  가이드 손상 규칙(AWGN 금지, dropout 계열)을 따른다. 새 기능은 전부 게이트
+  (`use_video_gen`) 뒤에 두고 기본 off — 게이트가 꺼지면 현재 Phase 4-B와 수치
+  동일.
 
 > **손상 모델 주의** — LGVSC 논문은 텍스트·사이드도 **AWGN 채널 위의 디지털
 > 전송(LDPC + 변조)** 으로 보낸다. 반면 이 프로젝트의 현재 정책은 가이드에
@@ -199,8 +199,8 @@ NTSCC 자리에 기존 SGD-JSCC 경로를 그대로 쓰고(교체 불필요), �
 > [etri_strategy.md](../current/status.md)). 즉 현재 설계는 dropout 손상이 기본이고,
 > **논문 faithful한 LDPC+변조 경로는 추후 비교 baseline**으로 둔다.
 
-실제 호출 순서를 따른다: `scripts` 진입 → `config`/게이트 →
-`runtime.build_models()` → `temporal_pipeline.run()` 프레임 루프 → 출력·평가.
+- 실제 호출 순서를 따른다: `scripts` 진입 → `config`/게이트 →
+  `runtime.build_models()` → `temporal_pipeline.run()` 프레임 루프 → 출력·평가.
 
 ```text
 ① 진입·설정
@@ -257,9 +257,9 @@ NTSCC 자리에 기존 SGD-JSCC 경로를 그대로 쓰고(교체 불필요), �
 
 ## 4. 최종 sgdjscc_lab 시스템 블록 다이어그램
 
-비디오 확장을 반영한 최종 시스템 구조(왼쪽 → 오른쪽 신호 흐름). 위 줄은
-**키프레임 스트림**(픽셀 → JSCC latent), 아래 줄은 **시맨틱 스트림**(캡션·모션
-사이드)이며, 두 스트림이 수신단에서 합류해 프레임 정책과 생성기를 거친다.
+- 비디오 확장을 반영한 최종 시스템 구조(왼쪽 → 오른쪽 신호 흐름). 위 줄은
+  **키프레임 스트림**(픽셀 → JSCC latent), 아래 줄은 **시맨틱 스트림**(캡션·모션
+  사이드)이며, 두 스트림이 수신단에서 합류해 프레임 정책과 생성기를 거친다.
 
 ```text
                 ┌─ 송신단 Transmitter ─────────────────┐   ┌─ 무선 채널 ─────────┐   ┌─ 수신단 Receiver ────────────────────────────────────────────┐
@@ -306,7 +306,7 @@ NTSCC 자리에 기존 SGD-JSCC 경로를 그대로 쓰고(교체 불필요), �
 
 ## 5. 모듈 매핑표
 
-LGVSC 구성요소별로 현재 코드의 대응물과 필요한 작업.
+- LGVSC 구성요소별로 현재 코드의 대응물과 필요한 작업.
 
 | LGVSC 구성요소 | 역할 | sgdjscc_lab 대응 | 작업 |
 |---|---|---|---|
@@ -339,31 +339,31 @@ LGVSC 구성요소별로 현재 코드의 대응물과 필요한 작업.
 
 ### 6.0 목표와 비목표
 
-**목표** — LGVSC의 keyframe 기반 비디오 시맨틱 통신 구조를 참고하되, sgdjscc_lab의
-기존 자산(semantic packet, SRS, hallucination verification, regeneration loop)을
-활용해 **의미 보존과 시간 일관성이 더 좋은 비디오 복원 파이프라인**을 만든다.
-직접 노리는 것:
+- **목표** — LGVSC의 keyframe 기반 비디오 시맨틱 통신 구조를 참고하되, sgdjscc_lab의
+  기존 자산(semantic packet, SRS, hallucination verification, regeneration loop)을
+  활용해 **의미 보존과 시간 일관성이 더 좋은 비디오 복원 파이프라인**을 만든다.
+  직접 노리는 것:
 
 - keyframe 기반 비디오 전송 파이프라인 + generate 분기를 포함한 복원 경로
 - temporal SRS · flicker · object preservation 기반 평가
 - open-loop 생성이 아니라 **closed-loop semantic verification** 기반 복원 제어
 
-**비목표 (명시)** — 아래는 1차 목표가 아니다. 착수하려면 별도 스코핑을 통과해야 한다.
+- **비목표 (명시)** — 아래는 1차 목표가 아니다. 착수하려면 별도 스코핑을 통과해야 한다.
 
 - LGVSC의 CBR 수치 직접 재현
 - JSCC backbone 재학습 / Open-Sora·SVD adapter 대규모 학습
 - full value-per-bit 최적 키프레임 정책 (uncertainty-aware optimal)
 
-위 비목표는 과거 1차 구현 범위에 대한 제한이다. 후속 연구에서는 LGVSC 재현과 학습형
-adapter/selector를 별도 단계로 정식 스코핑하되, 공개 정보가 부족한 부분을 원 논문과
-동일하다고 주장하지 않는다.
+- 위 비목표는 과거 1차 구현 범위에 대한 제한이다. 후속 연구에서는 LGVSC 재현과 학습형
+  adapter/selector를 별도 단계로 정식 스코핑하되, 공개 정보가 부족한 부분을 원 논문과
+  동일하다고 주장하지 않는다.
 
 ### 6.0-a 재현선·개선선과 후속 4단계
 
-**LGVSC 재현선**은 논문 비교 기준이다. 기존 SGD-JSCC를 keyframe 전송 경로로 유지하고,
-실제 segment-level world model을 붙여 `SKIM+SFA`와 `SKEM+DSA`를 가능한 범위에서
-재현한다. **ETRI 딥러닝 개선선**은 이 기준선 위에 학습 가능한 수신단 adapter와 송신단
-selector, verifier feedback을 추가한다.
+- **LGVSC 재현선**은 논문 비교 기준이다. 기존 SGD-JSCC를 keyframe 전송 경로로 유지하고,
+  실제 segment-level world model을 붙여 `SKIM+SFA`와 `SKEM+DSA`를 가능한 범위에서
+  재현한다. **ETRI 딥러닝 개선선**은 이 기준선 위에 학습 가능한 수신단 adapter와 송신단
+  selector, verifier feedback을 추가한다.
 
 ```text
 LGVSC 재현선
@@ -386,30 +386,30 @@ ETRI 딥러닝 개선선
 | **3단계 — 송신단·폐루프 지능화** | 전송 선택과 생성 실패 제어를 학습·연결 | learnable keyframe/side-info selector, OWLv2/VQA critic, sampler feedback와 제한된 재시도 |
 | **4단계 — 전체 검증·연구 결론** | LGVSC 대비 딥러닝 개선 효과 입증 | ablation, 실제 bitstream/CBR, DISTS/downstream, temporal/hallucination, latency/VRAM 비교 |
 
-완료 판정은 단계별로 분리한다. 1A는 모델 weight 없이 `ptest` 회귀 테스트까지 통과하면
-완료지만, 1단계 전체 완료는 아니다. 1B는 실제 GPU segment 산출물이 있어야 하며, 1C는
-재현 baseline 4모드(`mock_baseline`/`svd_start_only`/`wan_skim_sfa`/`wan_skem_dsa`)의
-**실제 실행 결과**와 재현 수준이 문서화되어야 완료다 — config/batch driver/summary
-생성기까지의 "검증 준비"는 완료했지만(상세: [lgvsc_1c_reproduction_readiness.md](../experiments/2026-07_lgvsc_1c_reproduction.md)),
-그 실행 결과 자체는 아직 없다. 2~3단계는 단순 rule/config가 아니라 학습 가능한
-파라미터와 학습·추론 체크포인트, 모듈별 ablation이 있어야 완료로 본다.
+- 완료 판정은 단계별로 분리한다. 1A는 모델 weight 없이 `ptest` 회귀 테스트까지 통과하면
+  완료지만, 1단계 전체 완료는 아니다. 1B는 실제 GPU segment 산출물이 있어야 하며, 1C는
+  재현 baseline 4모드(`mock_baseline`/`svd_start_only`/`wan_skim_sfa`/`wan_skem_dsa`)의
+  **실제 실행 결과**와 재현 수준이 문서화되어야 완료다 — config/batch driver/summary
+  생성기까지의 "검증 준비"는 완료했지만(상세: [lgvsc_1c_reproduction_readiness.md](../experiments/2026-07_lgvsc_1c_reproduction.md)),
+  그 실행 결과 자체는 아직 없다. 2~3단계는 단순 rule/config가 아니라 학습 가능한
+  파라미터와 학습·추론 체크포인트, 모듈별 ablation이 있어야 완료로 본다.
 
-**1A/1B/1C, Wan 체크포인트 이슈 해결, PSSS/SKEM 구현 상세**는
-[archive/etri_implementation_log.md](./etri_implementation_log.md)와
-[lgvsc_1b_worker_readiness.md](../experiments/2026-07_lgvsc_1b_worker_validation.md) /
-[lgvsc_1c_reproduction_readiness.md](../experiments/2026-07_lgvsc_1c_reproduction.md) /
-[lgvsc_psss_skem_readiness.md](../experiments/2026-07_lgvsc_psss_skem.md)에 있다(중복 방지를 위해
-이 문서에서는 상세 로그를 제거했다). 요약: 1A(segment 계약)·1B(실제 GPU, start-only+
-bidirectional)·PSSS/SKEM 코드/CPU 스모크는 완료, 1C는 재현 baseline 준비 완료·실제
-10영상×4모드 실행은 사용자 몫이다.
+- **1A/1B/1C, Wan 체크포인트 이슈 해결, PSSS/SKEM 구현 상세**는
+  [archive/etri_implementation_log.md](./etri_implementation_log.md)와
+  [lgvsc_1b_worker_readiness.md](../experiments/2026-07_lgvsc_1b_worker_validation.md) /
+  [lgvsc_1c_reproduction_readiness.md](../experiments/2026-07_lgvsc_1c_reproduction.md) /
+  [lgvsc_psss_skem_readiness.md](../experiments/2026-07_lgvsc_psss_skem.md)에 있다(중복 방지를 위해
+  이 문서에서는 상세 로그를 제거했다). 요약: 1A(segment 계약)·1B(실제 GPU, start-only+
+  bidirectional)·PSSS/SKEM 코드/CPU 스모크는 완료, 1C는 재현 baseline 준비 완료·실제
+  10영상×4모드 실행은 사용자 몫이다.
 
 ### 6.1 검증 설계 (전략이 아니라 "무엇을·무엇과·언제까지")
 
-로드맵을 실행·반증 가능하게 만드는 3대 장치. 모든 단계에 공통 적용한다.
+- 로드맵을 실행·반증 가능하게 만드는 3대 장치. 모든 단계에 공통 적용한다.
 
-**(a) Baseline 집합** — 과거 1~6차 결과는 아래 내부 baseline 대비 ablation으로
-해석한다. 후속 1C가 완료되면 재현 수준이 명시된 LGVSC 재현선을 정식 기준으로 추가하고,
-ETRI 개선선은 같은 데이터·채널·전송량 조건에서 비교한다.
+- **(a) Baseline 집합** — 과거 1~6차 결과는 아래 내부 baseline 대비 ablation으로
+  해석한다. 후속 1C가 완료되면 재현 수준이 명시된 LGVSC 재현선을 정식 기준으로 추가하고,
+  ETRI 개선선은 같은 데이터·채널·전송량 조건에서 비교한다.
 
 | baseline | 내용 |
 |---|---|
@@ -419,9 +419,9 @@ ETRI 개선선은 같은 데이터·채널·전송량 조건에서 비교한다.
 | LGVSC 재현선 | `SKIM+SFA`/`SKEM+DSA`에 대응하는 `wan_skim_sfa`/`wan_skem_dsa`(+ `mock_baseline`/`svd_start_only` 참고선), 그리고 PSSS/SKEM 단계의 `skim_sfa_fixed`/`skem_dsa_psss`(+ `skem_dsa_mock_psss`/`skem_dsa_proxy_psss` 진단선) — config/batch driver 준비 완료(`docs/lgvsc_1c_reproduction_readiness.md`, `docs/lgvsc_psss_skem_readiness.md`), 실제 실행 결과가 나온 뒤 정식 기준으로 확정, 재현 수준 명시 |
 | **ETRI 개선선** | learned bidirectional adapter/router/selector + verifier feedback |
 
-**(b) 평가 데이터·인프라** — temporal SRS·flicker·drift는 **실제 모션이 있는 비디오**가
-있어야 측정된다. 프레임워크는 이미지(Kodak) 중심이었으므로 **WebVid/Kinetics 등 비디오
-데이터셋 확보 + 프레임 추출**을 1~2단계에 포함한다. 평가기 현황(정정):
+- **(b) 평가 데이터·인프라** — temporal SRS·flicker·drift는 **실제 모션이 있는 비디오**가
+  있어야 측정된다. 프레임워크는 이미지(Kodak) 중심이었으므로 **WebVid/Kinetics 등 비디오
+  데이터셋 확보 + 프레임 추출**을 1~2단계에 포함한다. 평가기 현황(정정):
 
 - **이미 있음** — `evaluators/temporal_consistency.py`에 `temporal_srs`, `srs_flicker`
   (연속 프레임 SRS 변동), `object_identity_consistency`, `temporal_hallucination_rate`.
@@ -429,8 +429,8 @@ ETRI 개선선은 같은 데이터·채널·전송량 조건에서 비교한다.
   **object-track 기반 drift**, **flow-warp temporal consistency**. 기존 `srs_flicker`와
   신규 birth/death flicker는 **구분해서** 보고한다.
 
-**(c) 지표 순환 분리** — regeneration을 **구동하는 지표**와 우위를 **보고하는 지표**를
-분리한다. 최적화·선별에 쓴 지표로 승리를 주장하면 순환이다.
+- **(c) 지표 순환 분리** — regeneration을 **구동하는 지표**와 우위를 **보고하는 지표**를
+  분리한다. 최적화·선별에 쓴 지표로 승리를 주장하면 순환이다.
 
 - loop-internal (재생성 구동): `srs_packet` / VQA hallucination
 - held-out (우위 보고): 루프에 쓰지 않은 지표 (별도 DISTS·downstream, 또는 재생성에
@@ -482,20 +482,20 @@ ETRI 개선선은 같은 데이터·채널·전송량 조건에서 비교한다.
 
 ### 6.3 단계별 계획
 
-구현 정직성을 위해 generate를 segment 추상화 → start-only → bidirectional로 쪼개고,
-난도 높고 생성 분기와 무의존인 **PSSS는 MVP 임계경로에서 내려 7단계로** 둔다.
+- 구현 정직성을 위해 generate를 segment 추상화 → start-only → bidirectional로 쪼개고,
+  난도 높고 생성 분기와 무의존인 **PSSS는 MVP 임계경로에서 내려 7단계로** 둔다.
 
 #### 0단계 — 환경·데이터·백엔드 능력 spike (선행 게이트)
 
-**여기서 실현가능성을 먼저 확인하지 않으면 5단계가 조용히 학습축으로 붕괴한다.**
+- **여기서 실현가능성을 먼저 확인하지 않으면 5단계가 조용히 학습축으로 붕괴한다.**
 
 - 별도 conda env 구성 (SVD/Open-Sora + GPU; ptest는 py3.9/torch2.1이라 미호환)
 - 평가 비디오 데이터셋 확보 + 프레임 추출
 - **백엔드 능력 spike** — 학습 없이 (a) start-only, (b) **start+end(양방향)**,
   (c) +구조 조건(flow/depth) 어디까지 되나
 
-**판정 기준** — 양방향이 학습 없이 되면 5단계 진행. **안 되면 5단계를 "학습/adapter
-과제"로 분리**하고 6단계(verifier)를 우선한다.
+- **판정 기준** — 양방향이 학습 없이 되면 5단계 진행. **안 되면 5단계를 "학습/adapter
+  과제"로 분리**하고 6단계(verifier)를 우선한다.
 
 #### 1단계 — video_io + mp4 왕복 ✅ (1차 구현 완료, 2026-07)
 
@@ -504,10 +504,10 @@ ETRI 개선선은 같은 데이터·채널·전송량 조건에서 비교한다.
 - 기존 **2-way 파이프라인 결과를 영상 파일로 저장** (generate 없이) — **구현됨**
   (`evaluate_video.py --save-video`, `video_io.recon_frames_dir`)
 
-**판정 기준** — mp4 왕복에서 **프레임 수·fps·해상도·정렬 순서가 보존**되고 재조립 영상이
-정상 재생되며, 현행 2-way 복원이 영상으로 나오면 진행. (MP4는 lossy 코덱이므로 픽셀
-무손실이 아니라 구조·순서 보존을 기준으로 한다.) → `tests/test_video_io.py`의 왕복
-테스트로 확인됨.
+- **판정 기준** — mp4 왕복에서 **프레임 수·fps·해상도·정렬 순서가 보존**되고 재조립 영상이
+  정상 재생되며, 현행 2-way 복원이 영상으로 나오면 진행. (MP4는 lossy 코덱이므로 픽셀
+  무손실이 아니라 구조·순서 보존을 기준으로 한다.) → `tests/test_video_io.py`의 왕복
+  테스트로 확인됨.
 
 #### 2단계 — temporal metric 정리 + flicker 확장 🟡 (지표 구현됨 — 잠정, 실측 검증 남음)
 
@@ -519,7 +519,7 @@ ETRI 개선선은 같은 데이터·채널·전송량 조건에서 비교한다.
 - baseline 집합(§6.1-a)을 실제 모션 비디오에서 산출 — **미완** (실제 모션 비디오
   데이터 확보 후)
 
-**판정 기준** — 지표가 baseline 간(copy-reuse vs per-frame) **분별력**을 보이면 진행.
+- **판정 기준** — 지표가 baseline 간(copy-reuse vs per-frame) **분별력**을 보이면 진행.
 
 #### 3단계 — segment abstraction ✅ (1차 구현 완료, 2026-07)
 
@@ -532,8 +532,8 @@ ETRI 개선선은 같은 데이터·채널·전송량 조건에서 비교한다.
   **구현됨** (frame-wise 로그는 그대로 유지, `segments.json` 병행 출력; segment의
   frame 합집합 = frame-wise 인덱스임을 테스트로 보증)
 
-**판정 기준** — segment 재구성 결과가 기존 frame-wise 출력과 일치하면 진행. →
-`tests/test_video.py::TestSegmentRecords`로 확인됨.
+- **판정 기준** — segment 재구성 결과가 기존 frame-wise 출력과 일치하면 진행. →
+  `tests/test_video.py::TestSegmentRecords`로 확인됨.
 
 #### 4단계 — start-only generate 연결 ✅ 기초 구현 완료 (ETRI 3차, 2026-07)
 
@@ -552,9 +552,9 @@ ETRI 개선선은 같은 데이터·채널·전송량 조건에서 비교한다.
 - 입력: start keyframe + caption + side info(초기 `motion_residual` proxy) + length
 - **목표는 성능이 아니라 파이프라인 연결 + mp4 산출**
 
-**판정 기준** — generate가 reuse 대비 최소 동등하고 안정적으로 mp4 산출. →
-mock backend 기준 `tests/test_video_generator.py`·`tests/test_video.py::TestGenerateBranch`로
-구조 확인(생성 품질 비교는 대상 아님 — 실제 backend 통합 후 재평가).
+- **판정 기준** — generate가 reuse 대비 최소 동등하고 안정적으로 mp4 산출. →
+  mock backend 기준 `tests/test_video_generator.py`·`tests/test_video.py::TestGenerateBranch`로
+  구조 확인(생성 품질 비교는 대상 아님 — 실제 backend 통합 후 재평가).
 
 #### 5단계 — start+end bidirectional generation (첫 차별점) ✅ 기초 구현 완료 (ETRI 4차, 2026-07)
 
@@ -577,10 +577,10 @@ mock backend 기준 `tests/test_video_generator.py`·`tests/test_video.py::TestG
   프레임을 **start+end keyframe 함께 조건**으로 → drift를 양 끝에서 억제
 - 0단계 spike가 실패하면 **이 단계는 학습/adapter 과제로 분리**
 
-**판정 기준** — unidirectional 대비 drift·flicker가 **유의미하게 감소**하면 채택 →
-mock 기준 구조 확인은 `tests/test_video_generator.py::TestBidirectionalInterpolationGenerator`·
-`tests/test_video.py::TestBidirectionalGenerateBranch`·`TestGenerationModeComparison`로
-완료; drift/flicker 유의미 감소 판정 자체는 실제 backend 통합 후(5차+) 대상.
+- **판정 기준** — unidirectional 대비 drift·flicker가 **유의미하게 감소**하면 채택 →
+  mock 기준 구조 확인은 `tests/test_video_generator.py::TestBidirectionalInterpolationGenerator`·
+  `tests/test_video.py::TestBidirectionalGenerateBranch`·`TestGenerationModeComparison`로
+  완료; drift/flicker 유의미 감소 판정 자체는 실제 backend 통합 후(5차+) 대상.
 
 #### 6단계 — Rx-legal semantic verifier + regeneration/selection (핵심 고유 기여)
 
@@ -602,7 +602,7 @@ mock 기준 구조 확인은 `tests/test_video_generator.py::TestBidirectionalIn
 > (controller는 여전히 로그만 남김). 자세한 완료/미완료 구분은 `docs/etri_strategy.md`의
 > "2차 구현 상태" 및 "5차 구현 결과" 절 참조.
 
-LGVSC(open-loop)와 갈라지는 신규성. **0단계 양방향이 막혀도 독립 착수 가능.**
+- LGVSC(open-loop)와 갈라지는 신규성. **0단계 양방향이 막혀도 독립 착수 가능.**
 
 - 검증: `semantic_packet_matcher` · SRS · 필요 시 VQA
 - **Rx-legal 경계** — **생성 세그먼트 packet vs 전송된 packet** 대조만 수신단에서
@@ -610,16 +610,16 @@ LGVSC(open-loop)와 갈라지는 신규성. **0단계 양방향이 막혀도 독
 - **종료 조건** — 재생성 예산(최대 재시도 N) + 실패 시 폴백(recompute로 되돌림)
 - 추가 keyframe 요청은 **피드백 채널 가정 옵션** — CBR 리포트에서 분리 기록
 
-**판정 기준** — verifier on이 off 대비 **held-out 지표(§6.1-c)** 에서 이득이면 채택 →
-5차에서 구조(`tests/test_presence_backends.py`·`tests/test_heldout_remeasurement.py`·
-`tests/test_packet_matcher.py::TestPacketVerifierPresenceCalibration`)를 확인했고,
-이후 실제 OWLv2/VQA weight 기반 10개 영상 held-out 재검증으로 `ensemble_gt_filter`/
-`ensemble_openworld_filter`의 이득도 확인했다. 단, candidate action을 sampler에 실제
-주입하는 제어 루프는 후속이다.
+- **판정 기준** — verifier on이 off 대비 **held-out 지표(§6.1-c)** 에서 이득이면 채택 →
+  5차에서 구조(`tests/test_presence_backends.py`·`tests/test_heldout_remeasurement.py`·
+  `tests/test_packet_matcher.py::TestPacketVerifierPresenceCalibration`)를 확인했고,
+  이후 실제 OWLv2/VQA weight 기반 10개 영상 held-out 재검증으로 `ensemble_gt_filter`/
+  `ensemble_openworld_filter`의 이득도 확인했다. 단, candidate action을 sampler에 실제
+  주입하는 제어 루프는 후속이다.
 
 #### 7단계 — 고도화 (side info · PSSS · adaptive policy · bit accounting)
 
-MVP 임계경로가 아닌 고도화 묶음.
+- MVP 임계경로가 아닌 고도화 묶음.
 
 - **side info** — `motion_residual` 대신/병행 optical flow(RAFT)·depth·seg. 무거운
   백엔드는 옵션, **bit overhead·연산량 함께 기록**. "비용 대비 temporal SRS 이득"으로 평가
@@ -638,7 +638,7 @@ MVP 임계경로가 아닌 고도화 묶음.
   실 채널 코딩/변조 반영 — 이 PoC의 proxy 상수(edge_cr/symbols_per_bit_proxy/motion
   quantization)를 실측치로 교체하는 작업이 후속이다.
 
-**판정 기준** — 각 항목이 **비용 대비 held-out 지표 이득**을 보이면 채택.
+- **판정 기준** — 각 항목이 **비용 대비 held-out 지표 이득**을 보이면 채택.
 
 ### 6.4 최종 정리 문안
 

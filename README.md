@@ -1,8 +1,8 @@
 # SGD-JSCC Lab
 
-생성형 AI 기반 이미지·영상 시맨틱 통신 연구 프레임워크다. SGD-JSCC 복원 경로에
-전송 packet, 의미 신뢰도 평가, 할루시네이션 검증, 영상 keyframe 처리를 결합한다.
-기존 추론 경로는 유지하며 연구 기능은 config로 선택한다.
+- 생성형 AI 기반 이미지·영상 시맨틱 통신 연구 프레임워크다. SGD-JSCC 복원 경로에
+  전송 packet, 의미 신뢰도 평가, 할루시네이션 검증, 영상 keyframe 처리를 결합한다.
+  기존 추론 경로는 유지하며 연구 기능은 config로 선택한다.
 
 ## 주요 기능
 
@@ -26,10 +26,10 @@
 | CUDA | 11.8 |
 | GPU | CUDA GPU 권장 |
 
-주요 패키지는 `diffusers==0.26.3`, `transformers==4.44.2`,
-`numpy==1.23.2`, `openai-clip`, `lpips`다. 전체 버전은
-[requirements.txt](./requirements.txt)를 따른다. 모델 구현을 불러오기 위해 원본
-`SGDJSCC/`가 기본적으로 이 저장소의 형제 경로 `../SGDJSCC/`에 있어야 한다.
+- 주요 패키지는 `diffusers==0.26.3`, `transformers==4.44.2`,
+  `numpy==1.23.2`, `openai-clip`, `lpips`다. 전체 버전은
+  [requirements.txt](./requirements.txt)를 따른다. 모델 구현을 불러오기 위해 원본
+  `SGDJSCC/`가 기본적으로 이 저장소의 형제 경로 `../SGDJSCC/`에 있어야 한다.
 
 ## 설치
 
@@ -45,13 +45,13 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-editable install 후 `sgdjscc-infer`, `sgdjscc-evaluate`, `sgdjscc-evaluate-video`,
-`sgdjscc-train` 명령도 사용할 수 있다.
+- editable install 후 `sgdjscc-infer`, `sgdjscc-evaluate`, `sgdjscc-evaluate-video`,
+  `sgdjscc-train` 명령도 사용할 수 있다.
 
 ## 모델과 데이터 준비
 
-[murjun/SGDJSCC](https://huggingface.co/murjun/SGDJSCC/tree/main)에서 다음 파일을
-받아 `checkpoints/`에 둔다.
+- [murjun/SGDJSCC](https://huggingface.co/murjun/SGDJSCC/tree/main)에서 다음 파일을
+  받아 `checkpoints/`에 둔다.
 
 ```text
 checkpoints/
@@ -61,11 +61,11 @@ checkpoints/
 └── muge-epoch-19-checkpoint.pth
 ```
 
-이미지와 영상 입력은 config 또는 `--input`으로 지정한다. 데이터 역할은
-[데이터셋 지침](./docs/protocols/datasets.md), baseline/custom checkpoint 구분은
-[재현성 지침](./docs/protocols/reproducibility.md)을 참고한다.
+- 이미지와 영상 입력은 config 또는 `--input`으로 지정한다. 데이터 역할은
+  [데이터셋 지침](./docs/protocols/datasets.md), baseline/custom checkpoint 구분은
+  [재현성 지침](./docs/protocols/reproducibility.md)을 참고한다.
 
-저장소 밖의 대용량 파일은 아래 환경변수로 경로를 바꿀 수 있다.
+- 저장소 밖의 대용량 파일은 아래 환경변수로 경로를 바꿀 수 있다.
 
 ```bash
 export SGDJSCC_ROOT=/path/to/SGDJSCC
@@ -77,7 +77,7 @@ export SGDJSCC_CACHE_ROOT=/path/to/cache
 
 ## 사용법
 
-모든 명령은 `sgdjscc_lab/`에서 실행한다.
+- 모든 명령은 `sgdjscc_lab/`에서 실행한다.
 
 ### 이미지 추론
 
@@ -111,7 +111,7 @@ python scripts/evaluate_video.py \
     --snr 5 --device cuda:0 --save-video
 ```
 
-ETRI 10개 영상 일괄 평가는 다음 명령으로 실행한다.
+- ETRI 10개 영상 일괄 평가는 다음 명령으로 실행한다.
 
 ```bash
 python scripts/run_etri_video_eval.py --stages all --snr 5 --device cuda:0
@@ -128,9 +128,9 @@ python scripts/run_transmission_reduction_eval.py \
     --output-root outputs/transmission_reduction
 ```
 
-현재 `int4`는 analog AWGN 임시 기준의 픽셀 품질 gate를 통과한 잠정 후보다.
-reliable-digital 기준과 SRS·할루시네이션 평가 전에는 기본 operating point로
-확정하지 않는다.
+- 현재 `int4`는 analog AWGN 임시 기준의 픽셀 품질 gate를 통과한 잠정 후보다.
+  reliable-digital 기준과 SRS·할루시네이션 평가 전에는 기본 operating point로
+  확정하지 않는다.
 
 ### 학습
 
@@ -151,8 +151,8 @@ python scripts/train.py \
     --train-list /path/to/train --no-models
 ```
 
-다중 GPU는 `torchrun --standalone --nproc_per_node=N scripts/train.py ...` 형식으로
-실행한다. stage별 입력과 export 방식은 [학습 지침](./docs/protocols/training.md)에 있다.
+- 다중 GPU는 `torchrun --standalone --nproc_per_node=N scripts/train.py ...` 형식으로
+  실행한다. stage별 입력과 export 방식은 [학습 지침](./docs/protocols/training.md)에 있다.
 
 ### 테스트
 
@@ -179,9 +179,9 @@ tests/         CPU 중심 자동 테스트
 transmission/  양자화·packet 직렬화
 ```
 
-현재 구현 범위와 남은 한계는 [현재 상태](./docs/current/status.md),
-[향후 계획](./docs/current/roadmap.md), [알려진 문제](./docs/current/open_issues.md)를
-기준으로 판단한다.
+- 현재 구현 범위와 남은 한계는 [현재 상태](./docs/current/status.md),
+  [향후 계획](./docs/current/roadmap.md), [알려진 문제](./docs/current/open_issues.md)를
+  기준으로 판단한다.
 
 ## 문서 안내
 
@@ -191,8 +191,6 @@ transmission/  양자화·packet 직렬화
 | [docs/architecture/metrics.md](./docs/architecture/metrics.md) | 지표 정의 |
 | [docs/architecture/system.md](./docs/architecture/system.md) | 시스템 구조 |
 | [docs/architecture/tx_rx_contract.md](./docs/architecture/tx_rx_contract.md) | Tx/Rx 계약 |
-| [docs/archive/etri_development_plan_v2.md](./docs/archive/etri_development_plan_v2.md) | 과거 개발안 |
-| [docs/archive/etri_development_roadmap.md](./docs/archive/etri_development_roadmap.md) | 과거 로드맵 |
 | [docs/archive/etri_implementation_log.md](./docs/archive/etri_implementation_log.md) | 구현 이력 |
 | [docs/archive/framework_comparison.md](./docs/archive/framework_comparison.md) | 과거 프레임워크 비교 |
 | [docs/archive/limitation_reference_map.md](./docs/archive/limitation_reference_map.md) | 과거 한계 근거 |

@@ -10,9 +10,9 @@ supersedes: docs/checkpoint_usage.md
 
 # 재현 절차 — checkpoint 선택과 `paper_mode`
 
-이 문서는 로컬/원격에서 서로 다른 가중치를 실수로 섞어 쓰지 않고, 논문 재현
-경로와 확장 경로를 구분해 실행하기 위한 기준이다. 코드 수준의 충실도 분류
-(paper-faithful/paper-like/scaffold/ETRI 확장)는 [reference/paper_alignment.md](../reference/paper_alignment.md)에 있다.
+- 이 문서는 로컬/원격에서 서로 다른 가중치를 실수로 섞어 쓰지 않고, 논문 재현
+  경로와 확장 경로를 구분해 실행하기 위한 기준이다. 코드 수준의 충실도 분류
+  (paper-faithful/paper-like/scaffold/ETRI 확장)는 [reference/paper_alignment.md](../reference/paper_alignment.md)에 있다.
 
 ## Checkpoint 핵심 결론
 
@@ -33,25 +33,25 @@ supersedes: docs/checkpoint_usage.md
 
 ### Baseline 실행
 
-공개 baseline 가중치를 사용하려면 기존 config를 쓴다.
+- 공개 baseline 가중치를 사용하려면 기존 config를 쓴다.
 
 ```bash
 python scripts/infer_images.py --config configs/recipes/inference/composed.yaml --snr 5
 python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml --input /path/to/video_or_frames --snr 5
 ```
 
-이 경로는 `model_root: ../checkpoints/`를 사용한다.
+- 이 경로는 `model_root: ../checkpoints/`를 사용한다.
 
 ### Custom paper-like multi-stage 실행
 
-원격에서 학습한 multi-stage 가중치를 inference/evaluation에 반영하려면 새 config를 쓴다.
+- 원격에서 학습한 multi-stage 가중치를 inference/evaluation에 반영하려면 새 config를 쓴다.
 
 ```bash
 python scripts/infer_images.py --config configs/recipes/inference/composed_paper_like_multi.yaml --snr 5
 python scripts/evaluate_video.py --config configs/recipes/video/composed_video_paper_like_multi.yaml --input /path/to/video_or_frames --snr 5
 ```
 
-이 경로는 다음을 사용한다.
+- 이 경로는 다음을 사용한다.
 
 ```yaml
 model_root: "../checkpoints_custom/paper_like_multi/"
@@ -60,8 +60,8 @@ snr_estimator_checkpoint: "../outputs/checkpoints/csi_estimation/best.pth"
 
 ### Custom inference checkpoint 생성 방법
 
-`text_dm`과 `controlnet` 학습 checkpoint는 그대로 inference loader에 넣을 수 없다. 반드시
-`scripts/export_checkpoint.py`로 변환해야 한다.
+- `text_dm`과 `controlnet` 학습 checkpoint는 그대로 inference loader에 넣을 수 없다. 반드시
+  `scripts/export_checkpoint.py`로 변환해야 한다.
 
 ```bash
 python scripts/export_checkpoint.py \
@@ -77,7 +77,7 @@ python scripts/export_checkpoint.py \
   --force
 ```
 
-`JSCC_model.pth`와 `muge-epoch-19-checkpoint.pth`는 baseline과 동일 파일을 복사해서 쓴다.
+- `JSCC_model.pth`와 `muge-epoch-19-checkpoint.pth`는 baseline과 동일 파일을 복사해서 쓴다.
 
 ```bash
 cp checkpoints/JSCC_model.pth checkpoints_custom/paper_like_multi/
@@ -95,8 +95,8 @@ cp checkpoints/muge-epoch-19-checkpoint.pth checkpoints_custom/paper_like_multi/
 
 ## `paper_mode` — 논문 재현 경로 강제
 
-`paper_mode: true`는 확장 기능을 지우는 게 아니라 **논문 재현 실험과 ETRI 확장
-실험이 섞이지 않게 guardrail을 거는 것**이다. 켜면:
+- `paper_mode: true`는 확장 기능을 지우는 게 아니라 **논문 재현 실험과 ETRI 확장
+  실험이 섞이지 않게 guardrail을 거는 것**이다. 켜면:
 
 - auto-caption, `filename` caption source 차단
 - Canny stand-in 차단, MuGE sidecar 요구
@@ -108,9 +108,9 @@ cp checkpoints/muge-epoch-19-checkpoint.pth checkpoints_custom/paper_like_multi/
 - 확장 기능(Phase 4/5, packet, regeneration 등) 비활성 요구
 - eval metric set을 논문 보고 set에 맞춤
 
-무엇이 paper-faithful/paper-like/scaffold/ETRI 확장으로 분류되는지, 하이퍼파라미터
-출처(공개 코드 vs 논문 표 vs assumption)는 [reference/paper_alignment.md](../reference/paper_alignment.md)의
-전체 표를 기준으로 삼는다 — 이 문서에서 다시 나열하지 않는다.
+- 무엇이 paper-faithful/paper-like/scaffold/ETRI 확장으로 분류되는지, 하이퍼파라미터
+  출처(공개 코드 vs 논문 표 vs assumption)는 [reference/paper_alignment.md](../reference/paper_alignment.md)의
+  전체 표를 기준으로 삼는다 — 이 문서에서 다시 나열하지 않는다.
 
 ## 관련 문서
 - [reference/paper_alignment.md](../reference/paper_alignment.md) — 충실도 분류, 하이퍼파라미터 출처

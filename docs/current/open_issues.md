@@ -10,9 +10,9 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 # 알려진 한계·기술 부채
 
-[status.md](./status.md)가 "무엇이 됐는가"라면, 이 문서는 **구현된 것 안에
-남아 있는 근사·미해결 지점**을 다룬다. 새 기능을 추가하는 연구 계획은
-[roadmap.md](./roadmap.md)를 따른다.
+- [status.md](./status.md)가 "무엇이 됐는가"라면, 이 문서는 **구현된 것 안에
+  남아 있는 근사·미해결 지점**을 다룬다. 새 기능을 추가하는 연구 계획은
+  [roadmap.md](./roadmap.md)를 따른다.
 
 ## 시간축·영상
 

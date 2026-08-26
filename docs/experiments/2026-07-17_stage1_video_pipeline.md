@@ -11,12 +11,12 @@ supersedes:
 
 # ETRI 1차 구현 검증 리포트 (Stage-1 Validation)
 
-**결론: 1차 구현(개발 순서 0~4)은 완료됐다. 단, PTC/SFR/SDI와 객체 존재 판정은
-CLIP/packet 기반 잠정 구현이므로, 최종 평가 주장은 5차 OWLv2/VQA 보강 후
-재측정을 거쳐야 한다.**
+- **결론: 1차 구현(개발 순서 0~4)은 완료됐다. 단, PTC/SFR/SDI와 객체 존재 판정은
+  CLIP/packet 기반 잠정 구현이므로, 최종 평가 주장은 5차 OWLv2/VQA 보강 후
+  재측정을 거쳐야 한다.**
 
-이 문서는 [etri_strategy.md](../current/status.md)의 1차 구현 묶음(순서 0~4)에 대한
-검증 기록이다. 검증 일자: 2026-07-17 ~ 2026-07-18.
+- 이 문서는 [etri_strategy.md](../current/status.md)의 1차 구현 묶음(순서 0~4)에 대한
+  검증 기록이다. 검증 일자: 2026-07-17 ~ 2026-07-18.
 
 ## 기준 커밋
 
@@ -29,9 +29,9 @@ CLIP/packet 기반 잠정 구현이므로, 최종 평가 주장은 5차 OWLv2/VQ
 | `f000b3c` | docs(etri): 1차 상태 기록 + PPT 슬라이드 재번호 |
 | `e9d648e` | fix(test): DDP dry-run 로그 기대 문구를 rank-0 전용 로깅에 맞춤 |
 
-1차 구현 코드의 기준은 `f000b3c`(원격 검증 시점의 HEAD)이며, `e9d648e` 이후
-전체 테스트 스위트가 green이다. 이 리포트와 `configs/recipes/video/composed_video_smoke.yaml`은
-후속 docs 커밋으로 추가된다.
+- 1차 구현 코드의 기준은 `f000b3c`(원격 검증 시점의 HEAD)이며, `e9d648e` 이후
+  전체 테스트 스위트가 green이다. 이 리포트와 `configs/recipes/video/composed_video_smoke.yaml`은
+  후속 docs 커밋으로 추가된다.
 
 ## 구현 범위 (순서 0~4)
 
@@ -43,8 +43,8 @@ CLIP/packet 기반 잠정 구현이므로, 최종 평가 주장은 5차 OWLv2/VQ
 | 3 | semantic delta + motion 이중 게이트 | 완료 — 기본 OFF(`temporal.motion_threshold: null` = 기존 동작), 실데이터 threshold 튜닝은 후속 |
 | 4 | GOP/segment 추상화 (`SegmentRecord`, `segments.json`) | 완료 — `generation` 필드는 3차 generate 분기용 예약(항상 null) |
 
-제외(계획된 후속): OWLv2/VQA, Generate 분기, Adapter/Critic, Temporal SRS
-Calibration, bit accounting.
+- 제외(계획된 후속): OWLv2/VQA, Generate 분기, Adapter/Critic, Temporal SRS
+  Calibration, bit accounting.
 
 ## 주요 구현 파일
 
@@ -70,11 +70,11 @@ python -m pytest -q tests/
 # → 518 passed  (e9d648e 이후 전체 green)
 ```
 
-이전에 실패하던 `tests/test_ddp.py::test_entrypoint_torchrun_dryrun`은 1차 구현과
-무관한 기존 실패였다: `95d3c40`(non-rank0 콘솔 로그 억제)에서 train.py의 DDP
-로그가 rank-0 전용 `"DDP: world_size=…"` 한 줄로 바뀌었는데, 테스트는 옛 per-rank
-`"DDP: rank="` 문구를 기대하고 있었다. train.py의 로깅이 의도된 동작이므로 테스트
-기대 문구를 수정했다(`e9d648e`).
+- 이전에 실패하던 `tests/test_ddp.py::test_entrypoint_torchrun_dryrun`은 1차 구현과
+  무관한 기존 실패였다: `95d3c40`(non-rank0 콘솔 로그 억제)에서 train.py의 DDP
+  로그가 rank-0 전용 `"DDP: world_size=…"` 한 줄로 바뀌었는데, 테스트는 옛 per-rank
+  `"DDP: rank="` 문구를 기대하고 있었다. train.py의 로깅이 의도된 동작이므로 테스트
+  기대 문구를 수정했다(`e9d648e`).
 
 ## 원격 컨테이너 테스트 (155.230.15.67, `sgdjscc` 컨테이너, `f000b3c`)
 
@@ -85,8 +85,8 @@ docker exec -w .../sgdjscc_lab sgdjscc bash -lc \
 # → 82 passed
 ```
 
-dry-run(모델 미로딩, `--no-models`) 검증 — 8프레임 mp4 실행 후 같은 stem의
-3프레임 mp4로 재실행:
+- dry-run(모델 미로딩, `--no-models`) 검증 — 8프레임 mp4 실행 후 같은 stem의
+  3프레임 mp4로 재실행:
 
 ```bash
 python scripts/evaluate_video.py --config configs/recipes/video/composed_video.yaml \
@@ -95,28 +95,28 @@ python scripts/evaluate_video.py --config configs/recipes/video/composed_video.y
     --input /tmp/vdemo/b/clip.mp4 --no-models --save-video   # 3프레임, 같은 stem
 ```
 
-결과: 재실행 로그에 `Removed 8 stale frame_*.png` / `Removed 8 stale
-recon_*.png`가 남고, 추출 폴더와 `recon_frames/`에 **정확히 3개씩만** 남음
-(**stale cleanup 재실행 검증 통과**). `temporal_metrics.csv`에 ptc/sfr/sdi,
-`temporal_frames.csv`에 decision/motion_score, `segments.json`·`recon.mp4` 생성
-확인. 컨테이너에는 cv2가 없어 ffmpeg CLI 백엔드로 동작.
+- 결과: 재실행 로그에 `Removed 8 stale frame_*.png` / `Removed 8 stale
+  recon_*.png`가 남고, 추출 폴더와 `recon_frames/`에 **정확히 3개씩만** 남음
+  (**stale cleanup 재실행 검증 통과**). `temporal_metrics.csv`에 ptc/sfr/sdi,
+  `temporal_frames.csv`에 decision/motion_score, `segments.json`·`recon.mp4` 생성
+  확인. 컨테이너에는 cv2가 없어 ffmpeg CLI 백엔드로 동작.
 
 ## 실제 모델 경로 샘플 실행 (로컬 RTX 4080, 2026-07-18)
 
-체크포인트 4종(JSCC/MDTv2/ControlNet/MuGE) + BLIP2(blip2-opt-2.7b-coco) +
-CLIP(ViT-B/32·ViT-L/14) 실로딩 경로. 샘플: `inputs/test_1.png`에서 만든 6프레임
-256×256 mp4(프레임 0~3 = 카메라 팬 크롭, 4~5 = 장면 전환), 4 fps.
+- 체크포인트 4종(JSCC/MDTv2/ControlNet/MuGE) + BLIP2(blip2-opt-2.7b-coco) +
+  CLIP(ViT-B/32·ViT-L/14) 실로딩 경로. 샘플: `inputs/test_1.png`에서 만든 6프레임
+  256×256 mp4(프레임 0~3 = 카메라 팬 크롭, 4~5 = 장면 전환), 4 fps.
 
 ```bash
 python scripts/evaluate_video.py --config configs/recipes/video/composed_video_smoke.yaml \
     --input outputs/smoke_video/sample.mp4 --snr 5 --save-video
 ```
 
-`composed_video_smoke.yaml`은 `composed_video.yaml`과 동일하되 검증 속도를 위해
-`diffusion_step: 10`(평가용은 50)이고 motion gate가 켜져 있다(`motion_threshold:
-0.08` — smoke 값, 튜닝 값 아님). **정상 완료** (모델 로딩 포함 수 분).
+- `composed_video_smoke.yaml`은 `composed_video.yaml`과 동일하되 검증 속도를 위해
+  `diffusion_step: 10`(평가용은 50)이고 motion gate가 켜져 있다(`motion_threshold:
+  0.08` — smoke 값, 튜닝 값 아님). **정상 완료** (모델 로딩 포함 수 분).
 
-산출물(전부 생성 확인):
+- 산출물(전부 생성 확인):
 
 | 산출물 | 확인 결과 |
 |---|---|
@@ -126,12 +126,12 @@ python scripts/evaluate_video.py --config configs/recipes/video/composed_video_s
 | `recon_frames/` | 정확히 6개 `recon_*.png` (현재 실행 프레임 수와 일치) |
 | `recon.mp4` | 생성 (6프레임 @ 4 fps, 원본 fps 유지) |
 
-주의(정직한 해석): 이 smoke 클립에서는 BLIP2 캡션이 크롭마다 달라져 semantic
-delta가 항상 reuse 임계(0.2)를 넘었고, 따라서 4개 inter-frame 모두
-`recompute_semantic`으로 갔다(모션 게이트 발동 조건인 "의미 동일 + 모션 큼"
-구간이 없었음). motion-트리거 recompute 경로 자체는 오프라인 단위 테스트
-(`tests/test_video.py::TestMotionGate`)와 dry-run에서 검증됐다. 또한 위 지표
-수치는 6프레임 합성 클립의 잠정(CLIP 기반) 값일 뿐 평가 결과가 아니다.
+- 주의(정직한 해석): 이 smoke 클립에서는 BLIP2 캡션이 크롭마다 달라져 semantic
+  delta가 항상 reuse 임계(0.2)를 넘었고, 따라서 4개 inter-frame 모두
+  `recompute_semantic`으로 갔다(모션 게이트 발동 조건인 "의미 동일 + 모션 큼"
+  구간이 없었음). motion-트리거 recompute 경로 자체는 오프라인 단위 테스트
+  (`tests/test_video.py::TestMotionGate`)와 dry-run에서 검증됐다. 또한 위 지표
+  수치는 6프레임 합성 클립의 잠정(CLIP 기반) 값일 뿐 평가 결과가 아니다.
 
 ## 남은 후속 항목
 

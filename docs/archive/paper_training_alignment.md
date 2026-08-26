@@ -4,15 +4,15 @@
 
 > 보관본. 최신 요약은 [paper_alignment.md](../reference/paper_alignment.md)를 우선 참조.
 
-`sgdjscc_lab`이 SGD-JSCC hyperparameter를 어떻게 설정하는지를 **공개 `SGDJSCC/`
-코드로 confirmed**, **논문 table 값**, **미공개 assumption**으로 구분한다.
+- `sgdjscc_lab`이 SGD-JSCC hyperparameter를 어떻게 설정하는지를 **공개 `SGDJSCC/`
+  코드로 confirmed**, **논문 table 값**, **미공개 assumption**으로 구분한다.
 
 > **역할**: 이 문서 = 하이퍼파라미터 **수치의 출처** + 학습 경로의 논문 비등가(§6).
 > 구조 정합·충실도 분류·`paper_mode` guardrail·DDP 등 **정책**은
 > [paper_gap_closure.md](./paper_gap_closure.md)에서 다룬다.
 
-Ground-truth 우선순위: **공개 코드 우선**, 논문 table 차순; 충돌 시 재현성을 위해
-공개 코드 값을 유지한다.
+- Ground-truth 우선순위: **공개 코드 우선**, 논문 table 차순; 충돌 시 재현성을 위해
+  공개 코드 값을 유지한다.
 
 ## 1. 공개 코드에서 confirmed
 
@@ -24,8 +24,8 @@ Ground-truth 우선순위: **공개 코드 우선**, 논문 table 차순; 충돌
 | timestep `frequency_embedding_size` | 256 | `mask_diffusion.py` `TimestepEmbedder(…)` |
 | JSCC training SNR | 10 dB | 논문 §VI + repo 기본값 |
 
-`sgdjscc_lab`에서는: `configs/base/model/sgdjscc.yaml`(scalar)과
-`models/diffusion_wrapper.py`(`MDTv2` dim). dim은 **변경 금지**(checkpoint 호환성).
+- `sgdjscc_lab`에서는: `configs/base/model/sgdjscc.yaml`(scalar)과
+  `models/diffusion_wrapper.py`(`MDTv2` dim). dim은 **변경 금지**(checkpoint 호환성).
 
 ## 2. 공개 코드 vs 논문 table 충돌
 
@@ -46,25 +46,25 @@ Ground-truth 우선순위: **공개 코드 우선**, 논문 table 차순; 충돌
 | JSCC GAN weight λ | 0.5 | paper-LIKE objective(MSE+λ·GAN); λ 미공개; `paper_assumed_hparams`에 명시 |
 | DM stage step / batch size | 250k / 64 | 논문 table-scale target; 코드 미확인 |
 
-pipeline이 돌고 *구조적으로* faithful하도록 설정했으며, config에 정직하게
-표기(`assumed default (unpublished in the paper)`)되고 paper-confirmed로 인용하면
-안 된다.
+- pipeline이 돌고 *구조적으로* faithful하도록 설정했으며, config에 정직하게
+  표기(`assumed default (unpublished in the paper)`)되고 paper-confirmed로 인용하면
+  안 된다.
 
 ## 4. 데이터 범위
 
-`paper_train_text_dm.yaml` / `paper_train_controlnet.yaml`은 **COCO-only** caption
-source를 사용한다. 논문 Stage-2 DM은 훨씬 큰(~14M-image) multi-dataset corpus로
-학습하므로 repo config는 **더 작은 실용 재현**이다(각 config header에 명시).
-`paper_mode`는 여전히 데이터셋 제공 caption을 강제하나, COCO를 논문의 14M corpus와
-동등하게 만들 수는 없다.
+- `paper_train_text_dm.yaml` / `paper_train_controlnet.yaml`은 **COCO-only** caption
+  source를 사용한다. 논문 Stage-2 DM은 훨씬 큰(~14M-image) multi-dataset corpus로
+  학습하므로 repo config는 **더 작은 실용 재현**이다(각 config header에 명시).
+  `paper_mode`는 여전히 데이터셋 제공 caption을 강제하나, COCO를 논문의 14M corpus와
+  동등하게 만들 수는 없다.
 
 ## 5. 3-GPU training
 
-`train.batch_size`는 **per-rank**:
-`global_batch = batch_size × world_size × grad_accum_steps`. paper-scale 64를 3 GPU에서
-쓰려면 `--batch-size 21`(≈63). 전체 command sequence(Stage 2 → MuGE precompute →
-edge codec → ControlNet, JSCC 선택)는
-[paper_gap_closure.md](./paper_gap_closure.md#multi-gpu-training-ddp)에 있다. 각 stage:
+- `train.batch_size`는 **per-rank**:
+  `global_batch = batch_size × world_size × grad_accum_steps`. paper-scale 64를 3 GPU에서
+  쓰려면 `--batch-size 21`(≈63). 전체 command sequence(Stage 2 → MuGE precompute →
+  edge codec → ControlNet, JSCC 선택)는
+  [paper_gap_closure.md](./paper_gap_closure.md#multi-gpu-training-ddp)에 있다. 각 stage:
 
 ```bash
 torchrun --standalone --nproc_per_node=3 scripts/train.py \
@@ -72,12 +72,12 @@ torchrun --standalone --nproc_per_node=3 scripts/train.py \
     --train-list data/coco/train2017 --val-list data/coco/val2017 --batch-size 21
 ```
 
-MuGE precompute(split당 1회): `scripts/prepare_muge_edges.py --input <split>
---model-root checkpoints --repr edge_uncertainty --device cuda:0`.
+- MuGE precompute(split당 1회): `scripts/prepare_muge_edges.py --input <split>
+  --model-root checkpoints --repr edge_uncertainty --device cuda:0`.
 
 ## 6. 학습 경로의 논문 비등가
 
-`training_scaffold.md`(실행 가이드)에서 이관한, 학습 경로가 논문과 다른 지점:
+- `training_scaffold.md`(실행 가이드)에서 이관한, 학습 경로가 논문과 다른 지점:
 
 - **Stage-1 손실** — paper config는 논문 구조에 맞춰 MSE+patch-GAN을 사용한다.
   다만 GAN weight λ와 discriminator 세부값은 미공개라 `paper_assumed_hparams`의

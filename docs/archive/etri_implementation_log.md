@@ -2,18 +2,18 @@
 
 # ETRI 구현 이력 (1차~6차, LGVSC 1A/1B/1C)
 
-이 문서는 옛 `docs/etri_strategy.md`의 상세 구현 로그를 2026-08-25에 옮긴
-**과거 완료 기록**이다. 현재 상태는 [status.md](../current/status.md), 향후 계획은
-[roadmap.md](../current/roadmap.md)를 따른다. 본문에 남은 옛 문서 경로는 당시
-스냅샷이며, 현재 위치는 [문서 색인](../README.md)에서 확인한다.
+- 이 문서는 옛 `docs/etri_strategy.md`의 상세 구현 로그를 2026-08-25에 옮긴
+  **과거 완료 기록**이다. 현재 상태는 [status.md](../current/status.md), 향후 계획은
+  [roadmap.md](../current/roadmap.md)를 따른다. 본문에 남은 옛 문서 경로는 당시
+  스냅샷이며, 현재 위치는 [문서 색인](../README.md)에서 확인한다.
 
 ## 구현 실행 순서 (0~12)
 
-이 표는 **개발자가 실제로 구현할 의존성 순서**다. 아래 월별 추진계획이 "언제 어떤
-산출물을 보고할 것인가"라면, 이 표는 "그 산출물을 만들기 위해 코드에서 무엇을 먼저
-붙여야 하는가"를 설명한다.
+- 이 표는 **개발자가 실제로 구현할 의존성 순서**다. 아래 월별 추진계획이 "언제 어떤
+  산출물을 보고할 것인가"라면, 이 표는 "그 산출물을 만들기 위해 코드에서 무엇을 먼저
+  붙여야 하는가"를 설명한다.
 
-읽는 법:
+- 읽는 법:
 
 - **PPT 블록**은 발표자료에 실제로 표시된 도형·기능 이름이다. 개발 작업이 어느 그림의
   어느 부분을 구현하는지 바로 확인하기 위한 열이다.
@@ -37,7 +37,7 @@
 | 11 ✅ PoC 구현 완료 | 슬라이드 10 `1차 — 채널 심볼 절감 PoC` | 변화가 작은 latent/semantic 요소를 덜 보내고, 의미 보존 저하와 절감률의 관계를 본다 | 신규 `accounting/bit_accounting.py`, `pipelines/transmission_accounting.py` | 슬라이드 10·12 | 7~8월 | 절감률 vs SRS/PTC 곡선이 생성됨 — **완료(PoC, 6차)**: frame/segment 단위 bit/channel-symbol accounting + naive baseline 대비 절감률이 계산됨. 🟡 실제 bitstream/CBR 재현이 아니라 accounting PoC (아래 "6차 구현 결과" 참조) |
 | 12 ✅ PoC 구현 완료 | 슬라이드 10 `2차 — 비트 기준 설계안` / 슬라이드 12 `평가 벤치마크` | 실제 bitrate/CBR 산정 방식, adaptive keyframe policy, DISTS/downstream 비교 지표를 정리한다 | 신규 `pipelines/rate_reliability_report.py`, `scripts/report_transmission_accounting.py` | 슬라이드 10·12·13 | 10~11월 | 최종 보고용 비교 프로토콜과 bit 기준 설계안이 정리됨 — **완료(PoC, 6차)**: rate/reliability trade-off 리포트(bits_per_frame/symbols_per_frame + PTC/SFR/SDI/severity) + append/merge 기반 비교 프로토콜이 동작. 🟡 실제 CBR/표준 bitstream 비교와 DISTS/downstream 지표 통합은 후속 |
 
-PPT 블록 기준 큰 흐름은 다음과 같다.
+- PPT 블록 기준 큰 흐름은 다음과 같다.
 
 | PPT 블록 묶음 | 포함 순서 | 의미 |
 |---|---|---|
@@ -45,9 +45,9 @@ PPT 블록 기준 큰 흐름은 다음과 같다.
 | 슬라이드 5 비디오 확장 블록 | 1~6 | mp4 입출력, 시간축 지표, motion-aware 판단, segment 구조, generate 분기를 만든다 |
 | 슬라이드 10 전송량 절감 블록 | 11~12 | ETRI 문의사항인 channel-symbol 절감과 bit 기준 설계안을 정리한다 |
 
-**게이트 원칙:** 수치에 영향 없는 순수 배선(threshold 전달 등)은 게이트 불필요. 새 판정
-로직, 새 backend(OWLv2·VQA), negative-prompt 재생성, generate 분기, 학습형 adapter/critic은
-phase/config gate 뒤에 두고, 기본값에서 원본 SGD-JSCC 경로와 동일하게 동작하도록 관리한다.
+- **게이트 원칙:** 수치에 영향 없는 순수 배선(threshold 전달 등)은 게이트 불필요. 새 판정
+  로직, 새 backend(OWLv2·VQA), negative-prompt 재생성, generate 분기, 학습형 adapter/critic은
+  phase/config gate 뒤에 두고, 기본값에서 원본 SGD-JSCC 경로와 동일하게 동작하도록 관리한다.
 
 ## 1차~6차 구현 결과
 
@@ -56,11 +56,11 @@ phase/config gate 뒤에 두고, 기본값에서 원본 SGD-JSCC 경로와 동�
 > 상세 검증 기록(기준 커밋, 로컬/원격/실모델 실행 결과, 산출물)은
 > [etri_stage1_validation.md](../experiments/2026-07-17_stage1_video_pipeline.md) 참조.
 
-1차(순서 0~4)는 구현 완료됐다. 1차의 성격은 **최종 평가 체계 완성이 아니라 동작하는
-비디오/시간축 평가 뼈대 확보**이며, OWLv2/VQA·Generate·Adapter/Critic·Temporal SRS
-Calibration·bit accounting은 계획대로 후속 단계(2~6차)로 남겨뒀다.
+- 1차(순서 0~4)는 구현 완료됐다. 1차의 성격은 **최종 평가 체계 완성이 아니라 동작하는
+  비디오/시간축 평가 뼈대 확보**이며, OWLv2/VQA·Generate·Adapter/Critic·Temporal SRS
+  Calibration·bit accounting은 계획대로 후속 단계(2~6차)로 남겨뒀다.
 
-구현 내용과 산출물 ↔ 코드 대응:
+- 구현 내용과 산출물 ↔ 코드 대응:
 
 | 항목 | 코드 | 산출물 |
 |---|---|---|
@@ -70,27 +70,27 @@ Calibration·bit accounting은 계획대로 후속 단계(2~6차)로 남겨뒀�
 | 의미 델타 + 모션 이중 게이트 | `video/temporal_pipeline.py` — keyframe-anchored `motion_residual` 점수, `temporal.motion_threshold`/`motion_weight`/`motion_grid`(+`semantic_delta_threshold` alias). 기본 `motion_threshold: null` = 기존 semantic-delta 단독 게이트와 동일 | `temporal_frames.csv`의 per-frame `decision`(`reuse`/`recompute_semantic`/`recompute_motion`)·`motion_score` = motion gate decision log, summary의 `n_recompute_motion` |
 | Segment(GOP) 추상화 | 신규 `video/segment.py::SegmentRecord`/`build_segments` — segment_id, keyframe/inter 인덱스, frame_decisions, transmitted_units, delta/motion/temporal 요약. `generation` 필드는 3차 generate 분기용 예약 인터페이스(1차에서는 항상 null) | `segments.json` (frame-wise 로그는 그대로 유지, 병행 출력) |
 
-주의: 1차의 `PTC`/`SFR`/`SDI`와 presence 판정은 처음에는 **CLIP/packet 기반 잠정 구현**이었다
-(위 "후속 단계가 앞 단계의 잠정 구현을 마무리하는 방식" 표 참조). 2026-07-28 기준
-5차 OWLv2/VQA 보강 후 10개 영상 held-out 재측정을 완료했으므로, 최종 해석에서는
-`outputs/etri_video_eval/remeasure_10videos/summary_metrics.csv`의 filtered 모드를 기준으로 삼는다.
+- 주의: 1차의 `PTC`/`SFR`/`SDI`와 presence 판정은 처음에는 **CLIP/packet 기반 잠정 구현**이었다
+  (위 "후속 단계가 앞 단계의 잠정 구현을 마무리하는 방식" 표 참조). 2026-07-28 기준
+  5차 OWLv2/VQA 보강 후 10개 영상 held-out 재측정을 완료했으므로, 최종 해석에서는
+  `outputs/etri_video_eval/remeasure_10videos/summary_metrics.csv`의 filtered 모드를 기준으로 삼는다.
 
-테스트 현황(정확한 표현): 1차 변경 관련 테스트(`tests/test_video.py`,
-`tests/test_video_io.py`, `tests/test_evaluators.py`)는 통과. 전체 스위트 중
-`tests/test_ddp.py::test_entrypoint_torchrun_dryrun` 1건은 1차 변경과 무관하게
-**이전부터 실패**하던 테스트다(로그 문구 `"DDP: rank="` 기대와 실제 train.py 출력
-`"DDP: world_size=…"` 불일치 — 별도 수정 대상).
+- 테스트 현황(정확한 표현): 1차 변경 관련 테스트(`tests/test_video.py`,
+  `tests/test_video_io.py`, `tests/test_evaluators.py`)는 통과. 전체 스위트 중
+  `tests/test_ddp.py::test_entrypoint_torchrun_dryrun` 1건은 1차 변경과 무관하게
+  **이전부터 실패**하던 테스트다(로그 문구 `"DDP: rank="` 기대와 실제 train.py 출력
+  `"DDP: world_size=…"` 불일치 — 별도 수정 대상).
 
 ### 2차 구현 결과 (2026-07)
 
-2차(순서 7)는 구현 완료됐다. 2차의 성격은 **"복원이 전송 semantic packet과 맞는지
-검증하고, 오류 유형별로 어떤 조치가 필요한지 결정·기록하는 기반을 만드는 것"**이며,
-**최종 hallucination 문제 해결이 아니다.** OWLv2/VQA 기반 검출 보강(5차),
-`video_generator`/Generate 분기 결합(3~4차 후속), 학습형 `Semantic Packet Fidelity
-Adapter`·`Counterfactual Hallucination Critic`, 실제 diffusion sampler로의
-negative-prompt/prompt-emphasis 주입은 계획대로 이번 범위에서 제외했다.
+- 2차(순서 7)는 구현 완료됐다. 2차의 성격은 **"복원이 전송 semantic packet과 맞는지
+  검증하고, 오류 유형별로 어떤 조치가 필요한지 결정·기록하는 기반을 만드는 것"**이며,
+  **최종 hallucination 문제 해결이 아니다.** OWLv2/VQA 기반 검출 보강(5차),
+  `video_generator`/Generate 분기 결합(3~4차 후속), 학습형 `Semantic Packet Fidelity
+  Adapter`·`Counterfactual Hallucination Critic`, 실제 diffusion sampler로의
+  negative-prompt/prompt-emphasis 주입은 계획대로 이번 범위에서 제외했다.
 
-구현 내용과 산출물 ↔ 코드 대응:
+- 구현 내용과 산출물 ↔ 코드 대응:
 
 | 항목 | 코드 | 산출물 |
 |---|---|---|
@@ -99,31 +99,31 @@ negative-prompt/prompt-emphasis 주입은 계획대로 이번 범위에서 제�
 | Pipeline 연결(옵션, 기본 OFF) | 신규 `pipelines/packet_verification.py` (`maybe_run`), `scripts/evaluate_video.py`에서 `TemporalPipeline.run()` 결과 직후 호출 | config 게이트 `use_packet_verifier`(phase4-gated) + `verifier.enabled` — 기본 둘 다 false. 켜면 `temporal_frames.csv`에 `severity`/`controller_decision` 컬럼이, `segments.json`의 각 segment에 `verifier_summary`(`mean_severity`/`max_severity`/`decision_counts`/`worst_decision`)가 추가됨 |
 | 출력 파일 | `pipelines/packet_verification.py::write_reports` | `packet_match_report.json`/`.csv`, `controller_decisions.json`/`.csv` (경로는 `configs/base/video/default.yaml`의 `verifier.report_json`/`report_csv`/`decisions_json`/`decisions_csv`) |
 
-주의: 2차 controller는 여전히 **rule-based decision log 수준**이며, 오류 유형 판정은
-1차와 마찬가지로 CLIP/캡션 기반 packet 추출기(`guidance/semantic_packet_extractor.py`)에
-의존한다(위 "후속 단계가 앞 단계의 잠정 구현을 마무리하는 방식" 표의 "2차 `Packet
-Verifier`와 regeneration controller" 행 참조). 강한 결론을 내리기 전에 5차 OWLv2/VQA
-보강 후 재검증해야 한다.
+- 주의: 2차 controller는 여전히 **rule-based decision log 수준**이며, 오류 유형 판정은
+  1차와 마찬가지로 CLIP/캡션 기반 packet 추출기(`guidance/semantic_packet_extractor.py`)에
+  의존한다(위 "후속 단계가 앞 단계의 잠정 구현을 마무리하는 방식" 표의 "2차 `Packet
+  Verifier`와 regeneration controller" 행 참조). 강한 결론을 내리기 전에 5차 OWLv2/VQA
+  보강 후 재검증해야 한다.
 
-테스트 현황: 2차 신규/확장 테스트(`tests/test_packet_matcher.py::TestPacketVerifier`,
-`tests/test_controllers.py::TestVerifierController`,
-`tests/test_video.py::TestPacketVerifierWiring`)와 기존 회귀 테스트
-(`tests/test_packet_matcher.py`, `tests/test_regeneration_search.py`,
-`tests/test_controllers.py`, `tests/test_video.py`, `tests/test_video_io.py`,
-`tests/test_evaluators.py`)는 `ptest` conda 환경에서 통과 확인됨(정확한 pass/fail
-수치는 저장소의 최신 테스트 실행 로그 참조 — 이 문서는 스냅샷이 아니라 구현 범위
-설명이다).
+- 테스트 현황: 2차 신규/확장 테스트(`tests/test_packet_matcher.py::TestPacketVerifier`,
+  `tests/test_controllers.py::TestVerifierController`,
+  `tests/test_video.py::TestPacketVerifierWiring`)와 기존 회귀 테스트
+  (`tests/test_packet_matcher.py`, `tests/test_regeneration_search.py`,
+  `tests/test_controllers.py`, `tests/test_video.py`, `tests/test_video_io.py`,
+  `tests/test_evaluators.py`)는 `ptest` conda 환경에서 통과 확인됨(정확한 pass/fail
+  수치는 저장소의 최신 테스트 실행 로그 참조 — 이 문서는 스냅샷이 아니라 구현 범위
+  설명이다).
 
 ### 3차 구현 결과 (2026-07)
 
-3차(순서 5)는 구현 완료됐다. 3차의 성격은 **"`TemporalPipeline`에 reuse/recompute와
-나란히 동작하는 세 번째 branch(generate)를 구조적으로 통과시키는 것"**이며,
-**고성능 생성 모델 완성이나 LGVSC 수준 생성 품질 달성이 아니다.** 이번 범위의
-generator backend(`copy`/`interpolation`)는 모두 mock이고, 실제 SVD/Open-Sora 같은
-학습형 비디오 생성 모델 통합, bidirectional(start+end keyframe) conditioning,
-OWLv2/VQA 기반 생성 결과 최종 검증은 계획대로 각각 후속(3~4차 이후, 4차, 5차)이다.
+- 3차(순서 5)는 구현 완료됐다. 3차의 성격은 **"`TemporalPipeline`에 reuse/recompute와
+  나란히 동작하는 세 번째 branch(generate)를 구조적으로 통과시키는 것"**이며,
+  **고성능 생성 모델 완성이나 LGVSC 수준 생성 품질 달성이 아니다.** 이번 범위의
+  generator backend(`copy`/`interpolation`)는 모두 mock이고, 실제 SVD/Open-Sora 같은
+  학습형 비디오 생성 모델 통합, bidirectional(start+end keyframe) conditioning,
+  OWLv2/VQA 기반 생성 결과 최종 검증은 계획대로 각각 후속(3~4차 이후, 4차, 5차)이다.
 
-구현 내용과 산출물 ↔ 코드 대응:
+- 구현 내용과 산출물 ↔ 코드 대응:
 
 | 항목 | 코드 | 산출물 |
 |---|---|---|
@@ -135,31 +135,31 @@ OWLv2/VQA 기반 생성 결과 최종 검증은 계획대로 각각 후속(3~4�
 | Pipeline 연결(옵션, 기본 OFF) | `scripts/evaluate_video.py` — `use_video_gen`(phase4-gated) + `video_generator.enabled` 둘 다 true일 때만 `video_generator.build_generator(cfg)`로 backend를 만들고 `TemporalPipeline`에 주입. 끄면 `TemporalPipeline`은 `video_generator`를 만들지도, 호출하지도 않음 | `configs/base/video/default.yaml`의 `use_video_gen`/`video_generator.*` 블록 (기본 전부 OFF) |
 | 출력 산출물 | `video/video_generator.py::save_generated_frames()` — `decision == "generate"`인 프레임만 별도 폴더에 저장(전체 복원 프레임은 기존과 동일하게 `recon_frames_dir`에도 저장됨) | `generated_frames_dir` 아래 `generated_{index:05d}.png`, `temporal_frames.csv`의 `decision=generate` 행, `temporal_metrics.csv`의 `n_generate`/`n_reused`/`n_recompute_semantic`/`n_recompute_motion` |
 
-실제 CLI 경로(`scripts/evaluate_video.py --no-models --captions ...`)로 합성 4프레임
-시퀀스(캡션으로 오브젝트 수를 다르게 부여)를 돌려 `n_generate=2`, `generated_frames_dir`에
-2개 파일 저장, `segments.json`의 `generation` 필드 채워짐을 수동으로도 확인했다(단위
-테스트와 별개의 엔드투엔드 스모크 확인).
+- 실제 CLI 경로(`scripts/evaluate_video.py --no-models --captions ...`)로 합성 4프레임
+  시퀀스(캡션으로 오브젝트 수를 다르게 부여)를 돌려 `n_generate=2`, `generated_frames_dir`에
+  2개 파일 저장, `segments.json`의 `generation` 필드 채워짐을 수동으로도 확인했다(단위
+  테스트와 별개의 엔드투엔드 스모크 확인).
 
-주의: 3차의 generate 결과는 **품질을 주장하는 산출물이 아니다** — `copy`/`interpolation`
-mock backend는 생성이 아니라 자리표시자다. 실제 생성 품질 비교, drift/flicker 측정,
-OWLv2/VQA 기반 검증은 4~5차의 대상이다(아래 "후속 단계가 앞 단계의 잠정 구현을 마무리하는
-방식" 표 참조).
+- 주의: 3차의 generate 결과는 **품질을 주장하는 산출물이 아니다** — `copy`/`interpolation`
+  mock backend는 생성이 아니라 자리표시자다. 실제 생성 품질 비교, drift/flicker 측정,
+  OWLv2/VQA 기반 검증은 4~5차의 대상이다(아래 "후속 단계가 앞 단계의 잠정 구현을 마무리하는
+  방식" 표 참조).
 
-테스트 현황: 3차 신규 테스트(`tests/test_video_generator.py`,
-`tests/test_video.py::TestGenerateBranch`)와 기존 회귀 테스트
-(`tests/test_video.py`, `tests/test_video_io.py`, `tests/test_evaluators.py`,
-`tests/test_packet_matcher.py`, `tests/test_controllers.py`)는 `ptest` conda
-환경에서 통과 확인됨(정확한 pass/fail 수치는 저장소의 최신 테스트 실행 로그 참조).
+- 테스트 현황: 3차 신규 테스트(`tests/test_video_generator.py`,
+  `tests/test_video.py::TestGenerateBranch`)와 기존 회귀 테스트
+  (`tests/test_video.py`, `tests/test_video_io.py`, `tests/test_evaluators.py`,
+  `tests/test_packet_matcher.py`, `tests/test_controllers.py`)는 `ptest` conda
+  환경에서 통과 확인됨(정확한 pass/fail 수치는 저장소의 최신 테스트 실행 로그 참조).
 
 ### 4차 구현 결과 (2026-07)
 
-4차(순서 6)는 구현 완료됐다. 4차의 성격은 **"start keyframe만 쓰는 3차 generate
-branch와 start+end keyframe을 함께 쓰는 bidirectional branch를 같은 파이프라인에서
-구조적으로 비교 가능하게 만드는 것"**이며, **실제 SVD/Open-Sora 품질 검증이나
-"bidirectional이 drift/flicker를 줄인다"는 성능 주장이 아니다.** 4차의
-bidirectional backend(`bidirectional_interpolation`)도 3차와 마찬가지로 mock이다.
+- 4차(순서 6)는 구현 완료됐다. 4차의 성격은 **"start keyframe만 쓰는 3차 generate
+  branch와 start+end keyframe을 함께 쓰는 bidirectional branch를 같은 파이프라인에서
+  구조적으로 비교 가능하게 만드는 것"**이며, **실제 SVD/Open-Sora 품질 검증이나
+  "bidirectional이 drift/flicker를 줄인다"는 성능 주장이 아니다.** 4차의
+  bidirectional backend(`bidirectional_interpolation`)도 3차와 마찬가지로 mock이다.
 
-구현 내용과 산출물 ↔ 코드 대응:
+- 구현 내용과 산출물 ↔ 코드 대응:
 
 | 항목 | 코드 | 산출물 |
 |---|---|---|
@@ -171,41 +171,41 @@ bidirectional backend(`bidirectional_interpolation`)도 3차와 마찬가지로 
 | 산출물 기록 | `FrameRecord.to_log()`에 `generation_conditioning_mode` 컬럼 추가(생성이 아니면 `None` — 모션 게이트 컬럼과 동일한 컨벤션), `segment.py::_generation_summary()`에 `end_keyframe_index` 집계 필드 추가 | `temporal_frames.csv`의 `generation_conditioning_mode` 컬럼, `segments.json`의 `generation.end_keyframe_index` |
 | config | `configs/base/video/default.yaml`의 `video_generator.conditioning_mode: bidirectional` 허용 + `bidirectional_missing_end_policy`/`comparison_enabled`/`comparison_output`/`comparison_start_only_csv`/`comparison_bidirectional_csv` 추가(기본값 전부 기존 동작 보존 — `conditioning_mode: start_only`, `comparison_enabled: false`) | `config.py::_NESTED_PATH_KEYS`에 비교 산출물 경로 3종 등록 |
 
-실제 CLI 경로(`scripts/evaluate_video.py --no-models --captions ...`)로 합성 8프레임
-2-GOP 시퀀스(마지막 GOP는 end keyframe 없음)를 `conditioning_mode: bidirectional` +
-`comparison_enabled: true`로 돌려 다음을 수동으로도 확인했다: 첫 GOP의 inter-frame이
-진짜 bidirectional 보간(`relative_position=0.25`, `end_keyframe_index=4`)으로 기록됨,
-마지막 GOP의 inter-frame은 `bidirectional_missing_end_policy: fallback_start_only`에
-따라 `conditioning_mode=start_only`로 강등되어 기록됨, `generation_mode_comparison.json`
+- 실제 CLI 경로(`scripts/evaluate_video.py --no-models --captions ...`)로 합성 8프레임
+  2-GOP 시퀀스(마지막 GOP는 end keyframe 없음)를 `conditioning_mode: bidirectional` +
+  `comparison_enabled: true`로 돌려 다음을 수동으로도 확인했다: 첫 GOP의 inter-frame이
+  진짜 bidirectional 보간(`relative_position=0.25`, `end_keyframe_index=4`)으로 기록됨,
+  마지막 GOP의 inter-frame은 `bidirectional_missing_end_policy: fallback_start_only`에
+  따라 `conditioning_mode=start_only`로 강등되어 기록됨, `generation_mode_comparison.json`
 + 두 개의 `temporal_metrics_*.csv`가 생성됨, generate를 아예 끈 기본 config
-(`configs/recipes/video/composed_video.yaml`)는 동일 입력에서 `n_generate=0`으로 3차 이전과 동일하게
-동작함(회귀 없음).
+- (`configs/recipes/video/composed_video.yaml`)는 동일 입력에서 `n_generate=0`으로 3차 이전과 동일하게
+  동작함(회귀 없음).
 
-주의: 4차의 bidirectional 결과도 3차와 마찬가지로 **품질을 주장하는 산출물이 아니다** —
-`bidirectional_interpolation`은 학습형 생성이 아니라 선형 보간 mock이다. 비교 파이프라인이
-계산하는 `PTC`/`SFR`/`SDI` diff는 "두 모드를 같은 파이프라인에서 실행·비교할 수 있다"는
-구조적 사실만 증명하며, "bidirectional이 더 낫다"는 근거로 인용해서는 안 된다. 실제
-생성 품질·drift/flicker 감소 검증은 실제 backend 통합 이후(5차+) 대상이다(아래 "후속
-단계가 앞 단계의 잠정 구현을 마무리하는 방식" 표 참조).
+- 주의: 4차의 bidirectional 결과도 3차와 마찬가지로 **품질을 주장하는 산출물이 아니다** —
+  `bidirectional_interpolation`은 학습형 생성이 아니라 선형 보간 mock이다. 비교 파이프라인이
+  계산하는 `PTC`/`SFR`/`SDI` diff는 "두 모드를 같은 파이프라인에서 실행·비교할 수 있다"는
+  구조적 사실만 증명하며, "bidirectional이 더 낫다"는 근거로 인용해서는 안 된다. 실제
+  생성 품질·drift/flicker 감소 검증은 실제 backend 통합 이후(5차+) 대상이다(아래 "후속
+  단계가 앞 단계의 잠정 구현을 마무리하는 방식" 표 참조).
 
-테스트 현황: 4차 신규 테스트(`tests/test_video_generator.py`의
-`TestBidirectionalInterpolationGenerator`/`TestBidirectionalConditioningModeBuild`,
-`tests/test_video.py`의 `TestBidirectionalGenerateBranch`/`TestGenerationModeComparison`)와
-기존 회귀 테스트(`tests/test_video_generator.py`, `tests/test_video.py`,
-`tests/test_video_io.py`, `tests/test_evaluators.py`, `tests/test_packet_matcher.py`,
-`tests/test_controllers.py`)는 `ptest` conda 환경에서 통과 확인됨(정확한 pass/fail
-수치는 저장소의 최신 테스트 실행 로그 참조).
+- 테스트 현황: 4차 신규 테스트(`tests/test_video_generator.py`의
+  `TestBidirectionalInterpolationGenerator`/`TestBidirectionalConditioningModeBuild`,
+  `tests/test_video.py`의 `TestBidirectionalGenerateBranch`/`TestGenerationModeComparison`)와
+  기존 회귀 테스트(`tests/test_video_generator.py`, `tests/test_video.py`,
+  `tests/test_video_io.py`, `tests/test_evaluators.py`, `tests/test_packet_matcher.py`,
+  `tests/test_controllers.py`)는 `ptest` conda 환경에서 통과 확인됨(정확한 pass/fail
+  수치는 저장소의 최신 테스트 실행 로그 참조).
 
 ### 5차 구현 결과 (2026-07)
 
-5차(순서 8~10)는 먼저 **"CLIP-only verifier에 OWLv2/VQA/GT/VLM judge를 꽂을 수
-있는 인터페이스와, 1~4차 결과를 재측정할 수 있는 held-out 파이프라인"**을 만들었고,
-이후 실제 GPU recon frame을 재사용해 **10개 영상 × 5개 모드 실모델 재측정까지 완료**했다.
-따라서 OWLv2/VQA presence calibration의 실제 weight 연결과 `PTC`/`SFR`/`SDI` held-out
-재검증은 완료 처리한다. 단, `TemporalSRSCalibration`은 여전히 가중치 fitting
-스캐폴드이며 실제 VLM judge 기반 가중치 보정 결과는 후속이다.
+- 5차(순서 8~10)는 먼저 **"CLIP-only verifier에 OWLv2/VQA/GT/VLM judge를 꽂을 수
+  있는 인터페이스와, 1~4차 결과를 재측정할 수 있는 held-out 파이프라인"**을 만들었고,
+  이후 실제 GPU recon frame을 재사용해 **10개 영상 × 5개 모드 실모델 재측정까지 완료**했다.
+  따라서 OWLv2/VQA presence calibration의 실제 weight 연결과 `PTC`/`SFR`/`SDI` held-out
+  재검증은 완료 처리한다. 단, `TemporalSRSCalibration`은 여전히 가중치 fitting
+  스캐폴드이며 실제 VLM judge 기반 가중치 보정 결과는 후속이다.
 
-구현 내용과 산출물 ↔ 코드 대응:
+- 구현 내용과 산출물 ↔ 코드 대응:
 
 | 항목 | 코드 | 산출물 |
 |---|---|---|
@@ -216,14 +216,14 @@ bidirectional backend(`bidirectional_interpolation`)도 3차와 마찬가지로 
 | Temporal SRS Calibration 스캐폴드 | 신규 `evaluators/temporal_srs_calibration.py` — `TemporalSRSCalibration`(SRS/temporal-SRS 가중치 로드/저장), `fit_weights_least_squares()`(GT/VLM `target_score`가 주어졌을 때의 least-squares weight fitting — **실제 VLM 호출은 없음**, 호출자가 target을 공급) | `save()`/`load()` JSON 포맷; `tests/test_temporal_srs_calibration.py`에서 synthetic target으로 정확한 weight 복원 확인 |
 | config | `configs/base/video/default.yaml`의 `verifier.use_presence_calibration`/`presence_mode`/`presence_backends`/`presence_backend_weights`/`metric_role`, 신규 `heldout.*`, `temporal_srs_calibration.*` 블록 (기본값 전부 OFF/`clip_only`) | `config.py::_NESTED_PATH_KEYS`에 `heldout.*`/`temporal_srs_calibration.weights_output` 등록 |
 
-실제 CLI 경로(`scripts/remeasure_video_metrics.py --from-run --no-models --captions ...`,
-`--from-packets <dir>`, `--from-recon-frames <run_dir>`)로 합성/실모델 프레임 시퀀스를 돌려
-`clip_only_metrics`/`calibrated_metrics`/`metric_delta` 파일이 생성되고, presence
-calibration을 켠 `evaluate_video.py` 실행에서 `packet_match_report`에 새 컬럼이
-추가되는 것을 확인했다. 최종 실모델 재측정은 `outputs/etri_video_eval_real_full_step50`
-의 10개 baseline run을 재사용해 `outputs/etri_video_eval/remeasure_10videos/`에 저장했다.
+- 실제 CLI 경로(`scripts/remeasure_video_metrics.py --from-run --no-models --captions ...`,
+  `--from-packets <dir>`, `--from-recon-frames <run_dir>`)로 합성/실모델 프레임 시퀀스를 돌려
+  `clip_only_metrics`/`calibrated_metrics`/`metric_delta` 파일이 생성되고, presence
+  calibration을 켠 `evaluate_video.py` 실행에서 `packet_match_report`에 새 컬럼이
+  추가되는 것을 확인했다. 최종 실모델 재측정은 `outputs/etri_video_eval_real_full_step50`
+  의 10개 baseline run을 재사용해 `outputs/etri_video_eval/remeasure_10videos/`에 저장했다.
 
-10개 영상 × 5개 모드 batch 결과(`summary_metrics.csv`, 50 rows, 모든 `n_items=100`):
+- 10개 영상 × 5개 모드 batch 결과(`summary_metrics.csv`, 50 rows, 모든 `n_items=100`):
 
 | mode | severity diff | PTC diff | SFR diff | missing diff | additional diff | hallucination diff |
 |---|---:|---:|---:|---:|---:|---:|
@@ -233,37 +233,37 @@ calibration을 켠 `evaluate_video.py` 실행에서 `packet_match_report`에 새
 | `ensemble_gt_filter` | -0.1872 | +0.3120 | -0.0182 | -72.4 | +0.0 | +0.0000 |
 | `ensemble_openworld_filter` | -0.1857 | +0.2875 | -0.0190 | -169.4 | -14.9 | -0.0598 |
 
-해석 기준은 모드별로 분리한다. `ensemble_gt_filter`는 GT에 명시된 object만 남기는
-closed-world object preservation 평가이며, hallucination/additional 주장의 근거로 쓰지
-않는다. `ensemble_openworld_filter`는 count/action/scene 잡음만 제거하고 non-GT object를
-남기므로 hallucination/additional object 분석에 사용한다. `ensemble_nofilter`는
-`one`/`walking`/`sidewalk` 같은 caption-token 잡음이 섞이는 비교용 baseline일 뿐 최종
-주장의 근거로 쓰지 않는다. 현재 설정에서는 `vqa`와 `ensemble_nofilter`가 같은 집계값을
-보여 ensemble이 VQA 판단에 강하게 지배됨을 함께 명시한다.
+- 해석 기준은 모드별로 분리한다. `ensemble_gt_filter`는 GT에 명시된 object만 남기는
+  closed-world object preservation 평가이며, hallucination/additional 주장의 근거로 쓰지
+  않는다. `ensemble_openworld_filter`는 count/action/scene 잡음만 제거하고 non-GT object를
+  남기므로 hallucination/additional object 분석에 사용한다. `ensemble_nofilter`는
+  `one`/`walking`/`sidewalk` 같은 caption-token 잡음이 섞이는 비교용 baseline일 뿐 최종
+  주장의 근거로 쓰지 않는다. 현재 설정에서는 `vqa`와 `ensemble_nofilter`가 같은 집계값을
+  보여 ensemble이 VQA 판단에 강하게 지배됨을 함께 명시한다.
 
-테스트 현황: 5차 신규 테스트(`tests/test_presence_backends.py`,
-`tests/test_heldout_remeasurement.py`, `tests/test_temporal_srs_calibration.py`,
-`tests/test_packet_matcher.py::TestPacketVerifierPresenceCalibration`,
-`tests/test_video.py::TestPresenceCalibrationWiring`)와 기존 회귀 테스트
-(`tests/test_video_generator.py`, `tests/test_video.py`, `tests/test_video_io.py`,
-`tests/test_evaluators.py`, `tests/test_packet_matcher.py`, `tests/test_controllers.py`)는
-`ptest` conda 환경에서 통과 확인됨(정확한 pass/fail 수치는 저장소의 최신 테스트
-실행 로그 참조).
+- 테스트 현황: 5차 신규 테스트(`tests/test_presence_backends.py`,
+  `tests/test_heldout_remeasurement.py`, `tests/test_temporal_srs_calibration.py`,
+  `tests/test_packet_matcher.py::TestPacketVerifierPresenceCalibration`,
+  `tests/test_video.py::TestPresenceCalibrationWiring`)와 기존 회귀 테스트
+  (`tests/test_video_generator.py`, `tests/test_video.py`, `tests/test_video_io.py`,
+  `tests/test_evaluators.py`, `tests/test_packet_matcher.py`, `tests/test_controllers.py`)는
+  `ptest` conda 환경에서 통과 확인됨(정확한 pass/fail 수치는 저장소의 최신 테스트
+  실행 로그 참조).
 
 ### 6차 구현 결과 (2026-07)
 
-6차(순서 11~12)는 **PoC 구현 완료**됐다. 6차의 성격은 **"ETRI가 문의한 'semantic
-unit 절감뿐 아니라 channel-symbol/bit 절감도 되는가'라는 질문에 코드로 답할 수
-있는 accounting 구조와 비교 프로토콜을 만드는 것"**이며, **실제 통신 표준
-수준의 bitstream/CBR 구현이 아니다.** 이 모듈에는 엔트로피 코더도, 변조/부호율
-모델도, 실제 channel-coded side-info 스트림도 없다 — 모든 숫자는 (a) 이 저장소가
-이미 만들어내는 실제 산출물(패킷 JSON, caption 문자열)의 정확한 byte 길이이거나
-(b) 실제 모델 아키텍처 상수(VAE `z_channels`/downsample, Canny 채널 인코더
-출력 차원)에서 유도한 명시적 proxy다. 모든 component는 `proxy: true/false`
-플래그와 근거 note를 함께 남긴다(`accounting/bit_accounting.py` 모듈
-docstring 참조).
+- 6차(순서 11~12)는 **PoC 구현 완료**됐다. 6차의 성격은 **"ETRI가 문의한 'semantic
+  unit 절감뿐 아니라 channel-symbol/bit 절감도 되는가'라는 질문에 코드로 답할 수
+  있는 accounting 구조와 비교 프로토콜을 만드는 것"**이며, **실제 통신 표준
+  수준의 bitstream/CBR 구현이 아니다.** 이 모듈에는 엔트로피 코더도, 변조/부호율
+  모델도, 실제 channel-coded side-info 스트림도 없다 — 모든 숫자는 (a) 이 저장소가
+  이미 만들어내는 실제 산출물(패킷 JSON, caption 문자열)의 정확한 byte 길이이거나
+  (b) 실제 모델 아키텍처 상수(VAE `z_channels`/downsample, Canny 채널 인코더
+  출력 차원)에서 유도한 명시적 proxy다. 모든 component는 `proxy: true/false`
+  플래그와 근거 note를 함께 남긴다(`accounting/bit_accounting.py` 모듈
+  docstring 참조).
 
-구현 내용과 산출물 ↔ 코드 대응:
+- 구현 내용과 산출물 ↔ 코드 대응:
 
 | 항목 | 코드 | 산출물 |
 |---|---|---|
@@ -275,42 +275,42 @@ docstring 참조).
 | Pipeline 연결(옵션, 기본 OFF) | `scripts/evaluate_video.py` — `accounting.enabled`/`rate_reliability.enabled`(둘 다 기본 false). 켜도 `TemporalPipeline`의 재구성/결정/기존 지표는 전혀 바뀌지 않고 산출물만 추가됨(수동 회귀 확인: 동일 입력에서 accounting 끈 실행과 켠 실행의 `temporal_metrics.csv`/`segments.json`이 byte-동일) | `configs/base/video/default.yaml`의 `accounting.*`/`rate_reliability.*` 블록, `config.py::_NESTED_PATH_KEYS`에 경로 등록(OmegaConf `${accounting.output_dir}` 보간 사용) |
 | 독립 CLI | 신규 `scripts/report_transmission_accounting.py` — `--input`(from-run, 처음부터 재계산) / `--from-accounting-summary`(기존 `accounting_summary.json` + `temporal_metrics.csv` + 선택적 `packet_match_report.json`을 읽어 rate/reliability 리포트만 재생성, 재계산 없음) 두 모드 | 위와 동일 산출물; 재생성 모드는 원본 실행과 동일한 숫자를 재현함을 스모크로 확인 |
 
-실제 CLI 경로(`scripts/evaluate_video.py --no-models --captions ...`, `accounting.enabled`/
-`rate_reliability.enabled: true`)로 합성 6프레임 시퀀스 두 종류를 돌려 확인했다:
-(1) 프레임마다 독립적인 랜덤 노이즈 입력 → 전부 keyframe으로 판정되어
-`bit_reduction`/`symbol_reduction` 모두 0(naive baseline과 동일 — 절감할 게 없으니
-0이 나오는 것 자체가 올바른 sanity-check), (2) 거의 동일한 프레임(노이즈만 미세하게
-다름) + 동일 caption → `n_reused=5`, `semantic_unit_reduction`/`bit_reduction`/
-`symbol_reduction` 모두 `0.833`으로 **세 지표가 서로 다른 계산 경로를 거치고도 일치**함을
-확인했다(우연이 아니라 5개 reuse 프레임이 세 지표 모두에서 동일하게 "0 전송"으로
-집계되기 때문). `accounting.enabled: false`(기본값) 실행은 `outputs/accounting/`
-디렉터리 자체를 만들지 않고 `temporal_metrics.csv`/`segments.json` 등 기존 산출물이
-byte-동일함을 확인했다(회귀 없음). `scripts/report_transmission_accounting.py`의
-`--from-accounting-summary` 모드로 기존 산출물에서 rate/reliability 리포트를 다시
-만들어도 동일한 숫자가 나옴을 확인했다.
+- 실제 CLI 경로(`scripts/evaluate_video.py --no-models --captions ...`, `accounting.enabled`/
+  `rate_reliability.enabled: true`)로 합성 6프레임 시퀀스 두 종류를 돌려 확인했다:
+  (1) 프레임마다 독립적인 랜덤 노이즈 입력 → 전부 keyframe으로 판정되어
+  `bit_reduction`/`symbol_reduction` 모두 0(naive baseline과 동일 — 절감할 게 없으니
+  0이 나오는 것 자체가 올바른 sanity-check), (2) 거의 동일한 프레임(노이즈만 미세하게
+  다름) + 동일 caption → `n_reused=5`, `semantic_unit_reduction`/`bit_reduction`/
+  `symbol_reduction` 모두 `0.833`으로 **세 지표가 서로 다른 계산 경로를 거치고도 일치**함을
+  확인했다(우연이 아니라 5개 reuse 프레임이 세 지표 모두에서 동일하게 "0 전송"으로
+  집계되기 때문). `accounting.enabled: false`(기본값) 실행은 `outputs/accounting/`
+  디렉터리 자체를 만들지 않고 `temporal_metrics.csv`/`segments.json` 등 기존 산출물이
+  byte-동일함을 확인했다(회귀 없음). `scripts/report_transmission_accounting.py`의
+  `--from-accounting-summary` 모드로 기존 산출물에서 rate/reliability 리포트를 다시
+  만들어도 동일한 숫자가 나옴을 확인했다.
 
-주의: 6차 결과는 **논문급 CBR/bitrate 비교가 아니다.** `edge_cr`/
-`symbols_per_bit_proxy`/`motion_side_info_bits`의 quantization 가정은 모두 튜닝
-가능한 PoC 상수이며, 실제 변조·부호화·엔트로피 코딩을 반영하지 않는다.
-`keyframe_visual_latent_symbols`도 실제 `encode_features` 텐서를 측정한 값이
-아니라 프레임 shape + 고정 아키텍처 상수로부터의 추론이다(모듈 docstring 참조).
-"semantic unit 절감"(1~4차, 이미 검증)과 "bit/channel-symbol 절감"(6차, 이번
-PoC)은 항상 분리해서 인용해야 하며, 최종 논문급 CBR 비교·실제 DISTS/downstream
-지표 통합은 6차 이후 후속 과제다.
+- 주의: 6차 결과는 **논문급 CBR/bitrate 비교가 아니다.** `edge_cr`/
+  `symbols_per_bit_proxy`/`motion_side_info_bits`의 quantization 가정은 모두 튜닝
+  가능한 PoC 상수이며, 실제 변조·부호화·엔트로피 코딩을 반영하지 않는다.
+  `keyframe_visual_latent_symbols`도 실제 `encode_features` 텐서를 측정한 값이
+  아니라 프레임 shape + 고정 아키텍처 상수로부터의 추론이다(모듈 docstring 참조).
+  "semantic unit 절감"(1~4차, 이미 검증)과 "bit/channel-symbol 절감"(6차, 이번
+  PoC)은 항상 분리해서 인용해야 하며, 최종 논문급 CBR 비교·실제 DISTS/downstream
+  지표 통합은 6차 이후 후속 과제다.
 
-테스트 현황: 6차 신규 테스트(`tests/test_transmission_accounting.py` — 38개,
-per-component proxy/exact 계산, 결정별 payload 모델, baseline 2종, frame/segment/
-summary 집계, accounting 비변형성, rate/reliability row 생성 및 append/merge)와
-기존 회귀 테스트(`tests/test_presence_backends.py`, `tests/test_heldout_remeasurement.py`,
-`tests/test_temporal_srs_calibration.py`, `tests/test_packet_matcher.py`,
-`tests/test_video_generator.py`, `tests/test_video.py`, `tests/test_video_io.py`,
-`tests/test_evaluators.py`, `tests/test_controllers.py`)는 `ptest` conda 환경에서
-통과 확인됨(정확한 pass/fail 수치는 저장소의 최신 테스트 실행 로그 참조).
+- 테스트 현황: 6차 신규 테스트(`tests/test_transmission_accounting.py` — 38개,
+  per-component proxy/exact 계산, 결정별 payload 모델, baseline 2종, frame/segment/
+  summary 집계, accounting 비변형성, rate/reliability row 생성 및 append/merge)와
+  기존 회귀 테스트(`tests/test_presence_backends.py`, `tests/test_heldout_remeasurement.py`,
+  `tests/test_temporal_srs_calibration.py`, `tests/test_packet_matcher.py`,
+  `tests/test_video_generator.py`, `tests/test_video.py`, `tests/test_video_io.py`,
+  `tests/test_evaluators.py`, `tests/test_controllers.py`)는 `ptest` conda 환경에서
+  통과 확인됨(정확한 pass/fail 수치는 저장소의 최신 테스트 실행 로그 참조).
 
 
 ## 후속 딥러닝 1단계(LGVSC 재현 기반) 게이트별 상태
 
-1단계는 다시 세 개의 독립 완료 게이트로 관리한다.
+- 1단계는 다시 세 개의 독립 완료 게이트로 관리한다.
 
 - **1A ✅ 완료(구조, 2026-07) — Segment API와 구조 변경:** 모델 weight 없이 완료 가능한
   코드 작업이다. segment 요청/결과 계약, 기존 mock 호환, Rx-legal 경계, 원본 inter-frame
@@ -341,49 +341,49 @@ summary 집계, accounting 비변형성, rate/reliability row 생성 및 append/
   보고"를 혼동하지 않는다 — 아래 "1C 구현 결과"와
   `docs/lgvsc_1c_reproduction_readiness.md` 참조.
 
-1A와 1B는 완료됐다(1B는 start-only와 bidirectional 조건화 둘 다 실제 GPU
-검증까지 완료). **1C는 검증 준비(config/batch driver/summary 생성기)까지
-완료**됐고, 실제 10영상×4모드 검증 실행 자체는 사용자가 진행한다.
+- 1A와 1B는 완료됐다(1B는 start-only와 bidirectional 조건화 둘 다 실제 GPU
+  검증까지 완료). **1C는 검증 준비(config/batch driver/summary 생성기)까지
+  완료**됐고, 실제 10영상×4모드 검증 실행 자체는 사용자가 진행한다.
 
-**1C 다음 단계(PSSS/SKEM) — ✅ 코드/테스트/CPU 스모크 완료(2026-07), 실제
-MLLM 검증 대기:** 1C의 "keyframe 선택(SKIM/SKEM)은 네 모드 전부 동일하다"는
-한계를 메웠다 — 논문 Eq.1-2 그대로의 PSSS(실제 모델 다음-토큰 확률로
-`S_rel = P(No) - P(Yes)` 계산, yes/no 최종 텍스트 비교 아님)와 그 PSSS로
-자동회귀 keyframe을 선택하는 SKEM selector(`video/skem_selector.py`)를
-추가했다. `keyframe.selector: fixed`(기본, 기존 4개 모드는 그대로 이 경로)
-vs `psss`(신규)로 완전히 독립적인 selector를 골라 쓸 수 있고, PSSS는
-mock/proxy(CLIP)/real(MLLM) 3개 backend로 명확히 구분된다. 비교 config 4종
-(`skim_sfa_fixed`/`skem_dsa_psss`/`skem_dsa_mock_psss`/`skem_dsa_proxy_psss`)
-과 batch driver/summary 확장까지 포함해 직접 실행·검증했다(CPU mock 스모크로
-같은 두 영상이 fixed selector에서는 동일한 [2,12] 분할, PSSS(mock) selector
-에서는 영상마다 다른 [1,3]/[4,6] 분할을 내는 것을 확인; `skim_sfa_fixed`는
-실제 GPU Wan 14B로도 완주 확인). **완료로 인정되지 않는 부분**: PSSS
-`real`(MLLM) 백엔드의 실제 GPU 실행, 실제 InternVL2급 캡셔너와의 정합,
-side-info 인코더, 학습된 DSA adapter, CBR 캘리브레이션은 모두 아직 없다 —
-자세한 내용은 `docs/lgvsc_psss_skem_readiness.md` 참조.
+- **1C 다음 단계(PSSS/SKEM) — ✅ 코드/테스트/CPU 스모크 완료(2026-07), 실제
+  MLLM 검증 대기:** 1C의 "keyframe 선택(SKIM/SKEM)은 네 모드 전부 동일하다"는
+  한계를 메웠다 — 논문 Eq.1-2 그대로의 PSSS(실제 모델 다음-토큰 확률로
+  `S_rel = P(No) - P(Yes)` 계산, yes/no 최종 텍스트 비교 아님)와 그 PSSS로
+  자동회귀 keyframe을 선택하는 SKEM selector(`video/skem_selector.py`)를
+  추가했다. `keyframe.selector: fixed`(기본, 기존 4개 모드는 그대로 이 경로)
+  vs `psss`(신규)로 완전히 독립적인 selector를 골라 쓸 수 있고, PSSS는
+  mock/proxy(CLIP)/real(MLLM) 3개 backend로 명확히 구분된다. 비교 config 4종
+  (`skim_sfa_fixed`/`skem_dsa_psss`/`skem_dsa_mock_psss`/`skem_dsa_proxy_psss`)
+  과 batch driver/summary 확장까지 포함해 직접 실행·검증했다(CPU mock 스모크로
+  같은 두 영상이 fixed selector에서는 동일한 [2,12] 분할, PSSS(mock) selector
+  에서는 영상마다 다른 [1,3]/[4,6] 분할을 내는 것을 확인; `skim_sfa_fixed`는
+  실제 GPU Wan 14B로도 완주 확인). **완료로 인정되지 않는 부분**: PSSS
+  `real`(MLLM) 백엔드의 실제 GPU 실행, 실제 InternVL2급 캡셔너와의 정합,
+  side-info 인코더, 학습된 DSA adapter, CBR 캘리브레이션은 모두 아직 없다 —
+  자세한 내용은 `docs/lgvsc_psss_skem_readiness.md` 참조.
 
-1B는 1A가 완성한
-`SegmentGenerationRequest`/`generate_segment()`
-계약을 그대로 구현 대상으로 삼았다(파이프라인 재작업 없음) — `TemporalPipeline`은
-`ExternalSegmentWorkerGenerator`를 다른 mock backend와 동일하게
-`video_generator.generate_segment()`로만 호출하므로, 실제 Open-Sora/Wan weight를
-연결해도 `video/temporal_pipeline.py`를 다시 건드릴 필요가 없다.
+- 1B는 1A가 완성한
+  `SegmentGenerationRequest`/`generate_segment()`
+  계약을 그대로 구현 대상으로 삼았다(파이프라인 재작업 없음) — `TemporalPipeline`은
+  `ExternalSegmentWorkerGenerator`를 다른 mock backend와 동일하게
+  `video_generator.generate_segment()`로만 호출하므로, 실제 Open-Sora/Wan weight를
+  연결해도 `video/temporal_pipeline.py`를 다시 건드릴 필요가 없다.
 
 
 ## 1A/1B/1C 상세 구현 결과
 
 ### 1A 구현 결과 (2026-07)
 
-1A(위 "1단계 — LGVSC 재현 기반"의 첫 번째 게이트)는 구조 완료됐다. 1A의 성격은
-**"frame-wise mock generate 호출을 GOP/segment 단위 Rx-legal 생성 계약으로 바꾸고,
-1B가 실제 Open-Sora/Wan backend를 붙일 때 `TemporalPipeline`을 다시 뜯지 않아도 되게
-만드는 것"**이며, **1B(실제 backend 연결)나 1C(LGVSC 재현 검증)가 아니다.** Open-Sora/Wan
-설치, weight 다운로드, 실제 GPU 생성, 생성 품질/drift 비교 주장은 이번 범위에 없다 — 3~4차와
-마찬가지로 mock backend(`CopyGenerator`/`InterpolationGenerator`/
-`BidirectionalInterpolationGenerator`)만 사용했고, 이번에 바뀐 것은 **호출 계약과
-`TemporalPipeline`이 그 계약을 부르는 방식**이다.
+- 1A(위 "1단계 — LGVSC 재현 기반"의 첫 번째 게이트)는 구조 완료됐다. 1A의 성격은
+  **"frame-wise mock generate 호출을 GOP/segment 단위 Rx-legal 생성 계약으로 바꾸고,
+  1B가 실제 Open-Sora/Wan backend를 붙일 때 `TemporalPipeline`을 다시 뜯지 않아도 되게
+  만드는 것"**이며, **1B(실제 backend 연결)나 1C(LGVSC 재현 검증)가 아니다.** Open-Sora/Wan
+  설치, weight 다운로드, 실제 GPU 생성, 생성 품질/drift 비교 주장은 이번 범위에 없다 — 3~4차와
+  마찬가지로 mock backend(`CopyGenerator`/`InterpolationGenerator`/
+  `BidirectionalInterpolationGenerator`)만 사용했고, 이번에 바뀐 것은 **호출 계약과
+  `TemporalPipeline`이 그 계약을 부르는 방식**이다.
 
-구현 내용과 산출물 ↔ 코드 대응:
+- 구현 내용과 산출물 ↔ 코드 대응:
 
 | 항목 | 코드 | 산출물 |
 |---|---|---|
@@ -397,19 +397,19 @@ side-info 인코더, 학습된 DSA adapter, CBR 캘리브레이션은 모두 아
 | 기본값 수치 불변 | `enable_generate=False`(기본값)에서는 `pending`이 결코 채워지지 않으므로 `video_generator.generate_segment()`가 한 번도 호출되지 않음 — 1~4차와 완전히 동일한 reuse/recompute-only 출력 | `tests/test_video.py::TestSegmentGenerateBranch::test_generate_disabled_never_touches_video_generator`, 그리고 기존 `TestGenerateBranch`/`TestBidirectionalGenerateBranch`/`TestGenerationModeComparison` 전체(수정 없이 그대로 통과) |
 | Segment 생성 시간의 profiling 귀속 | `utils/profiling.py`의 신규 `RunProfiler.record_frame()` — enter/exit 타이머 없이 미리 계산된 elapsed를 직접 기록. `_flush_pending_generate()`가 `generate_segment()` 호출을 직접 시간 측정해 그 GOP의 generate 대상 프레임들에 균등 배분하고, `run()`의 flush 호출도 다음 keyframe의 `_prof.frame(i)` 타이머가 시작되기 **전에** 실행되도록 순서를 옮김(마지막 GOP는 루프 종료 후 flush) | `tests/test_speed_optimizations.py::TestSegmentGenerationProfilingAttribution` |
 
-`fps`는 `TemporalPipeline(fps=...)` 생성자 인자로 추가되어 매 `SegmentGenerationRequest.fps`에
-그대로 전달된다(기본 `None`, 수치 경로에 영향 없음) — 1B가 세그먼트의 실제 재생 길이를
-알 필요가 있을 때를 위한 배선이다.
+- `fps`는 `TemporalPipeline(fps=...)` 생성자 인자로 추가되어 매 `SegmentGenerationRequest.fps`에
+  그대로 전달된다(기본 `None`, 수치 경로에 영향 없음) — 1B가 세그먼트의 실제 재생 길이를
+  알 필요가 있을 때를 위한 배선이다.
 
-주의: 1A의 segment 배칭은 **구조적 개선일 뿐 생성 품질과 무관하다** — 여전히 mock
-backend가 `generate()`를 프레임별로 순회 호출하는 기본 fallback이므로, 실제 출력 값은
-3~4차와 바이트 단위로 동일하다(회귀 테스트로 확인).
+- 주의: 1A의 segment 배칭은 **구조적 개선일 뿐 생성 품질과 무관하다** — 여전히 mock
+  backend가 `generate()`를 프레임별로 순회 호출하는 기본 fallback이므로, 실제 출력 값은
+  3~4차와 바이트 단위로 동일하다(회귀 테스트로 확인).
 
 ### 1A 검토 반영 (2026-07)
 
-1A 1차 구현 이후 두 차례의 코드 리뷰에서 총 4건의 보완 필요 사항(Medium 2건, Low 2건)이
-지적됐다. 넷 다 이번 문서 갱신 이전에 수정하고 회귀 테스트로 확인했다 — 아래는 지적
-사항과 정확히 무엇을 고쳤는지의 대응표다.
+- 1A 1차 구현 이후 두 차례의 코드 리뷰에서 총 4건의 보완 필요 사항(Medium 2건, Low 2건)이
+  지적됐다. 넷 다 이번 문서 갱신 이전에 수정하고 회귀 테스트로 확인했다 — 아래는 지적
+  사항과 정확히 무엇을 고쳤는지의 대응표다.
 
 | 지적 (심각도) | 문제 | 수정 |
 |---|---|---|
@@ -418,37 +418,37 @@ backend가 `generate()`를 프레임별로 순회 호출하는 기본 fallback�
 | `validate_segment_result()`가 metadata 정합성을 검사하지 않음 (Low) | `segment_id`, `metadata[i].target_indices`, `metadata[i].source_keyframe_index`, metadata 타입, `conditioning_mode` 값이 검사되지 않아 엉뚱한 request를 가리키는 metadata가 조용히 통과했다 | `validate_segment_result()`에 `result.segment_id == request.segment_id`, `metadata[i].target_indices == [target_indices[i]]`, `metadata[i].source_keyframe_index == request.start_keyframe_index`, `isinstance(metadata[i], GenerationMetadata)`, `conditioning_mode ∈ {start_only, bidirectional}` 검사를 추가 |
 | Segment 생성 시간은 잘 귀속되지만 profiler **call-count** delta(`diffusion_calls`/`blip2_calls`/`clip_calls`)는 generate 프레임 record에 반영되지 않음 (Low) | `_flush_pending_generate()`가 `generate_segment()` 호출 전후로 wall-clock만 재고 `record_frame()`을 `elapsed_sec`만 채워 호출했다 — 1B의 실제 backend가 내부에서 `profiling.record_diffusion_call()` 등을 찍어도 run 전체 counter에는 쌓이지만 그 generate 프레임들의 `diffusion_calls`/`blip2_calls`/`clip_calls`는 항상 0으로 남는 구조였다 | `_flush_pending_generate()`가 `generate_segment()` 호출 **직전**에 `RunProfiler.counters`를 스냅샷하고, 호출 후 `diffusion_calls`/`blip2_calls`/(`clip_image_calls`+`clip_text_calls`) 각각의 delta를 계산해 신규 `_split_evenly()`(정수를 나머지까지 정확히 합이 보존되도록 프레임 수만큼 균등 분배)로 커버된 generate 프레임들에 나눠 `record_frame()`에 전달 |
 
-수정 후 `SegmentGenerationRequest.reference_prev_recon`(단수)은 "target_indices[0] 이전
-프레임의 재구성값"이라는 원래 의미를 유지하되, 여러 target을 정확히 다루려면
-`reference_prev_recons`(target별 리스트)를 함께 채우는 쪽을 권장한다 — 1B 이후 실제
-segment 단위 backend는 두 필드 모두 무시하고 두 keyframe만으로 조건화해도 무방하다
-(모듈 docstring 참조).
+- 수정 후 `SegmentGenerationRequest.reference_prev_recon`(단수)은 "target_indices[0] 이전
+  프레임의 재구성값"이라는 원래 의미를 유지하되, 여러 target을 정확히 다루려면
+  `reference_prev_recons`(target별 리스트)를 함께 채우는 쪽을 권장한다 — 1B 이후 실제
+  segment 단위 backend는 두 필드 모두 무시하고 두 keyframe만으로 조건화해도 무방하다
+  (모듈 docstring 참조).
 
-테스트 현황: 1A 신규 테스트(`tests/test_video_generator.py`의
-`TestSegmentGenerationRequestRxLegal`/`TestValidateSegmentRequest`/
-`TestSegmentGenerationResult`/`TestValidateSegmentResult`/
-`TestDefaultGenerateSegmentFallback`, `tests/test_video.py::TestSegmentGenerateBranch`,
-검토 반영 후 추가된 `tests/test_speed_optimizations.py::TestSegmentGenerationProfilingAttribution`
-— call-count delta 분배와 무-profiler sanity 케이스 포함)와 기존 회귀 테스트 전체가
-`ptest` conda 환경에서 통과 확인됨: `conda run -n ptest python -m pytest
-tests/test_video_generator.py tests/test_video.py tests/test_etri_batch_tools.py -q`
-→ 202 passed; 전체 스위트 `conda run -n ptest python -m pytest tests/ -q` → **937 passed,
-0 failed**(이번 변경으로 인한 회귀 없음; 과거 문서에 기록된 `tests/test_ddp.py::
-test_entrypoint_torchrun_dryrun`의 로그 문구 불일치도 현재 재확인 결과 통과함 — 1A와
-무관한 이전 상태였던 것으로 보임).
+- 테스트 현황: 1A 신규 테스트(`tests/test_video_generator.py`의
+  `TestSegmentGenerationRequestRxLegal`/`TestValidateSegmentRequest`/
+  `TestSegmentGenerationResult`/`TestValidateSegmentResult`/
+  `TestDefaultGenerateSegmentFallback`, `tests/test_video.py::TestSegmentGenerateBranch`,
+  검토 반영 후 추가된 `tests/test_speed_optimizations.py::TestSegmentGenerationProfilingAttribution`
+  — call-count delta 분배와 무-profiler sanity 케이스 포함)와 기존 회귀 테스트 전체가
+  `ptest` conda 환경에서 통과 확인됨: `conda run -n ptest python -m pytest
+  tests/test_video_generator.py tests/test_video.py tests/test_etri_batch_tools.py -q`
+  → 202 passed; 전체 스위트 `conda run -n ptest python -m pytest tests/ -q` → **937 passed,
+  0 failed**(이번 변경으로 인한 회귀 없음; 과거 문서에 기록된 `tests/test_ddp.py::
+  test_entrypoint_torchrun_dryrun`의 로그 문구 불일치도 현재 재확인 결과 통과함 — 1A와
+  무관한 이전 상태였던 것으로 보임).
 
 ### 1B 구현 결과 (2026-07)
 
-1B는 **구조·검증 준비 완료**됐다. 1B의 성격은 **"1A가 완성한
-`SegmentGenerationRequest`/`generate_segment()` 계약 뒤에 실제 비디오 생성
-모델을 안전하게(별도 conda 환경, subprocess 격리, 명확한 오류 처리로) 연결할 수
-있는 구조를 만들고, 그 구조를 fake(mock) worker로 철저히 검증하는 것"**이며,
-**"실제 GPU에서 실제 모델로 생성한 결과를 검증하는 것"이 아니다.** Open-Sora/Wan/
-diffusers weight 다운로드, Hugging Face 로그인/라이선스 동의, 장시간 GPU
-smoke test는 계획대로 이번 범위에서 실행하지 않았다 — 사용자가 직접 수행한다
-(`docs/lgvsc_1b_worker_readiness.md`의 명령어 참조).
+- 1B는 **구조·검증 준비 완료**됐다. 1B의 성격은 **"1A가 완성한
+  `SegmentGenerationRequest`/`generate_segment()` 계약 뒤에 실제 비디오 생성
+  모델을 안전하게(별도 conda 환경, subprocess 격리, 명확한 오류 처리로) 연결할 수
+  있는 구조를 만들고, 그 구조를 fake(mock) worker로 철저히 검증하는 것"**이며,
+  **"실제 GPU에서 실제 모델로 생성한 결과를 검증하는 것"이 아니다.** Open-Sora/Wan/
+  diffusers weight 다운로드, Hugging Face 로그인/라이선스 동의, 장시간 GPU
+  smoke test는 계획대로 이번 범위에서 실행하지 않았다 — 사용자가 직접 수행한다
+  (`docs/lgvsc_1b_worker_readiness.md`의 명령어 참조).
 
-구현 내용과 산출물 ↔ 코드 대응:
+- 구현 내용과 산출물 ↔ 코드 대응:
 
 | 항목 | 코드 | 산출물 |
 |---|---|---|
@@ -461,18 +461,18 @@ smoke test는 계획대로 이번 범위에서 실행하지 않았다 — 사용
 | Rx-legal 경계 유지 | `SegmentGenerationRequest`에 원본 target frame 필드가 없다는 1A의 설계를 그대로 물려받음 — manifest에는 keyframe 이미지·caption·packet·side-info·run-config만 기록되고, 이를 검증하는 테스트가 실제 파일 내용을 읽어 확인 | `tests/test_video_generator.py::TestExternalSegmentWorkerGeneratorManifestRxLegal`, `tests/test_lgvsc_generate_worker.py::TestRunMockBackend::test_rx_legal_ignores_unreferenced_original_frame_on_disk` |
 | TemporalPipeline 통합 + profiler 회귀 | 1A의 GOP당-1회 배치 호출이 실제 subprocess 기반 backend에서도 동일하게 동작(mixed reuse/recompute/generate, bidirectional, no-generate-segment 스킵)하고, 1A 검토에서 고친 profiler elapsed/call-count 귀속도 real subprocess에서 유지됨을 확인 | `tests/test_video.py::TestSegmentGenerateBranchExternalWorker`, `tests/test_speed_optimizations.py::TestSegmentGenerationProfilingAttributionExternalWorker` |
 
-**1B 검토 반영 (2026-07)**: 1B 1차 구현 이후 코드 리뷰에서 Medium 1건이
-지적됐다 — `generate_segment()`가 `_read_result()` 결과를 `validate_segment_result()`
-호출 없이 그대로 반환해, fake worker가 `conditioning_mode="sideways"`/
-`source_keyframe_index=999`/`target_indices=[999]`처럼 frame 수·shape는
-맞지만 metadata가 거짓인 결과를 돌려줘도 `generate_segment()` 단독 호출은
-통과했다(`TemporalPipeline` 경로는 그 함수를 항상 호출하므로 안전했지만,
-외부 프로세스는 신뢰 경계이므로 backend 자체가 걸러야 한다). 수정:
-`generate_segment()`가 `_read_result()` 직후 `validate_segment_result()`를
-직접 호출하고, 실패를 `work_dir`을 포함한 `SegmentWorkerError`로 감싼다.
-자세한 내용은 `docs/lgvsc_1b_worker_readiness.md`의 "1B 검토 반영" 참조.
+- **1B 검토 반영 (2026-07)**: 1B 1차 구현 이후 코드 리뷰에서 Medium 1건이
+  지적됐다 — `generate_segment()`가 `_read_result()` 결과를 `validate_segment_result()`
+  호출 없이 그대로 반환해, fake worker가 `conditioning_mode="sideways"`/
+  `source_keyframe_index=999`/`target_indices=[999]`처럼 frame 수·shape는
+  맞지만 metadata가 거짓인 결과를 돌려줘도 `generate_segment()` 단독 호출은
+  통과했다(`TemporalPipeline` 경로는 그 함수를 항상 호출하므로 안전했지만,
+  외부 프로세스는 신뢰 경계이므로 backend 자체가 걸러야 한다). 수정:
+  `generate_segment()`가 `_read_result()` 직후 `validate_segment_result()`를
+  직접 호출하고, 실패를 `work_dir`을 포함한 `SegmentWorkerError`로 감싼다.
+  자세한 내용은 `docs/lgvsc_1b_worker_readiness.md`의 "1B 검토 반영" 참조.
 
-**직접 실행한 검증(이 세션에서 완료)**:
+- **직접 실행한 검증(이 세션에서 완료)**:
 
 1. `ptest` 유닛/통합 테스트: `conda run -n ptest python -m pytest
    tests/test_video_generator.py tests/test_video.py
@@ -489,20 +489,20 @@ smoke test는 계획대로 이번 범위에서 실행하지 않았다 — 사용
    `generated_frames/`에 91개 PNG가 저장되고 `segments.json`의 `generation`
    필드가 정확히 채워짐을 확인(임시 설정/산출물은 검증 후 삭제).
 
-**실행하지 않은 것(당시 계획대로, 사용자 몫)**: 실제 Open-Sora/Wan/SVD weight
-다운로드, Hugging Face 인증/라이선스 동의, 실제 GPU에서의 생성 품질 확인.
+- **실행하지 않은 것(당시 계획대로, 사용자 몫)**: 실제 Open-Sora/Wan/SVD weight
+  다운로드, Hugging Face 인증/라이선스 동의, 실제 GPU에서의 생성 품질 확인.
 
 ### 1B Wan 후속 — Open-Sora/Wan external segment worker (2026-07)
 
-1B의 미완료 항목이던 **"Open-Sora/Wan external segment worker"**를 후속
-작업으로 구현했다. **Wan을 선택**했다 — 이유는 (1) 이 머신의
-`semantic-diffusers` 환경에 이미 설치된 `diffusers` 0.39.0.dev0가
-`WanImageToVideoPipeline`을 이미 포함하고 있었고, (2) 그 파이프라인이
-`image`(start keyframe) + `last_image`(end keyframe) + `prompt`(caption)를
-전부 받는 안정된 클래식 파이프라인이어서(Open-Sora는 이 환경에 없고, Wan2.2
-5B의 I2V는 diffusers 자신이 "실험적"이라 명시한 modular pipeline API가
-필요해 제외) LGVSC의 segment decoder 계약(start/end keyframe + caption)에
-가장 가깝게 실제로 조건화할 수 있었기 때문이다.
+- 1B의 미완료 항목이던 **"Open-Sora/Wan external segment worker"**를 후속
+  작업으로 구현했다. **Wan을 선택**했다 — 이유는 (1) 이 머신의
+  `semantic-diffusers` 환경에 이미 설치된 `diffusers` 0.39.0.dev0가
+  `WanImageToVideoPipeline`을 이미 포함하고 있었고, (2) 그 파이프라인이
+  `image`(start keyframe) + `last_image`(end keyframe) + `prompt`(caption)를
+  전부 받는 안정된 클래식 파이프라인이어서(Open-Sora는 이 환경에 없고, Wan2.2
+  5B의 I2V는 diffusers 자신이 "실험적"이라 명시한 modular pipeline API가
+  필요해 제외) LGVSC의 segment decoder 계약(start/end keyframe + caption)에
+  가장 가깝게 실제로 조건화할 수 있었기 때문이다.
 
 | 항목 | 코드 | 산출물 |
 |---|---|---|
@@ -512,87 +512,87 @@ smoke test는 계획대로 이번 범위에서 실행하지 않았다 — 사용
 | 환경 수정 (`semantic-diffusers`, `ptest`는 무변경) | `pip install -U transformers`(4.51.3→5.14.1, huggingface-hub 버전 충돌 해결) → `pip install -U peft`(0.17.0→0.20.0, 업그레이드된 transformers가 제거한 `HybridCache`를 구버전 peft가 무조건 import하던 문제 해결) → `pip uninstall torchaudio`(torch 2.12.0+cu130과 ABI 불일치하던 torchaudio 2.6.0+cu124 제거 — 영상 생성에 불필요) | 세 수정 후 `WanImageToVideoPipeline`/`StableVideoDiffusionPipeline` 모두 실제 import 성공을 직접 확인 |
 | `PYTHONNOUSERSITE` 정정 | 위 환경 수정 후 실측한 결과, 이 머신의 `semantic-diffusers`는 **user-site 패키지를 포함해야** (`huggingface_hub`의 `is_offline_mode`가 env 자체 설치본에는 없고 user-site 설치본에만 있음) import가 성공한다 — 이전에 문서화했던 `PYTHONNOUSERSITE: "1"`(제외)과 반대. 두 config 모두 `"0"`으로 정정 | `docs/lgvsc_1b_worker_readiness.md`의 "PYTHONNOUSERSITE" 절 |
 
-테스트: `conda run -n ptest python -m pytest tests/test_lgvsc_generate_worker.py
-tests/test_video_generator.py tests/test_video.py
-tests/test_speed_optimizations.py -q` → **237 passed**; 전체 스위트 → **992
-passed, 0 failed**(회귀 없음).
+- 테스트: `conda run -n ptest python -m pytest tests/test_lgvsc_generate_worker.py
+  tests/test_video_generator.py tests/test_video.py
+  tests/test_speed_optimizations.py -q` → **237 passed**; 전체 스위트 → **992
+  passed, 0 failed**(회귀 없음).
 
-**실제 GPU 시도 결과 (직접 실행, 2026-07)**: `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`
-전체 가중치(84GB)를 `semantic-diffusers` 환경에 실제 다운로드(24.5분)한 뒤
-`ExternalSegmentWorkerGenerator`로 실제 GPU(RTX 4080) 세그먼트 생성을 두 번
-시도했다. **start-only(image+caption prompt)는 성공** — 실제 14B 모델이
-64×64 프레임을 63초에 생성했고 `validate_segment_result()`까지 통과했다
-(mock이 아닌 최초의 실제 GPU 최종 검증). **bidirectional(+last_image)은
-실패** — `diffusers/models/transformers/transformer_wan.py`의
-`torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1)`에서
-tensor 크기 불일치가 발생했고, 원인은 체크포인트가 배포한
-`image_encoder`(`CLIPVisionModelWithProjection`)가 사용 중인 diffusers
-개발 브랜치(0.39.0.dev0)의 `WanImageToVideoPipeline`이 기대하는 클래스
-(`CLIPVisionModel`)와 달라 두 keyframe을 함께 인코딩할 때 임베딩 shape이
-어긋나는 것으로 확인됨(이 시점의 진단 — **이후 "체크포인트 선택" 문제로
-재규명·해결됨, 아래 "Wan bidirectional 실제 GPU 문제 해결" 참조**). 정확한
-로그·트레이스백은 `docs/lgvsc_1b_worker_readiness.md`의 "1B Wan 검토 —
-실제 GPU 시도 결과" 참조.
+- **실제 GPU 시도 결과 (직접 실행, 2026-07)**: `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`
+  전체 가중치(84GB)를 `semantic-diffusers` 환경에 실제 다운로드(24.5분)한 뒤
+  `ExternalSegmentWorkerGenerator`로 실제 GPU(RTX 4080) 세그먼트 생성을 두 번
+  시도했다. **start-only(image+caption prompt)는 성공** — 실제 14B 모델이
+  64×64 프레임을 63초에 생성했고 `validate_segment_result()`까지 통과했다
+  (mock이 아닌 최초의 실제 GPU 최종 검증). **bidirectional(+last_image)은
+  실패** — `diffusers/models/transformers/transformer_wan.py`의
+  `torch.concat([encoder_hidden_states_image, encoder_hidden_states], dim=1)`에서
+  tensor 크기 불일치가 발생했고, 원인은 체크포인트가 배포한
+  `image_encoder`(`CLIPVisionModelWithProjection`)가 사용 중인 diffusers
+  개발 브랜치(0.39.0.dev0)의 `WanImageToVideoPipeline`이 기대하는 클래스
+  (`CLIPVisionModel`)와 달라 두 keyframe을 함께 인코딩할 때 임베딩 shape이
+  어긋나는 것으로 확인됨(이 시점의 진단 — **이후 "체크포인트 선택" 문제로
+  재규명·해결됨, 아래 "Wan bidirectional 실제 GPU 문제 해결" 참조**). 정확한
+  로그·트레이스백은 `docs/lgvsc_1b_worker_readiness.md`의 "1B Wan 검토 —
+  실제 GPU 시도 결과" 참조.
 
-**후속 코드 리뷰 반영 (2026-07)**: 세 가지를 수정했다. (1) `run_wan_backend()`의
-프레임 매핑이 `target_indices` 리스트 내 순서(`enumerate` 인덱스)로 생성 clip
-프레임을 골랐던 버그를 수정 — segment 안에서 generate target이 비연속(예:
-`[1, 5, 8]`)이면 실제 시간 위치와 다른 프레임을 반환하던 문제였다. 이제는
-`target_index - start_frame_index`(실제 segment 오프셋) 기준으로, 그리고
-clip 길이는 target list 개수가 아니라 segment의 실제 span(`segment_length`/
-`end_frame_index`, bidirectional이면 `end_keyframe_index`까지)으로 계산해
-매핑한다. 회귀 테스트 2개 추가
-(`test_non_contiguous_targets_map_to_correct_temporal_position`,
-`test_bidirectional_targets_map_to_relative_temporal_position`). (2) 위처럼
-Wan config를 `wan_start_only.yaml`/`wan_bidirectional_experimental.yaml`로
-분리해 known-broken 모드가 기본 config가 되지 않도록 함. (3)
-`docs/lgvsc_1b_worker_readiness.md`가 "SVD 실제 GPU 세그먼트 생성 미시도"라고
-잘못 기록했던 것을 정정 — 실제로는 SVD도 실제 GPU에서 `n_generate=1`,
-`generated_frames=1`로 성공했다. `tests/test_lgvsc_generate_worker.py
-tests/test_video_generator.py -q` → **121 passed**(기존 119 + 회귀 테스트 2개),
-전체 스위트 회귀 없음.
+- **후속 코드 리뷰 반영 (2026-07)**: 세 가지를 수정했다. (1) `run_wan_backend()`의
+  프레임 매핑이 `target_indices` 리스트 내 순서(`enumerate` 인덱스)로 생성 clip
+  프레임을 골랐던 버그를 수정 — segment 안에서 generate target이 비연속(예:
+  `[1, 5, 8]`)이면 실제 시간 위치와 다른 프레임을 반환하던 문제였다. 이제는
+  `target_index - start_frame_index`(실제 segment 오프셋) 기준으로, 그리고
+  clip 길이는 target list 개수가 아니라 segment의 실제 span(`segment_length`/
+  `end_frame_index`, bidirectional이면 `end_keyframe_index`까지)으로 계산해
+  매핑한다. 회귀 테스트 2개 추가
+  (`test_non_contiguous_targets_map_to_correct_temporal_position`,
+  `test_bidirectional_targets_map_to_relative_temporal_position`). (2) 위처럼
+  Wan config를 `wan_start_only.yaml`/`wan_bidirectional_experimental.yaml`로
+  분리해 known-broken 모드가 기본 config가 되지 않도록 함. (3)
+  `docs/lgvsc_1b_worker_readiness.md`가 "SVD 실제 GPU 세그먼트 생성 미시도"라고
+  잘못 기록했던 것을 정정 — 실제로는 SVD도 실제 GPU에서 `n_generate=1`,
+  `generated_frames=1`로 성공했다. `tests/test_lgvsc_generate_worker.py
+  tests/test_video_generator.py -q` → **121 passed**(기존 119 + 회귀 테스트 2개),
+  전체 스위트 회귀 없음.
 
-**Wan bidirectional 실제 GPU 문제 해결 (2026-07 후속)**: 위 review 직후 남은
-마지막 항목 — "Wan bidirectional 실제 GPU 문제"를 실제로 해결했다. diffusers
-소스 코드(`pipeline_wan_i2v.py`/`transformer_wan.py`)를 직접 읽어 원인을
-재규명한 결과, 원래 의심했던 "diffusers 버전-체크포인트 `image_encoder`
-호환성 문제"는 부정확했다 — 실제 원인은 **체크포인트 선택**이었다.
-`last_image`가 있으면 두 이미지가 배치 2로 CLIP 인코딩되는데, 이를 배치
-1의 doubled-sequence로 reshape하는 `WanImageEmbedding`의 학습된
-`pos_embed` 파라미터는 체크포인트의 `transformer/config.json`에
-`pos_embed_seq_len`이 있을 때만 생성된다. 기존에 쓰던
-`Wan2.1-I2V-14B-480P`에는 이 값이 없어(단일 이미지 조건화만 학습됨)
-reshape이 생략되고 배치 크기가 어긋나 크래시했던 것이다. 이전 로그의
-"`Expected types for image_encoder: ... got CLIPVisionModelWithProjection`"
-경고는 무관한 경고였음도 확인했다(수정 후 성공한 실행에서도 동일하게
-출력됨). Wan의 공식 first-last-frame 체크포인트
-`Wan-AI/Wan2.1-FLF2V-14B-720P-Diffusers`(`pos_embed_seq_len: 514`)로
-바꾸자 해결됐다. 한 영상 안에 end keyframe이 있는/없는 segment가 섞여
-있을 수 있으므로 `run_wan_backend()`가 **segment마다** 필요한 체크포인트를
-`extra_json.bidirectional_model_id`로 자동 선택하도록 수정했고, 체크포인트와
-요청된 조건화 모드가 맞지 않으면 파이프라인 호출 전에
-`WorkerBackendUnavailableError`로 명확히 실패하는 preflight 체크도
-추가했다. `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`로
-실제 GPU에서 `scripts/evaluate_video.py --max-frames 14`를 실행해
-segment 0(`conditioning_mode=bidirectional`, `end_keyframe_index=12`,
-`n_generated=11`, `Wan2.1-FLF2V-14B-720P` 사용)과 segment 1(마지막 GOP,
-`conditioning_mode=start_only`, `Wan2.1-I2V-14B-480P` 사용, `n_generated=1`)
-모두 성공을 직접 확인했다(exit code 0, `error.json` 없음, `n_generate=12`
-전체, 12개 PNG 실제 픽셀 분산 확인). 신규 테스트 3개 추가
-(`test_start_only_segment_uses_default_model_even_with_bidirectional_id_set`,
-`test_bidirectional_segment_with_incapable_checkpoint_raises_clear_error`,
-`test_start_only_segment_with_flf2v_only_checkpoint_raises_clear_error`),
-기존 bidirectional 테스트도 실제 checkpoint 선택 로직을 검증하도록 갱신.
-`tests/ -q` 전체 스위트 → **997 passed**, 0 failed(회귀 없음). **현재 1B
-상태: "start-only + bidirectional 모두 실제 GPU 검증 완료"**가 정확한
-요약이다 — 자세한 원인 분석·재현 로그는
-`docs/lgvsc_1b_worker_readiness.md`의 "Wan bidirectional 수정 — 원인과
-해결" 참조.
+- **Wan bidirectional 실제 GPU 문제 해결 (2026-07 후속)**: 위 review 직후 남은
+  마지막 항목 — "Wan bidirectional 실제 GPU 문제"를 실제로 해결했다. diffusers
+  소스 코드(`pipeline_wan_i2v.py`/`transformer_wan.py`)를 직접 읽어 원인을
+  재규명한 결과, 원래 의심했던 "diffusers 버전-체크포인트 `image_encoder`
+  호환성 문제"는 부정확했다 — 실제 원인은 **체크포인트 선택**이었다.
+  `last_image`가 있으면 두 이미지가 배치 2로 CLIP 인코딩되는데, 이를 배치
+  1의 doubled-sequence로 reshape하는 `WanImageEmbedding`의 학습된
+  `pos_embed` 파라미터는 체크포인트의 `transformer/config.json`에
+  `pos_embed_seq_len`이 있을 때만 생성된다. 기존에 쓰던
+  `Wan2.1-I2V-14B-480P`에는 이 값이 없어(단일 이미지 조건화만 학습됨)
+  reshape이 생략되고 배치 크기가 어긋나 크래시했던 것이다. 이전 로그의
+  "`Expected types for image_encoder: ... got CLIPVisionModelWithProjection`"
+  경고는 무관한 경고였음도 확인했다(수정 후 성공한 실행에서도 동일하게
+  출력됨). Wan의 공식 first-last-frame 체크포인트
+  `Wan-AI/Wan2.1-FLF2V-14B-720P-Diffusers`(`pos_embed_seq_len: 514`)로
+  바꾸자 해결됐다. 한 영상 안에 end keyframe이 있는/없는 segment가 섞여
+  있을 수 있으므로 `run_wan_backend()`가 **segment마다** 필요한 체크포인트를
+  `extra_json.bidirectional_model_id`로 자동 선택하도록 수정했고, 체크포인트와
+  요청된 조건화 모드가 맞지 않으면 파이프라인 호출 전에
+  `WorkerBackendUnavailableError`로 명확히 실패하는 preflight 체크도
+  추가했다. `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`로
+  실제 GPU에서 `scripts/evaluate_video.py --max-frames 14`를 실행해
+  segment 0(`conditioning_mode=bidirectional`, `end_keyframe_index=12`,
+  `n_generated=11`, `Wan2.1-FLF2V-14B-720P` 사용)과 segment 1(마지막 GOP,
+  `conditioning_mode=start_only`, `Wan2.1-I2V-14B-480P` 사용, `n_generated=1`)
+  모두 성공을 직접 확인했다(exit code 0, `error.json` 없음, `n_generate=12`
+  전체, 12개 PNG 실제 픽셀 분산 확인). 신규 테스트 3개 추가
+  (`test_start_only_segment_uses_default_model_even_with_bidirectional_id_set`,
+  `test_bidirectional_segment_with_incapable_checkpoint_raises_clear_error`,
+  `test_start_only_segment_with_flf2v_only_checkpoint_raises_clear_error`),
+  기존 bidirectional 테스트도 실제 checkpoint 선택 로직을 검증하도록 갱신.
+  `tests/ -q` 전체 스위트 → **997 passed**, 0 failed(회귀 없음). **현재 1B
+  상태: "start-only + bidirectional 모두 실제 GPU 검증 완료"**가 정확한
+  요약이다 — 자세한 원인 분석·재현 로그는
+  `docs/lgvsc_1b_worker_readiness.md`의 "Wan bidirectional 수정 — 원인과
+  해결" 참조.
 
 ### 1C 구현 결과 (2026-07) — 재현 준비 완료, 실제 검증 실행은 사용자
 
-**1C의 이번 작업 범위는 "검증 준비"이지 "검증 실행"이 아니다** — 실제
-10영상 × 4모드 GPU 실행/결과 판정은 사용자가 직접 한다. 이번에 완성한 것:
+- **1C의 이번 작업 범위는 "검증 준비"이지 "검증 실행"이 아니다** — 실제
+  10영상 × 4모드 GPU 실행/결과 판정은 사용자가 직접 한다. 이번에 완성한 것:
 
 - **재현 baseline 4모드**: `mock_baseline`(이 저장소 mock/interpolation,
   LGVSC 구성요소 아님) / `svd_start_only`(real SVD, image-only) /
@@ -640,5 +640,5 @@ segment 0(`conditioning_mode=bidirectional`, `end_keyframe_index=12`,
   `--summary-only`도 이 실제 산출물에 대해 직접 실행해 확인. 검증에 쓴
   임시 산출물은 삭제했다(사용자의 실제 검증과 섞이지 않도록).
 
-자세한 모드 정의·config↔소스 대응·실행 명령어·결과 해석 주의사항은
-`docs/lgvsc_1c_reproduction_readiness.md` 참조.
+- 자세한 모드 정의·config↔소스 대응·실행 명령어·결과 해석 주의사항은
+  `docs/lgvsc_1c_reproduction_readiness.md` 참조.

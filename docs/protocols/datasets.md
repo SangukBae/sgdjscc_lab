@@ -10,24 +10,24 @@ supersedes:
 
 # Dataset Status
 
-`data/README.md`는 repo-root의 `data/` 디렉터리에 있는데, 이 경로는 `/data/`로
-git ignore된다. 그래서 머신 간에 전파되어야 할 문서를 두기에는 부적합하다.
+- `data/README.md`는 repo-root의 `data/` 디렉터리에 있는데, 이 경로는 `/data/`로
+  git ignore된다. 그래서 머신 간에 전파되어야 할 문서를 두기에는 부적합하다.
 
-이 파일은 repo와 함께 이동해야 하는 부분에 대한 tracked 대체본이다:
+- 이 파일은 repo와 함께 이동해야 하는 부분에 대한 tracked 대체본이다:
 
 - canonical dataset 역할
 - stage-to-dataset 매핑
 - 변환 workflow 참조
 - 특정 머신의 로컬 디스크 상태에 의존하면 안 되는 운영 노트
 
-"이 머신에 지금 어떤 데이터셋이 있는가", "SA-1B shard가 몇 개 남았는가",
-"`cc3m_pairs/`가 지금 얼마나 큰가" 같은 머신별 inventory는 로컬에서 생성한다:
+- "이 머신에 지금 어떤 데이터셋이 있는가", "SA-1B shard가 몇 개 남았는가",
+  "`cc3m_pairs/`가 지금 얼마나 큰가" 같은 머신별 inventory는 로컬에서 생성한다:
 
 ```bash
 python scripts/report_datasets.py
 ```
 
-기본적으로 다음 경로에 untracked markdown report를 쓴다:
+- 기본적으로 다음 경로에 untracked markdown report를 쓴다:
 
 ```text
 data/_reports/dataset_status.md
@@ -58,13 +58,13 @@ data/_reports/dataset_status.md
 | `text_dm` | `coco`, `journey_pairs`, `cc3m_pairs`, `datacomp_pairs`, caption된 `celeba`/`celeba_hq`, `sa1b_images` | caption 필요 (sidecar 또는 COCO JSON) |
 | `controlnet` | `coco`, `journey_pairs`, `cc3m_pairs`, `datacomp_pairs`, caption된 `celeba`/`celeba_hq`, `sa1b_images` | caption + MuGE edge sidecar 필요 |
 
-tracked **paper-like multi-GPU** workflow는 Stage 2/3를 결합 file-list
-(`data/_lists/paper_like_multi/stage23_{train,val}.list`)로 구동하는데, 이는
-`sa1b_images`, `journey_pairs`, `cc3m_pairs`, `datacomp_pairs`, `celeba_hq`를
-풀링하고 edge/ControlNet 경로에는 이미지별 MuGE edge sidecar를 사용한다.
-`scripts/prepare_paper_like_stage23_data.sh`와
-`configs/experiments/paper_reproduction/custom_paper_like/paper_train_{text_dm,edge_codec,controlnet}_multi.yaml`
-config 참조.
+- tracked **paper-like multi-GPU** workflow는 Stage 2/3를 결합 file-list
+  (`data/_lists/paper_like_multi/stage23_{train,val}.list`)로 구동하는데, 이는
+  `sa1b_images`, `journey_pairs`, `cc3m_pairs`, `datacomp_pairs`, `celeba_hq`를
+  풀링하고 edge/ControlNet 경로에는 이미지별 MuGE edge sidecar를 사용한다.
+  `scripts/prepare_paper_like_stage23_data.sh`와
+  `configs/experiments/paper_reproduction/custom_paper_like/paper_train_{text_dm,edge_codec,controlnet}_multi.yaml`
+  config 참조.
 
 ## Conversion Workflows
 
@@ -85,6 +85,6 @@ config 참조.
 
 ## Operational Rule
 
-tracked 문서는 `docs/` 아래에 둔다.
+- tracked 문서는 `docs/` 아래에 둔다.
 
-untracked·머신별 상태는 `data/_reports/` 같은 ignored 경로의 생성 report에 둔다.
+- untracked·머신별 상태는 `data/_reports/` 같은 ignored 경로의 생성 report에 둔다.

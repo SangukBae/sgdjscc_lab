@@ -10,14 +10,14 @@ supersedes:
 
 # 논문 정합 정리
 
-이 문서는 기존 [프레임워크 비교 보관본](../archive/framework_comparison.md),
-[paper gap closure 보관본](../archive/paper_gap_closure.md),
-[paper training alignment 보관본](../archive/paper_training_alignment.md)을 합친
-**논문 정합 단일 문서**다. 목적은 `sgdjscc_lab`이 SGD-JSCC 논문과 어디까지 같고,
-어디서부터 근사/확장/미구현인지 한 번에 보게 하는 것이다.
+- 이 문서는 기존 [프레임워크 비교 보관본](../archive/framework_comparison.md),
+  [paper gap closure 보관본](../archive/paper_gap_closure.md),
+  [paper training alignment 보관본](../archive/paper_training_alignment.md)을 합친
+  **논문 정합 단일 문서**다. 목적은 `sgdjscc_lab`이 SGD-JSCC 논문과 어디까지 같고,
+  어디서부터 근사/확장/미구현인지 한 번에 보게 하는 것이다.
 
-대상 논문: **"Semantics-Guided Diffusion for Deep Joint Source-Channel Coding in
-Wireless Image Transmission"**.
+- 대상 논문: **"Semantics-Guided Diffusion for Deep Joint Source-Channel Coding in
+  Wireless Image Transmission"**.
 
 ## 큰 그림
 
@@ -36,8 +36,8 @@ Wireless Image Transmission"**.
 | 추론 알고리즘 | monolithic | 동일 수치를 유지한 모듈식 래핑 |
 | 원본 수정 | 직접 수정 필요 | `SGDJSCC/`는 읽기 전용, 확장은 `sgdjscc_lab/`에 구현 |
 
-보존되는 핵심 블록은 VAE encode/decode, scaling `15.45`, AWGN 손상, blind SNR
-예측, step matching, canny/edge 조건화, MDTv2/ControlNet 복원이다.
+- 보존되는 핵심 블록은 VAE encode/decode, scaling `15.45`, AWGN 손상, blind SNR
+  예측, step matching, canny/edge 조건화, MDTv2/ControlNet 복원이다.
 
 ## 충실도 분류
 
@@ -62,7 +62,7 @@ Wireless Image Transmission"**.
 
 ## `paper_mode`
 
-`paper_mode: true`는 논문 재현 경로를 강제한다.
+- `paper_mode: true`는 논문 재현 경로를 강제한다.
 
 - auto-caption, `filename` caption source 차단
 - Canny stand-in 차단, MuGE sidecar 요구
@@ -74,12 +74,12 @@ Wireless Image Transmission"**.
 - 확장 기능(Phase 4/5, packet, regeneration 등) 비활성 요구
 - eval metric set을 논문 보고 set에 맞춤
 
-즉, 확장 기능을 지우는 것이 아니라 **논문 실험과 섞이지 않게 guardrail을 거는 것**이다.
+- 즉, 확장 기능을 지우는 것이 아니라 **논문 실험과 섞이지 않게 guardrail을 거는 것**이다.
 
 ## 하이퍼파라미터 출처
 
-Ground truth 우선순위는 **공개 `SGDJSCC/` 코드 우선, 논문 table 차순, 미공개 값은
-assumption**이다.
+- Ground truth 우선순위는 **공개 `SGDJSCC/` 코드 우선, 논문 table 차순, 미공개 값은
+  assumption**이다.
 
 | 항목 | repo 선택 | 근거 |
 |---|---|---|
