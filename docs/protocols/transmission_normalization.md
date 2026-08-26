@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 6360d3b
+source_commit: aac7f23
 supersedes:
 ---
 
@@ -219,6 +219,7 @@ bash scripts/run_transmission_normalization_parallel.sh \
 - digital receiver 메모리 경계
   - bundle에서 이미 역직렬화한 edge는 Canny/WITT analog 전송망을 다시 통과하지 않음
   - 중복 전송과 약 4GiB peak allocation을 제거
+  - digital step/SNR은 latent 원소별이 아닌 sample별 값으로 계산
   - AWGN/in-process 경로는 기존 Canny 재전송 수식과 동작을 그대로 유지
 - 재개
   - `parallel_plan.json`에 commit·GPU·영상 배분·실험 설정을 고정
