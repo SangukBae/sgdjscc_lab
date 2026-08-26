@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 029f97a
+source_commit: ec76f1f
 supersedes:
 ---
 
