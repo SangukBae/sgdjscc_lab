@@ -504,6 +504,7 @@ def _decode_diffusion(
     cfg: DictConfig,
     device: torch.device,
     original_image: Optional[torch.Tensor] = None,
+    edge_already_received: bool = False,
 ) -> torch.Tensor:
     """Stage 2: canny retransmit → ControlNet latent → diffusion → final decode.
 
@@ -541,8 +542,12 @@ def _decode_diffusion(
         else ["" for _ in range(bsz)]
     )
 
-    # Block 5d: canny JSCC retransmission
-    if canny_cr != "none":
+    # Block 5d: canny JSCC retransmission. The digital bundle receiver has
+    # already reconstructed its explicitly serialized edge packet, so sending
+    # that edge through the analog Canny/WITT transport a second time would be
+    # both semantically wrong and needlessly consume several GiB of VRAM.
+    # AWGN and every existing in-process path retain the original behavior.
+    if canny_cr != "none" and not edge_already_received:
         thresholded = _retransmit_canny(
             jscc, thresholded, artifacts.soft_edge_uncertainty,
             cur_snr, canny_cr, th, bsz, device,

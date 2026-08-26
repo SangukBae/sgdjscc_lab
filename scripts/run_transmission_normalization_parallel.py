@@ -191,7 +191,10 @@ def _worker_command(
 ) -> List[str]:
     command = [
         "bash", "scripts/run_transmission_normalization.sh",
-        "--device", worker["device"], "--dataset-root", str(Path(args.dataset_root).resolve()),
+        # Each process sees exactly one physical GPU, remapped by
+        # CUDA_VISIBLE_DEVICES to logical cuda:0. This contains upstream code
+        # that hard-codes cuda:0 and prevents cross-device tensor creation.
+        "--device", "cuda:0", "--dataset-root", str(Path(args.dataset_root).resolve()),
     ]
     if preflight_only:
         return [*command, "--preflight-only"]
@@ -222,6 +225,14 @@ def _worker_command(
     if args.retry_failed:
         command.append("--retry-failed")
     return command
+
+
+def _worker_environment(worker: Dict[str, Any]) -> Dict[str, str]:
+    physical_index = str(worker["device"]).split(":", 1)[1]
+    environment = dict(os.environ)
+    environment["CUDA_VISIBLE_DEVICES"] = physical_index
+    environment["SGDJSCC_PHYSICAL_CUDA_DEVICE"] = str(worker["device"])
+    return environment
 
 
 def _deduplicate(rows: Iterable[Dict[str, Any]], keys: Sequence[str]) -> List[Dict[str, Any]]:
@@ -363,11 +374,20 @@ def run(argv=None) -> int:
     ]
 
     if args.dry_run:
-        print(json.dumps({"output_root": str(output_root), "plan": plan, "commands": commands}, indent=2))
+        print(json.dumps({
+            "output_root": str(output_root), "plan": plan, "commands": commands,
+            "cuda_visible_devices": [
+                _worker_environment(worker)["CUDA_VISIBLE_DEVICES"]
+                for worker in plan["assignments"]
+            ],
+        }, indent=2))
         return 0
 
     for worker in plan["assignments"]:
-        subprocess.run(_worker_command(args, worker, output_root, preflight_only=True), check=True)
+        subprocess.run(
+            _worker_command(args, worker, output_root, preflight_only=True),
+            check=True, env=_worker_environment(worker),
+        )
     if args.preflight_only:
         print(f"parallel preflight passed for {', '.join(devices)}")
         return 0
@@ -379,7 +399,13 @@ def run(argv=None) -> int:
         log_path = output_root / f"{worker['worker_id']}.log"
         handle = log_path.open("a", encoding="utf-8")
         print(f"starting {worker['worker_id']} on {worker['device']}: {','.join(worker['videos'])}")
-        processes.append((worker, handle, subprocess.Popen(command, stdout=handle, stderr=subprocess.STDOUT)))
+        processes.append((
+            worker, handle,
+            subprocess.Popen(
+                command, stdout=handle, stderr=subprocess.STDOUT,
+                env=_worker_environment(worker),
+            ),
+        ))
 
     statuses = []
     for worker, handle, process in processes:

@@ -65,6 +65,7 @@ import hashlib
 import importlib.util
 import json
 import math
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -1190,6 +1191,7 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
         },
         "configs": sorted(c for c in args.configs.split(",") if c),
         "device": args.device,
+        "physical_cuda_device": os.environ.get("SGDJSCC_PHYSICAL_CUDA_DEVICE", args.device),
         "digital_step_policy": args.digital_step_policy,
         "ablation_label": args.ablation_label,
         "match_fixed_keyframes": bool(args.match_fixed_keyframes),
@@ -1266,6 +1268,8 @@ def _write_manifest(
         "phase": phase,
         "run_status": run_status,
         "run_signature": signature,
+        "logical_device": args.device,
+        "physical_cuda_device": os.environ.get("SGDJSCC_PHYSICAL_CUDA_DEVICE", args.device),
     }
     if phase == "final":
         extra["output_artifact_sha256"] = _hash_output_artifacts(output_root)

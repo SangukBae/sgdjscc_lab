@@ -67,7 +67,7 @@ def test_receiver_decodes_from_bytes_and_patch_manifest(monkeypatch):
     monkeypatch.setattr(infer, "_compute_step", lambda **kwargs: (0.5, 10.0))
     monkeypatch.setattr(
         infer, "_decode_diffusion",
-        lambda artifacts, jscc, pipe, gt_text, cfg, device, original_image=None:
+        lambda artifacts, jscc, pipe, gt_text, cfg, device, original_image=None, **kwargs:
             torch.full((1, 3, 128, 128), 0.25),
     )
     result = reconstruct_frame_from_bundle_bytes(_data(), _Models(), _cfg())
@@ -102,7 +102,7 @@ def test_receiver_derives_digital_bit_depth_and_policy_from_packet_not_channel_m
     monkeypatch.setattr(infer, "_compute_step", fake_compute_step)
     monkeypatch.setattr(
         infer, "_decode_diffusion",
-        lambda artifacts, jscc, pipe, gt_text, cfg, device, original_image=None:
+        lambda artifacts, jscc, pipe, gt_text, cfg, device, original_image=None, **kwargs:
             torch.full((1, 3, 128, 128), 0.25),
     )
     reconstruct_frame_from_bundle_bytes(_data(), _Models(), _cfg(), digital_step_policy="quant_nmse")
@@ -120,8 +120,23 @@ def test_receiver_default_policy_is_bitdepth_proxy(monkeypatch):
     monkeypatch.setattr(infer, "_compute_step", lambda **kwargs: (captured.update(kwargs), (0.5, 10.0))[1])
     monkeypatch.setattr(
         infer, "_decode_diffusion",
-        lambda artifacts, jscc, pipe, gt_text, cfg, device, original_image=None:
+        lambda artifacts, jscc, pipe, gt_text, cfg, device, original_image=None, **kwargs:
             torch.full((1, 3, 128, 128), 0.25),
     )
     reconstruct_frame_from_bundle_bytes(_data(), _Models(), _cfg())
     assert captured["digital_policy"] == "bitdepth_proxy"
+
+
+def test_receiver_marks_serialized_edge_as_already_received(monkeypatch):
+    import sgdjscc_lab.pipelines.infer_pipeline as infer
+
+    captured = {}
+    monkeypatch.setattr(infer, "_compute_step", lambda **kwargs: (0.5, 10.0))
+
+    def fake_decode(*args, **kwargs):
+        captured.update(kwargs)
+        return torch.full((1, 3, 128, 128), 0.25)
+
+    monkeypatch.setattr(infer, "_decode_diffusion", fake_decode)
+    reconstruct_frame_from_bundle_bytes(_data(), _Models(), _cfg())
+    assert captured["edge_already_received"] is True

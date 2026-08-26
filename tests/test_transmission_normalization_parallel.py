@@ -90,7 +90,9 @@ def test_worker_commands_have_independent_output_roots(tmp_path):
     assert str(tmp_path / "workers" / "worker_00") in commands[0]
     assert str(tmp_path / "workers" / "worker_01") in commands[1]
     assert commands[0][commands[0].index("--device") + 1] == "cuda:0"
-    assert commands[1][commands[1].index("--device") + 1] == "cuda:1"
+    assert commands[1][commands[1].index("--device") + 1] == "cuda:0"
+    assert mod._worker_environment(workers[0])["CUDA_VISIBLE_DEVICES"] == "0"
+    assert mod._worker_environment(workers[1])["CUDA_VISIBLE_DEVICES"] == "1"
 
 
 def test_resume_plan_mismatch_is_rejected(tmp_path):

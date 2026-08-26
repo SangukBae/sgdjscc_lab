@@ -241,7 +241,8 @@ def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg, digital_step_p
             )
             gt_text = [[captions[i]]]
             out = _decode_diffusion(
-                artifacts, jscc, pipe, gt_text, cfg, device, original_image=None
+                artifacts, jscc, pipe, gt_text, cfg, device, original_image=None,
+                edge_already_received=True,
             )
             out_patches.append(out.cpu())
 
