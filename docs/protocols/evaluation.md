@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 63b7b23
 supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -23,6 +23,44 @@ supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
   edge=dropout/blur/erasing, seg=클래스 dropout/영역 제거, 캡션=token dropout.
 - **입력 크기** — 128×128 패치 타일링, H·W를 128 배수로 리사이즈
   (예시: `configs/base/dataset/kodak.yaml`).
+
+## Rate–Reliability–Hallucination 평가 계약
+
+단일 합성 점수로 우열을 정하지 않고 다음 축을 같은 run row에 분리해 기록한다.
+현재 스크립트가 아직 내보내지 않는 컬럼도 있으며, 이는 향후 harness의 목표 계약이다.
+
+| 축 | 필수 항목 |
+|---|---|
+| Rate | exact bundle bytes/frame, feedback bytes, retransmission bytes, proxy channel symbols |
+| Quality | PSNR, SSIM, LPIPS, SRS |
+| Hallucination | missing/additional object rate, hallucination score, temporal hallucination |
+| Cost | reconstruction·regeneration latency, retry 수, end-to-end latency |
+| Provenance | config, checkpoint, seed, dataset split, code commit, `metric_role` |
+
+- exact packet byte와 proxy symbol/FEC 환산은 별도 컬럼으로 둔다.
+- analog AWGN visual waveform에 exact byte가 없으면 `N/A`로 기록한다.
+- effective rate는 최초 전송뿐 아니라 feedback과 재전송을 포함한다.
+- 루프 제어에는 `loop_internal`, 최종 주장은 `held_out` 지표만 사용한다.
+- reliable-digital baseline은 float32를 우선하고, 없으면 valid ratio가 1인 int16을
+  사용한다. 둘 다 없을 때 AWGN은 별도 임시 품질 기준으로만 표시한다.
+
+## 자동 비교와 통계
+
+평가 harness가 controller의 threshold·budget·retry 설정을 sweep한다. controller가
+자체적으로 sweep하거나 결과 파일을 누적하는 구조로 만들지 않는다.
+
+필수 ablation은 다음 네 정책을 regeneration OFF/ON으로 각각 실행하는 8개 조합이다.
+
+| 정책 | controller 입력 |
+|---|---|
+| static | 고정 bit·keyframe 예산 |
+| SNR-only | 송신 전에 알 수 있는 채널 상태 |
+| severity-only | 이전 프레임/GOP의 수신 검증 결과 |
+| combined | SNR+risk proxy+이전 severity |
+
+모든 조합은 같은 영상, frame 범위, seed, checkpoint를 사용한다. 영상별 paired
+difference와 전체 평균·표준편차·95% 신뢰구간을 보고한다. ETRI 10영상은 개발·비교용,
+별도 영상 split은 최종 held-out 검증용으로 구분한다.
 
 ## 이미지 평가
 

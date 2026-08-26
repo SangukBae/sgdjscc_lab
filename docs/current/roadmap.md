@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 63b7b23
 supersedes:
 ---
 
@@ -17,6 +17,25 @@ supersedes:
 [architecture/system.md](../architecture/system.md)의 핵심 연구 문제 3가지(시간축·영상 /
 할루시네이션 / 평가 신뢰도) + 전송량 절감이라는 **연구 목표 기준**으로 남은 과제를
 정리한 것이며, Phase 번호나 1차~6차 같은 과거 구현 순서로 나누지 않는다.
+
+> **연구개발 메인 문서:** 앞으로 구현할 작업과 우선순위는 이 문서를 기준으로
+> 갱신한다. 구현이 끝나면 [status.md](./status.md)로 옮기고, 검증 결과는 날짜가
+> 포함된 `docs/experiments/` 문서로 남긴다.
+
+## 권장 실행 순서
+
+| 순서 | 작업 | 완료 조건 |
+|---:|---|---|
+| 1 | 평가 계약 확정 | baseline, 컬럼, held-out 지표, feedback·지연 비용 정의 |
+| 2 | 평가 harness 확장 | 동일 입력·seed로 설정 sweep과 paired 결과 생성 |
+| 3 | verifier→sampler 배선 | action schema, 실제 prompt 반영, retry·중단 조건 구현 |
+| 4 | 정적 정책 회귀·ablation | 기존 품질을 깨지 않고 regeneration 효과 분리 측정 |
+| 5 | 동적 예산 controller | 다음 프레임/GOP 또는 명시적 feedback 기반 제어 |
+| 6 | 정책 조합 비교 | static/SNR-only/severity-only/combined × regeneration ON/OFF |
+| 7 | 최종 검증 | ETRI 10영상 paired 평가 후 별도 held-out 영상 재검증 |
+
+하이퍼파라미터 조합을 반복 실행하는 책임은 **평가 harness**에 둔다. controller는
+한 시점의 관측값으로 예산·행동을 결정할 뿐, 스스로 실험 sweep을 수행하지 않는다.
 
 ## 1. 시간축·영상 신뢰성 고도화 (한계 1 후속)
 
@@ -59,19 +78,25 @@ LGVSC 1A/1B는 검증 완료, 1C는 config·batch driver 준비 완료다. real 
   발전.
 - **송신단·폐루프 지능화** — bit budget과 생성 실패 위험(verifier severity)을 공동
   고려하는 정책. severity는 수신 후에만 나오므로 동일 프레임이 아니라 다음
-  프레임/GOP 예산 조정 또는 별도 feedback 채널 설계가 전제.
+  프레임/GOP 예산 조정 또는 별도 feedback 채널 설계가 전제. 동일 프레임의 최초
+  전송 결정에는 송신단에서 계산 가능한 motion·semantic-change risk proxy만 쓸 수
+  있다. feedback을 사용하면 feedback byte, 왕복 지연, 재전송 bundle byte를 모두
+  전송률·지연 결과에 포함한다.
 - **Importance-aware allocation** — 중요한 의미 요소에 더 많은 심볼/비트를 배분.
 
 ## 4. 평가 벤치마크 완성 (한계 3)
 
 - **모듈별 ablation** — 개선선의 각 구성요소(adapter/router/selector/critic)를 독립적으로
-  끈 비교.
+  끈 비교. 최소 조합은 static/SNR-only/severity-only/combined 정책과 regeneration
+  ON/OFF의 교차 비교다.
 - **실제 CBR/표준 bitstream 비교** — `transmission/`은 실제 bit-packing이지만 여전히
   표준 변조/FEC를 재현하지 않음(byte 수는 정확, 채널 심볼/FEC 환산은 proxy).
 - **DISTS/downstream task 지표** — 현재 `evaluators/`에는 없음. LGVSC와 직접 비교하려면
   필요.
 - **latency/VRAM 비교**, **LGVSC 재현선(1C) 실제 10영상×4모드 실행 및 재현 수준 판정**
   (config/batch driver는 준비 완료, 실행 자체가 남음).
+- **paired 통계 검증** — 영상별 차이의 평균·표준편차·95% 신뢰구간을 보고하고,
+  ETRI 10영상에서 선택한 설정은 별도 held-out 영상에서 한 번 더 검증한다.
 
 ## 일정
 

@@ -6,6 +6,20 @@
 
 문서는 **역할별**로 나뉜다 — 한 문서가 여러 역할을 겸하지 않는다.
 
+## 연구개발할 때 먼저 볼 문서
+
+| 목적 | 기준 문서 |
+|---|---|
+| 다음 구현 작업과 우선순위 | **[current/roadmap.md](./current/roadmap.md)** — 메인 작업 문서 |
+| 실제 완료·PoC·미구현 판단 | [current/status.md](./current/status.md) |
+| 알려진 제약 확인 | [current/open_issues.md](./current/open_issues.md) |
+| 지표·평가 설계 | [architecture/metrics.md](./architecture/metrics.md) |
+| 실험 실행·비교 규약 | [protocols/evaluation.md](./protocols/evaluation.md) |
+
+일상적인 연구개발은 `roadmap.md`에서 시작한다. 작업 완료 후 `status.md`를 갱신하고,
+결과는 `experiments/YYYY-MM-DD_<name>.md`로 고정한다. `archive/`는 과거 근거를 찾을
+때만 사용하며 현재 계획의 기준으로 삼지 않는다.
+
 | 폴더 | 역할 |
 |---|---|
 | [`current/`](./current/) | 지금 기준 상태 — 구현 현황, 향후 계획, 알려진 한계 |

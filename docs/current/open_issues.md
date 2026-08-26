@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 63b7b23
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -56,6 +56,10 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   `PTC`/`SFR`/`SDI`는 packet/object 판정에 의존하는 지표뿐이다.
 - **`eta_th`(PSSS 임계값)의 CBR 캘리브레이션 없음** — 논문 실험값(0.35)을
   그대로 쓸 뿐, 이 데이터셋/모델 조합에서 목표 CBR에 맞춰 보정하지 않았다.
+- **통합 평가 계약은 문서만 확정** — feedback/retransmission byte, regeneration
+  지연, retry 수를 한 row에 자동 기록하는 harness 배선은 아직 없다.
+- **paired 통계·별도 held-out 영상 결과 없음** — 현재 10영상 결과에는 정책별
+  paired difference, 95% 신뢰구간, 별도 영상 split 재검증이 없다.
 
 ## 전송량
 
@@ -67,6 +71,9 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   byte 수는 정확하지만 실제 변조/채널부호 표준을 재현하지 않는다.
 - **importance-aware bit allocation 없음** — 중요한 의미 요소에 더 많은
   심볼/비트를 배분하는 정책이 아직 없다.
+- **severity의 인과적 feedback 경로 없음** — 현재 프레임의 severity는 복원 후에
+  계산되므로 다음 프레임/GOP 제어나 재전송 feedback에 연결해야 한다. 관련 byte와
+  왕복 지연 accounting도 미구현이다.
 
 ## 채널·저지연
 

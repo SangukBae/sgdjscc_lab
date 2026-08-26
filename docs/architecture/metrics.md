@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 63b7b23
 supersedes: docs/etri_overview.md
 ---
 
@@ -63,6 +63,32 @@ SRS = (0.30*clip_image_image + 0.25*clip_text_image + 0.25*object_preservation_r
 
 각 `PacketVerifier` report는 `metric_role`(`loop_internal`/`held_out`)을 태그해
 둘을 코드 수준에서도 섞이지 않게 한다(`pipelines/heldout_remeasurement.py`).
+
+## 통합 리포트의 공식 축
+
+Rate–Reliability–Hallucination 결과는 합성 점수 하나로 축약하지 않는다. 최소한
+다음 열을 독립적으로 보존한다.
+
+```text
+rate: exact_bundle_bytes, feedback_bytes, retransmission_bytes,
+      effective_bits_per_frame, proxy_channel_symbols
+quality: psnr, ssim, lpips, srs
+hallucination: missing_rate, additional_rate, hallucination_score,
+               temporal_hallucination_rate
+cost: reconstruction_latency_ms, regeneration_latency_ms, retry_count,
+      end_to_end_latency_ms
+```
+
+```python
+effective_bits_per_frame = 8 * (
+    exact_bundle_bytes + feedback_bytes + retransmission_bytes
+) / evaluated_frames
+```
+
+`proxy_channel_symbols`는 변조·FEC 가정을 명시한 참고값이며 exact byte와 합치지
+않는다. 재생성만 수행해 추가 전송이 없더라도 retry 수와 지연은 반드시 기록한다.
+구체적인 baseline·paired 통계 절차는
+[protocols/evaluation.md](../protocols/evaluation.md)를 따른다.
 
 ## Presence(객체 존재) 판정 backend
 
