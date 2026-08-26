@@ -71,6 +71,13 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - **severity의 인과적 feedback 경로 없음**
   - 현재 프레임의 severity는 복원 후에 계산되므로 다음 프레임/GOP 제어나 재전송 feedback에 연결해야 한다.
   - 관련 byte와 왕복 지연 accounting도 미구현이다.
+- **digital_packet 설정이 16GB급 단일 GPU에서 OOM 위험** (2026-08-26 확인)
+  - ModelBundle 상주만으로 ~13GB — canny 재전송 net(WITT decoder) forward에서
+    추가 할당 시 여유가 없으면 `CUDA out of memory`. AWGN 경로는 동일 GPU·동일
+    프레임에서 안정적으로 통과 — blind-SNR NaN 수정 자체의 결함은 아님(수정 후
+    실측에서 `_compute_step`을 지나 diffusion decode까지는 NaN 없이 정상 진입,
+    이후 순수 리소스 문제로 실패). 실측은 VRAM 여유가 큰 원격 서버 권장. 상세:
+    [protocols/transmission_normalization.md](../protocols/transmission_normalization.md)
 
 ## 채널·저지연
 

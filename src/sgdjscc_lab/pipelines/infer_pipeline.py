@@ -25,6 +25,7 @@ Algorithm is identical to SGDJSCC/inference_one.py JSCC_model.forward():
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Tuple
@@ -34,6 +35,8 @@ import torch.nn.functional as F
 from omegaconf import DictConfig
 
 from sgdjscc_lab._sgdjscc import ensure_sgdjscc_on_path
+from sgdjscc_lab.channels.digital_packet import DigitalPacketChannel
+from sgdjscc_lab.utils.finite_checks import assert_finite
 
 ensure_sgdjscc_on_path()
 from utils.utils import generate_mask  # noqa: E402
@@ -510,7 +513,8 @@ def _decode_diffusion(
     input patch) enables the verified intra-sampler early-exit metrics.
     """
     if not artifacts.use_semantic:
-        return (jscc.vae.decode(jscc.normalize(artifacts.encode_features_hat))[0] + 1) / 2
+        out = (jscc.vae.decode(jscc.normalize(artifacts.encode_features_hat))[0] + 1) / 2
+        return assert_finite(out, "final_reconstruction")
 
     use_text       = bool(cfg.use_text)
     use_controlnet = bool(cfg.use_controlnet)
@@ -568,7 +572,8 @@ def _decode_diffusion(
     )
 
     # Block 6: final VAE decode (inference_one.py line 146)
-    return (jscc.vae.decode(jscc.normalize(denoised_latent))[0] + 1) / 2
+    out = (jscc.vae.decode(jscc.normalize(denoised_latent))[0] + 1) / 2
+    return assert_finite(out, "final_reconstruction")
 
 
 def _jscc_forward(
@@ -635,6 +640,7 @@ def _apply_channel(
         encode_features[:, 0:1, 0, 0]
     )
     encode_features_hat = jscc.normalize(jscc.channel(encode_features))
+    encode_features_hat = assert_finite(encode_features_hat, "channel_transmit")
     return encode_features_hat, signal_scale
 
 
@@ -939,6 +945,66 @@ def _run_diffusion(
 # Step matching (unchanged from pipeline.py)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Analytic uniform-quantizer SNR bounds (dB) for the digital_packet channel —
+# see _digital_quant_snr_db below for why this replaces routing quantized
+# latents through jscc.snr_prediction_net.
+_DIGITAL_SNR_FLOOR_DB = -20.0
+_DIGITAL_SNR_CEIL_DB = 60.0
+
+
+def _digital_quant_snr_db(bit_depth: int) -> float:
+    """Deterministic quantization SNR (dB) implied by ``bit_depth`` alone.
+
+    A uniform affine quantizer (``transmission/quantization.py``) maps a
+    tensor's full ``[min, max]`` range onto ``qmax = 2**bit_depth - 1``
+    codes. Treating both the latent values and the resulting quantization
+    error as uniformly distributed over their respective ranges gives
+    ``SNR = 20*log10(range/scale) = 20*log10(qmax)`` — a function of
+    ``bit_depth`` only, never of the tensor's actual values, so it is always
+    finite and requires no data-dependent estimation.
+
+    This is what ``_compute_step`` now uses in place of feeding the
+    *received* (quantized) latent through ``jscc.snr_prediction_net``: that
+    network was trained exclusively on AWGN-shaped noise and can predict a
+    ``signal_scale >= 1`` on quantization noise (out of its training
+    domain), which made ``step_style="continuous"``'s
+    ``10*log10(1/cur_step - 1)`` evaluate ``log10`` of a non-positive number
+    -> NaN/Inf (observed at bit_depth=8/16 on real frames; see
+    docs/current/open_issues.md history).
+
+    ``bit_depth=32`` (lossless raw float32, see
+    ``transmission/quantization.py::LOSSLESS_BIT_DEPTH``) has no
+    quantization error at all, so it is clamped to the SNR ceiling rather
+    than computed (``qmax`` would be astronomically large but is not
+    meaningfully "the" SNR of a bit-exact transport).
+    """
+    from sgdjscc_lab.transmission.quantization import LOSSLESS_BIT_DEPTH
+
+    if bit_depth >= LOSSLESS_BIT_DEPTH:
+        return _DIGITAL_SNR_CEIL_DB
+    qmax = (1 << int(bit_depth)) - 1
+    snr_db = 20.0 * math.log10(max(qmax, 1))
+    return float(min(max(snr_db, _DIGITAL_SNR_FLOOR_DB), _DIGITAL_SNR_CEIL_DB))
+
+
+def _digital_signal_scale(bit_depth: int, like: torch.Tensor) -> Tuple[torch.Tensor, float]:
+    """Stable ``(signal_scale, snr_db)`` for a digital_packet-received latent.
+
+    Mirrors the analytic ``use_gt_csi`` mapping (``signal_scale = snr_scale /
+    (snr_scale + 1)``) used elsewhere in this module, but driven by the
+    quantizer's ``bit_depth`` instead of ``jscc.snr`` (which describes the
+    AWGN config, not the digital channel actually used) or the AWGN-trained
+    blind estimator. ``snr_scale`` is always finite and strictly positive,
+    so ``signal_scale`` — and therefore ``cur_step = 1 - signal_scale`` — is
+    always strictly inside ``(0, 1)``, never exactly 0 or 1, so nothing
+    downstream divides by zero or takes ``log10`` of a non-positive number.
+    """
+    snr_db = _digital_quant_snr_db(bit_depth)
+    snr_scale = 10 ** (snr_db / 10)
+    signal_scale = (snr_scale / (snr_scale + 1)) * torch.ones_like(like)
+    return signal_scale, snr_db
+
+
 def _compute_step(
     jscc,
     encode_features_hat: torch.Tensor,
@@ -952,15 +1018,38 @@ def _compute_step(
 ):
     """Compute diffusion starting step and estimated SNR.
 
-    Mirrors the step-matching block in inference_one.py lines 93–120.
+    Mirrors the step-matching block in inference_one.py lines 93–120 for the
+    AWGN path (untouched — algorithm-preservation invariant). When
+    ``jscc.channel_model`` is a :class:`DigitalPacketChannel`, the blind
+    (``use_gt_csi=False``) branches use :func:`_digital_signal_scale`
+    (quantization-metadata-derived) instead of ``jscc.snr_prediction_net``
+    (AWGN-trained, out of domain for quantized latents — see
+    :func:`_digital_quant_snr_db`).
 
     Returns (cur_step, cur_snr).
     """
+    digital_channel = jscc.channel_model if isinstance(
+        getattr(jscc, "channel_model", None), DigitalPacketChannel
+    ) else None
+
     if step_style == "continuous":
         if use_jscc_feat:
             if use_gt_csi:
                 cur_step = float(1 - signal_scale.mean().item())
                 cur_snr  = float(jscc.snr)
+            elif digital_channel is not None:
+                predicted_signal_scale, snr_db = _digital_signal_scale(
+                    digital_channel.bit_depth, power_scalar.reshape([-1, 1])
+                )
+                cur_step = 1 - predicted_signal_scale
+                # A tensor, not the raw snr_db float — _retransmit_canny does
+                # (cur_snr <= -5).reshape(...), which requires cur_snr to be a
+                # per-sample tensor exactly like the AWGN blind branch's
+                # 10*log10(1/cur_step - 1) result (this is the shape/type
+                # contract the rest of the pipeline expects; a bare float
+                # would crash there with "'bool' object has no attribute
+                # 'reshape'" the first time canny_cr != "none").
+                cur_snr = torch.full_like(predicted_signal_scale, snr_db)
             else:
                 predicted_signal_scale = (
                     jscc.snr_prediction_net(
@@ -987,6 +1076,17 @@ def _compute_step(
                     .int()
                     .item()
                 )
+            elif digital_channel is not None:
+                pred, _ = _digital_signal_scale(
+                    digital_channel.bit_depth, power_scalar.reshape([-1, 1])
+                )
+                cur_step = (
+                    torch.argmin(torch.abs(alphas - pred), axis=1)
+                    .float()
+                    .mean()
+                    .int()
+                    .item()
+                )
             else:
                 pred = (
                     jscc.snr_prediction_net(
@@ -1002,9 +1102,17 @@ def _compute_step(
                 )
         else:
             cur_step = 981
-        cur_snr = float(jscc.snr)
+        cur_snr = (
+            _digital_quant_snr_db(digital_channel.bit_depth)
+            if digital_channel is not None and use_jscc_feat and not use_gt_csi
+            else float(jscc.snr)
+        )
 
     else:
         raise ValueError(f"Unknown step_style: {step_style!r}")
 
+    if torch.is_tensor(cur_step):
+        cur_step = assert_finite(cur_step, "step_match")
+    if torch.is_tensor(cur_snr):
+        cur_snr = assert_finite(cur_snr, "step_match_snr")
     return cur_step, cur_snr

@@ -157,7 +157,7 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 |---|---|
 | Semantic-unit 절감 (키프레임+델타 재사용) | 완료 |
 | Channel-symbol/bit accounting PoC (`accounting/bit_accounting.py`) | 완료 — proxy 상수 기반, 실제 CBR/표준 bitstream 검증 아님 |
-| 실제 binary packet 전송 (`transmission/`, 4/6/8/16-bit 양자화) | **구현 완료, operating point 검증 중** — 10개 영상에서 `int4`가 analog AWGN 임시 기준의 픽셀 품질 gate를 통과했다. reliable-digital 기준과 SRS·할루시네이션 평가는 남아 있다. 상세: [experiments/2026-08-18_transmission_reduction.md](../experiments/2026-08-18_transmission_reduction.md) |
+| 실제 binary packet 전송 (`transmission/`, 4/6/8/16/32-bit 양자화) | **구현 완료, operating point 검증 중** — 10개 영상에서 `int4`가 analog AWGN 임시 기준의 픽셀 품질 gate를 통과했다. reliable-digital 기준(당시 `int16`)이 blind SNR 추정 NaN(52프레임)으로 깨져 있던 문제는 수정됨 — 상세: [protocols/transmission_normalization.md](../protocols/transmission_normalization.md). SRS·할루시네이션 평가는 남아 있다. 과거 실측: [experiments/2026-08-18_transmission_reduction.md](../experiments/2026-08-18_transmission_reduction.md) |
 | Importance-aware / 채널 신호 연동 bit allocation | 미착수 — [roadmap.md](./roadmap.md) §3 |
 
 ### 학습 CLI

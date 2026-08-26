@@ -59,6 +59,7 @@
 | [protocols/datasets.md](./protocols/datasets.md) | 데이터셋 역할·stage 매핑·변환 워크플로 |
 | [protocols/reproducibility.md](./protocols/reproducibility.md) | checkpoint 선택 기준, `paper_mode` 사용법 |
 | [protocols/training.md](./protocols/training.md) | stage-aware 학습 CLI, export, real-model smoke 검증 |
+| [protocols/transmission_normalization.md](./protocols/transmission_normalization.md) | digital blind-SNR NaN 수정, `run_transmission_normalization.sh` 절차, 양자화/selector 효과 분리 |
 
 - 데이터 문서
   - 전체 데이터: [data/README.md](../data/README.md)

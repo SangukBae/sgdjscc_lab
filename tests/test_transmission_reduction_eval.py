@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -111,12 +112,36 @@ class TestAggregateAndPareto:
         assert baseline_info["baseline_is_analog"] is False
         assert not any(r["config"] == "fixed_awgn" for r in pareto)  # AWGN never a Pareto candidate here
 
-    def test_pareto_falls_back_to_awgn_when_no_digital_baseline_present(self):
+    def test_pareto_never_falls_back_to_awgn_when_no_digital_baseline_present(self):
+        # float32/int16 (or a "정상" i.e. zero-NaN version of either) are the
+        # ONLY eligible baselines; AWGN mixes analog noise with quantization
+        # loss and is never a meaningful "reliable digital" reference, so with
+        # no digital reliable config present the baseline must be unavailable,
+        # never silently fall back to AWGN.
         rows = [r for r in self._rows() if r["config"] in ("fixed_awgn", "fixed_int8")]
         agg = mod._aggregate(rows)
         pareto, baseline_info = mod._pareto_frontier(agg)
-        assert baseline_info["baseline_config"] == "fixed_awgn"
-        assert baseline_info["baseline_is_analog"] is True
+        assert baseline_info["baseline_valid"] is False
+        assert baseline_info["baseline_config"] is None
+        assert pareto == []
+
+    def test_baseline_preference_excludes_awgn_entirely(self):
+        assert "fixed_awgn" not in mod.BASELINE_PREFERENCE
+        assert "skem_awgn" not in mod.BASELINE_PREFERENCE
+        assert set(mod.BASELINE_PREFERENCE) == {
+            "fixed_float32", "fixed_int16", "skem_float32", "skem_int16",
+        }
+
+    def test_pareto_baseline_ignored_even_if_awgn_has_zero_nan_frames(self):
+        # An AWGN row with n_nan_or_inf_frames == 0 must still never become the
+        # baseline -- only its presence in BASELINE_PREFERENCE would allow that.
+        rows = [r for r in self._rows() if r["config"] in ("fixed_awgn", "fixed_int8")]
+        for row in rows:
+            row["n_nan_or_inf_frames"] = 0
+        agg = mod._aggregate(rows)
+        _, baseline_info = mod._pareto_frontier(agg)
+        assert baseline_info["baseline_config"] != "fixed_awgn"
+        assert baseline_info["baseline_valid"] is False
 
     def test_pareto_prefers_smallest_bytes_within_quality_gate(self):
         rows = self._rows()
@@ -277,3 +302,90 @@ class TestCsvWriting:
         path = tmp_path / "empty.csv"
         mod._write_csv(path, [])
         assert path.exists()
+
+
+class TestResumeRoundTrip:
+    """--resume reloads a prior (possibly interrupted) run's per_video_metrics.csv
+    via _read_csv_dicts + _coerce_per_video_row; _aggregate/_pareto_frontier must
+    treat a reloaded row identically to a freshly-computed one."""
+
+    def _fresh_rows(self):
+        return [
+            {"video": "v1", "config": "fixed_int16", "selector": "fixed", "channel": "int16",
+             "bit_depth": 16, "psss_backend_kind": None,
+             "n_frames_total": 12, "n_transmitting_frames": 3, "n_keyframes_selected": 3,
+             "n_nan_or_inf_frames": 0, "nonfinite_stages": "", "n_quality_frames": 12,
+             "valid_frame_ratio": 1.0, "mean_psnr": 23.99, "mean_ssim": 0.7899, "mean_lpips": 0.401,
+             "latent_elements_total": 294912, "analog_channel_symbols_total": "",
+             "source_packet_bits_total": 640000, "digital_side_information_bytes_total": "",
+             "total_bundle_bytes": 80000, "analog_no_wire_bytes": False,
+             "visual_transport_complete": True, "total_elapsed_s": 1.05},
+            {"video": "v1", "config": "fixed_int8", "selector": "fixed", "channel": "int8",
+             "bit_depth": 8, "psss_backend_kind": None,
+             "n_frames_total": 12, "n_transmitting_frames": 3, "n_keyframes_selected": 3,
+             "n_nan_or_inf_frames": 0, "nonfinite_stages": "", "n_quality_frames": 12,
+             "valid_frame_ratio": 1.0, "mean_psnr": 23.8, "mean_ssim": 0.785, "mean_lpips": 0.41,
+             "latent_elements_total": 294912, "analog_channel_symbols_total": "",
+             "source_packet_bits_total": 320000, "digital_side_information_bytes_total": "",
+             "total_bundle_bytes": 40000, "analog_no_wire_bytes": False,
+             "visual_transport_complete": True, "total_elapsed_s": 1.1},
+        ]
+
+    def test_reloaded_rows_produce_identical_aggregate_and_pareto(self, tmp_path):
+        fresh = self._fresh_rows()
+        path = tmp_path / "per_video_metrics.csv"
+        mod._write_csv(path, fresh)
+
+        reloaded = [mod._coerce_per_video_row(r) for r in mod._read_csv_dicts(path)]
+
+        agg_fresh = mod._aggregate(fresh)
+        agg_reloaded = mod._aggregate(reloaded)
+        assert agg_fresh == agg_reloaded
+
+        pareto_fresh, base_fresh = mod._pareto_frontier(agg_fresh)
+        pareto_reloaded, base_reloaded = mod._pareto_frontier(agg_reloaded)
+        assert pareto_fresh == pareto_reloaded
+        assert base_fresh == base_reloaded
+
+    def test_read_csv_dicts_returns_empty_for_missing_or_empty_file(self, tmp_path):
+        assert mod._read_csv_dicts(tmp_path / "does_not_exist.csv") == []
+        empty = tmp_path / "empty.csv"
+        empty.write_text("", encoding="utf-8")
+        assert mod._read_csv_dicts(empty) == []
+
+    def test_done_pairs_set_built_from_reloaded_rows(self, tmp_path):
+        fresh = self._fresh_rows()
+        path = tmp_path / "per_video_metrics.csv"
+        mod._write_csv(path, fresh)
+        reloaded = [mod._coerce_per_video_row(r) for r in mod._read_csv_dicts(path)]
+        done_pairs = {(r["video"], r["config"]) for r in reloaded}
+        assert done_pairs == {("v1", "fixed_int16"), ("v1", "fixed_int8")}
+
+
+class TestWriteManifest:
+    def test_writes_manifest_json_with_captured_command_and_no_seed(self, tmp_path, monkeypatch):
+        from omegaconf import OmegaConf
+
+        args = _default_args(dataset_root=str(tmp_path / "no_such_dataset"))
+        cfg = OmegaConf.create({"snr_db": 10.0, "use_phase4": True})
+        output_root = tmp_path / "out"
+        output_root.mkdir()
+
+        monkeypatch.setattr(sys, "argv", [
+            "run_transmission_reduction_eval.py", "--output-root", str(output_root),
+        ])
+        mod._write_manifest(args, output_root, cfg, per_video_rows=[
+            {"n_nan_or_inf_frames": 2}, {"n_nan_or_inf_frames": 0},
+        ])
+
+        manifest_path = output_root / "run_manifest.json"
+        assert manifest_path.exists()
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest.get("status") == "unavailable":
+            return  # run_manifest.py not present in this checkout -- soft-dependency fallback, acceptable
+        assert manifest["command"]["source"] == "captured"
+        assert "--output-root" in manifest["command"]["argv"]
+        assert manifest["seed"] == "not_set"
+        assert manifest["nan_or_failure_counts"]["total_nan_or_inf_frames"] == 2
+        assert manifest["resolved_config"]["status"] == "resolved"
+        assert manifest["checkpoints"]["status"] in ("not_set", "recorded")

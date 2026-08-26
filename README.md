@@ -132,6 +132,23 @@ python scripts/run_transmission_reduction_eval.py \
   reliable-digital 기준과 SRS·할루시네이션 평가 전에는 기본 operating point로
   확정하지 않는다.
 
+### 전송 정상화 (digital NaN 수정 + fixed/SKEM x 양자화 전체 스윕)
+
+```bash
+bash scripts/run_transmission_normalization.sh                 # 전체 grid, 새 timestamp 디렉터리
+bash scripts/run_transmission_normalization.sh --preflight-only  # 데이터·checkpoint·디스크·GPU 점검만
+bash scripts/run_transmission_normalization.sh --dry-run          # 실행할 명령만 출력
+bash scripts/run_transmission_normalization.sh --resume outputs/transmission_normalization_20260826_120000
+```
+
+- digital 채널의 blind SNR 추정(`jscc.snr_prediction_net`, AWGN 전용 학습)을
+  양자화 latent에 적용하던 NaN/Inf 원인을 수정했다 —
+  [docs/protocols/transmission_normalization.md](./docs/protocols/transmission_normalization.md) 참고.
+- `run_transmission_reduction_eval.py`가 동일 디렉터리 재실행 시 완료된
+  (video, config) 쌍을 자동으로 건너뛴다(진짜 resume).
+- 결과: `quantization_effect.csv`(선택기 고정, bit_depth 효과) /
+  `selector_effect.csv`(bit_depth 고정, fixed vs SKEM 효과)로 두 효과를 분리 출력.
+
 ### 학습
 
 ```bash
@@ -207,6 +224,7 @@ transmission/  양자화·packet 직렬화
 | [docs/protocols/evaluation.md](./docs/protocols/evaluation.md) | 평가 지침 |
 | [docs/protocols/reproducibility.md](./docs/protocols/reproducibility.md) | 재현성 지침 |
 | [docs/protocols/training.md](./docs/protocols/training.md) | 학습 지침 |
+| [docs/protocols/transmission_normalization.md](./docs/protocols/transmission_normalization.md) | digital NaN 수정, fixed/SKEM x 양자화 스윕 절차 |
 | [docs/protocols/video_rate_benchmark.md](./docs/protocols/video_rate_benchmark.md) | 전송률 비교 절차 |
 | [docs/reference/framework_file_roles.md](./docs/reference/framework_file_roles.md) | 파일 역할 지도 |
 | [docs/reference/paper_alignment.md](./docs/reference/paper_alignment.md) | 논문 정합성 |
