@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: ec76f1f
+source_commit: 6360d3b
 supersedes:
 ---
 
@@ -208,12 +208,18 @@ bash scripts/run_transmission_normalization_parallel.sh \
 - 작업 분배
   - `manifest.csv`의 프레임 수를 기준으로 영상을 longest-first 방식으로 균등 배분
   - GPU별 단일 프로세스·단일 `--device` 사용
+  - worker별 `CUDA_VISIBLE_DEVICES=<physical index>`로 GPU를 격리하고 내부에서는
+    `cuda:0`만 사용 — 외부 SGDJSCC의 `cuda:0` 고정 코드가 다른 GPU와 섞이지 않음
   - 기본 10영상은 3개 worker에 `4/3/3`개로 분할
 - 파일 안전성
   - `workers/worker_00`·`worker_01`·`worker_02`가 독립 CSV·packet·복원 영상을 기록
   - worker 사이에 공유하는 가변 CSV·manifest 없음
   - 모든 worker가 종료된 뒤 상위 디렉터리에 aggregate·Pareto·effect 표를 재계산
   - 대용량 packet·복원 영상은 worker 디렉터리에 유지하고 중복 복사하지 않음
+- digital receiver 메모리 경계
+  - bundle에서 이미 역직렬화한 edge는 Canny/WITT analog 전송망을 다시 통과하지 않음
+  - 중복 전송과 약 4GiB peak allocation을 제거
+  - AWGN/in-process 경로는 기존 Canny 재전송 수식과 동작을 그대로 유지
 - 재개
   - `parallel_plan.json`에 commit·GPU·영상 배분·실험 설정을 고정
   - 계획이 바뀐 동일 출력 디렉터리 재사용은 거부
