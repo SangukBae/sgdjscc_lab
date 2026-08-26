@@ -33,7 +33,7 @@ Use either the processed mp4 directly:
 
 ```bash
 python scripts/evaluate_video.py \
-  --config configs/composed_video_paper_like_multi.yaml \
+  --config configs/recipes/video/composed_video_paper_like_multi.yaml \
   --input data/etri_video_eval/processed/01_person_walk.mp4 \
   --snr 5 --save-video
 ```
@@ -42,7 +42,7 @@ Or use the extracted frame folder:
 
 ```bash
 python scripts/evaluate_video.py \
-  --config configs/composed_video_paper_like_multi.yaml \
+  --config configs/recipes/video/composed_video_paper_like_multi.yaml \
   --input data/etri_video_eval/frames/01_person_walk \
   --snr 5 --save-video
 ```
@@ -51,7 +51,7 @@ For pipeline-only validation without model loading:
 
 ```bash
 python scripts/evaluate_video.py \
-  --config configs/composed_video_paper_like_multi.yaml \
+  --config configs/recipes/video/composed_video_paper_like_multi.yaml \
   --input data/etri_video_eval/processed/01_person_walk.mp4 \
   --captions data/etri_video_eval/captions/01_person_walk.txt \
   --no-models

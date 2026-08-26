@@ -5,8 +5,11 @@
 LGVSC 논문(Ma et al., "LGVSC: A Large-Model-Driven Generative Video Semantic
 Communication Framework", IEEE)의 구조를 현재 `sgdjscc_lab` 코드에 대응시켜,
 어떤 모듈을 재사용·확장·신설하면 임의 길이 비디오의 전송과 복원이 가능해지는지
-정리한 설계 문서다. [etri_strategy.md](./etri_strategy.md)의 핵심 한계 3
-(정지 이미지 중심 한계)의 장기 해결 축(video diffusion)에 해당한다.
+정리한 **시스템 구조/설계 매핑** 문서다. [etri_strategy.md](./etri_strategy.md)의
+핵심 한계 3(정지 이미지 중심 한계)의 장기 해결 축(video diffusion)에 해당한다.
+현재 완료/미완료 상태는 이 문서가 아니라 `etri_strategy.md`(현재 상태)와
+[roadmap.md](./roadmap.md)(향후 계획)를 기준으로 본다 — 이 문서의 상태 표기는
+설계 맥락 설명용이다.
 
 - 논문 원문: `reference/paper/LGVSC…/main.tex`
 - 시각화 원본(Artifact): <https://claude.ai/code/artifact/deee634a-9077-4d44-b3ae-2f2a76a8d1b0>
@@ -376,172 +379,18 @@ ETRI 딥러닝 개선선
 완료지만, 1단계 전체 완료는 아니다. 1B는 실제 GPU segment 산출물이 있어야 하며, 1C는
 재현 baseline 4모드(`mock_baseline`/`svd_start_only`/`wan_skim_sfa`/`wan_skem_dsa`)의
 **실제 실행 결과**와 재현 수준이 문서화되어야 완료다 — config/batch driver/summary
-생성기까지의 "검증 준비"는 완료했지만(아래 "1C 재현 준비" 참조), 그 실행 결과 자체는
-아직 없다. 2~3단계는 단순 rule/config가 아니라 학습 가능한 파라미터와 학습·추론
-체크포인트, 모듈별 ablation이 있어야 완료로 본다.
+생성기까지의 "검증 준비"는 완료했지만(상세: [lgvsc_1c_reproduction_readiness.md](./lgvsc_1c_reproduction_readiness.md)),
+그 실행 결과 자체는 아직 없다. 2~3단계는 단순 rule/config가 아니라 학습 가능한
+파라미터와 학습·추론 체크포인트, 모듈별 ablation이 있어야 완료로 본다.
 
-**1A 완료 (2026-07)**: `src/sgdjscc_lab/video/video_generator.py`에
-`SegmentGenerationRequest`/`SegmentGenerationResult`/`validate_segment_request()`/
-`validate_segment_result()`와 `VideoGenerator.generate_segment()`(기본 구현은
-`generate()`를 target별로 순회 호출 — 기존 mock backend가 override 없이 그대로
-새 계약을 지원)를 추가했다. `src/sgdjscc_lab/video/temporal_pipeline.py::run()`은
-더 이상 `generate` 결정 프레임마다 즉시 backend를 부르지 않고, 한 GOP의 모든
-`generate` 결정 프레임(reuse/recompute와 섞여 비연속일 수 있음)을 모았다가 GOP가
-끝나는 시점(다음 keyframe 또는 시퀀스 끝)에 `generate_segment()`를 **정확히 한 번**
-호출한다(`_flush_pending_generate()`). `generate` 결정이 없는 GOP는 backend를 아예
-부르지 않는다. `SegmentGenerationRequest`에는 원본/ground-truth target frame 필드가
-아예 존재하지 않아 아래 "주의 1"이 요구한 Rx-legal 경계가 타입 수준에서 강제된다.
-`ptest`에서 `tests/test_video_generator.py`/`tests/test_video.py`/
-`tests/test_etri_batch_tools.py`(202 passed)와 전체 스위트(`tests/` 937 passed, 0
-failed, 회귀 없음)로 검증했다. 여전히 mock backend(copy/interpolation/bidirectional
-interpolation)만 사용하며, Open-Sora/Wan 설치·weight·실제 생성·품질 비교는 1B/1C
-범위로 남아 있다.
-
-1차 구현 후 두 차례의 코드 리뷰에서 지적된 4건(비연속 generate 대상의 prev_recon
-오귀속, segment 생성 시간의 profiling 누락/오귀속, `validate_segment_result()`의
-metadata 정합성 미검사, segment 생성의 profiler call-count delta가 generate 프레임에
-반영되지 않던 문제)은 모두 수정·회귀 테스트 완료됐다 — `SegmentGenerationRequest.
-reference_prev_recons`(target별 override), `RunProfiler.record_frame()` +
-flush를 다음 keyframe 타이머 시작 전으로 재배치, `validate_segment_result()`의
-`segment_id`/`metadata.target_indices`/`metadata.source_keyframe_index`/타입/
-`conditioning_mode` 검사 추가, `generate_segment()` 호출 전후 counter snapshot →
-`_split_evenly()`로 `diffusion_calls`/`blip2_calls`/`clip_calls`를 커버된 프레임에
-분배. 자세한 내용은 docs/etri_strategy.md의 "1A 검토 반영" 참조. 자세한 코드↔산출물
-대응은 docs/etri_strategy.md의 "1A 구현 결과" 참조.
-
-**1B 완료 — 구조·검증 준비 (2026-07)**: 1A의 segment 계약 뒤에 실제 생성 모델을
-붙이는 subprocess worker 구조(`src/sgdjscc_lab/video/video_generator.py::
-ExternalSegmentWorkerGenerator`, 신규 `scripts/lgvsc_generate_worker.py` /
-`scripts/lgvsc_example_callable_backend.py`)와 config 배선
-(`video_generator.backend: external_segment_worker`, `video_generator.worker.*`)을
-완성했다. `TemporalPipeline`은 이 backend도 다른 mock backend와 동일하게
-`generate_segment()`로만 호출하므로 파이프라인 재작업이 없다. `ptest`에서
-fake(mock) worker로 IPC 왕복·Rx-legal manifest·timeout/nonzero/누락 결과/
-frame-count·shape·metadata 불일치 오류·`TemporalPipeline` 투영·profiler 회귀까지
-46개 신규 테스트로 검증했고, `scripts/evaluate_video.py` 실제 CLI 경로로
-실제 ETRI 테스트 영상에 대해 mock worker subprocess가 GOP당 한 번씩 호출되어
-generate 프레임을 실제로 생성·저장하는 것도 확인했다(`ptest`: 983 passed, 0
-failed — 회귀 없음). 1차 구현 후 코드 리뷰에서 지적된 Medium 1건
-(`generate_segment()`가 반환 전에 `validate_segment_result()`를 직접
-호출하지 않아 metadata가 거짓인 worker 결과가 새어나갈 수 있던 문제)도
-수정·회귀 테스트 완료했다 — 자세한 내용은 docs/etri_strategy.md의 "1B
-구현 결과" 안 "1B 검토 반영" 참조.
-
-**1B Wan 후속 (2026-07)**: 1B의 미완료 항목이던 Open-Sora/Wan external
-segment worker를 구현했다 — `scripts/lgvsc_generate_worker.py`에
-`--backend wan`(`diffusers.WanImageToVideoPipeline`)을 추가했다. SVD와
-달리 Wan은 `image`(start keyframe) + `last_image`(end keyframe, 있을 때만
-— 실제 bidirectional 조건화) + `prompt`(caption, 실제 텍스트 조건화)를
-모두 받아 LGVSC의 segment decoder 계약(start/end keyframe + caption)에
-코드 수준에서 가장 근접하다. `side_infos`는 여전히 미사용(과장하지 않고
-metadata `notes`와 문서에 명시). fake `WanImageToVideoPipeline`으로 인자
-전달·shape 복원·metadata를 7개 신규 테스트로 검증했고
-(`tests/test_lgvsc_generate_worker.py::TestRunWanBackendReferenceWiring`),
-`semantic-diffusers` 환경에서 실제 `WanImageToVideoPipeline`/
-`StableVideoDiffusionPipeline` import 성공까지 직접 확인했다(환경 수정
-3건 필요 — transformers/peft 업그레이드, 호환되지 않는 torchaudio 제거).
-`ptest` 전체 스위트 992 passed, 0 failed(회귀 없음).
-
-**실제 GPU 시도 결과 (1차, 2026-07)**: `Wan-AI/Wan2.1-I2V-14B-480P-Diffusers`
-(84GB) 전체를 `semantic-diffusers` 환경에 실제 다운로드해 두 가지를 직접
-실행했다. **start-only는 성공** — 실제 14B 모델이 caption을 조건으로
-64×64 프레임을 63초에 생성했고 `validate_segment_result()`까지 통과했다
-(mock이 아닌 실제 GPU 최종 검증). **bidirectional(+last_image)은 이 시점에는
-실패** — `transformer_wan.py`의 이미지/텍스트 임베딩 concat에서 tensor
-크기가 어긋났다. 이후 실제 원인을 규명하고 해결했다 — 아래 "Wan
-bidirectional 실제 GPU 문제 해결" 참조. 자세한 로그·트레이스백은
-[docs/lgvsc_1b_worker_readiness.md](./lgvsc_1b_worker_readiness.md)의 "1B
-Wan 검토 — 실제 GPU 시도 결과"에 기록했다 — conda 환경 구성, Hugging
-Face 요구사항(Wan은 로그인/라이선스 불필요, SVD는 gated), VRAM/디스크
-주의사항, 실행 명령어도 그 문서에 있다.
-코드↔산출물 대응표는 docs/etri_strategy.md의 "1B 구현 결과" 참조.
-
-**후속 코드 리뷰 반영 (2026-07)**: `run_wan_backend()`의 프레임 매핑이
-`target_indices` 리스트 순서가 아니라 실제 segment 시간 위치
-(`target_index - start_frame_index`) 기준이 되도록 수정했고(비연속 target
-`[1, 5, 8]` 등에서 잘못된 프레임을 반환하던 버그), Wan config를
-`configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_start_only.yaml`(기본)과
-`configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_experimental.yaml`
-(당시 실패 재현용)로 분리했으며, `docs/lgvsc_1b_worker_readiness.md`의 "SVD
-실제 GPU 세그먼트 생성 미시도" 오기재도 정정했다(SVD도 실제 GPU에서
-`n_generate=1`/`generated_frames=1`로 성공 확인됨).
-
-**Wan bidirectional 실제 GPU 문제 해결 (2026-07 후속)**: 위에서 남겨뒀던
-bidirectional 실패를 diffusers 소스 코드(`pipeline_wan_i2v.py`/
-`transformer_wan.py`)를 직접 읽어 재규명하고 해결했다. 실제 원인은
-diffusers 버전 문제가 아니라 **체크포인트 선택 문제**였다 —
-`last_image`가 있으면 두 keyframe이 배치 2로 CLIP 인코딩되는데, 이를
-배치 1의 doubled-sequence로 합치는 `WanImageEmbedding`의 학습된
-positional-embedding 파라미터는 체크포인트의 `transformer/config.json`에
-`pos_embed_seq_len`이 있을 때만 생성된다. 그동안 쓰던
-`Wan2.1-I2V-14B-480P`에는 이 값이 없어(단일 이미지 조건화만 학습됨) 배치가
-맞지 않아 크래시했다. Wan의 공식 first-last-frame 체크포인트
-`Wan-AI/Wan2.1-FLF2V-14B-720P-Diffusers`(`pos_embed_seq_len: 514`)로
-바꾸자 해결됐다 — 이 체크포인트는 반대로 단일 이미지 조건화는 할 수 없으므로
-(reshape 수식상 배치 1을 514로 나눌 수 없어 크래시), 한 영상 안에 end
-keyframe이 있는/없는 segment가 섞여 있을 때를 대비해
-`run_wan_backend()`가 **segment마다** 필요한 체크포인트를
-`extra_json.bidirectional_model_id`로 자동 선택하도록 수정했다. 체크포인트와
-요청된 조건화 모드가 맞지 않으면 파이프라인 호출 전에
-`WorkerBackendUnavailableError`로 명확히 실패하는 preflight 체크도 추가했다.
-신규 config `configs/experiments/etri_video_eval/etri_video_eval_lgvsc_worker_wan_bidirectional_fixed.yaml`로
-실제 GPU에서 `scripts/evaluate_video.py --max-frames 14`를 실행해 segment 0
-(`conditioning_mode=bidirectional`, `end_keyframe_index=12`,
-`n_generated=11`, `Wan2.1-FLF2V-14B-720P`)과 segment 1(마지막 GOP,
-`conditioning_mode=start_only`, `Wan2.1-I2V-14B-480P`, `n_generated=1`)
-모두 성공을 직접 확인했다(exit code 0, `error.json` 없음, 12개 PNG 실제
-픽셀 생성 확인). `tests/ -q` 전체 스위트 → **997 passed**, 0 failed. 이제
-정확한 요약은 **"Wan start-only와 bidirectional 둘 다 실제 GPU 검증
-완료"**다. 자세한 원인 분석·재현 로그는
-`docs/lgvsc_1b_worker_readiness.md`의 "Wan bidirectional 수정 — 원인과
-해결", 대응표는 `docs/etri_strategy.md`의 "1B 구현 결과" 안 "Wan
-bidirectional 실제 GPU 문제 해결" 참조.
-
-**1C 재현 준비 (2026-07)**: 1B가 검증한 real backend들을 그대로 재사용해
-LGVSC 재현선을 "실행 준비된" 상태로 만들었다 — **실제 검증 실행은 사용자가
-한다.** 재현 baseline 4모드(`mock_baseline`/`svd_start_only`/
-`wan_skim_sfa`/`wan_skem_dsa`)의 config(`configs/experiments/lgvsc_1c/etri_lgvsc_1c_*.yaml`,
-`wan_skim_sfa`/`wan_skem_dsa`는 각각 검증된 `..._wan_start_only.yaml`/
-`..._wan_bidirectional_fixed.yaml` 기반), batch driver
-(`scripts/batch_lgvsc_1c_reproduce.py` — mode/video 선택, smoke/dry-run,
-skip-existing, continue-on-error, summary-only 지원), summary 생성기(mode×
-video별 `temporal_metrics.csv`/`segments.json`/`generated_frames/`를
-`summary_metrics.csv`/`.md`/`.json`으로 통합)를 새로 만들었다.
-**keyframe 선택(SKIM/SKEM)은 재현하지 않았다** — 네 모드 전부 이 저장소의
-공통 고정-간격+scene-change 추출기를 쓰고, `wan_skim_sfa`/`wan_skem_dsa`의
-차이는 decoder 조건화(단일 vs 두 keyframe)뿐이다. `side_infos`(motion/delta)도
-어느 Wan 모드에서든 조건화에 쓰이지 않는다 — 둘 다 config 헤더와
-`docs/lgvsc_1c_reproduction_readiness.md`에 명시했다. 신규 테스트 18개
-(`tests/test_batch_lgvsc_1c_reproduce.py`) — mode→config 선택, output 경로
-mode/video별 격리(구현 중 실제 경로 격리 버그 1건을 발견·수정 — 생성 config가
-상대 경로를 쓰면 같은 mode의 모든 영상이 파일을 공유하는 문제였음), dry-run이
-subprocess를 호출하지 않음, 명령어 생성, summary-only 재생성,
-continue-on-error, wan_skim_sfa/wan_skem_dsa/svd_start_only config가 각각의
-검증된 1B config를 기반으로 함을 검증한다. `tests/ -q` 전체 스위트 →
-**1015 passed**, 0 failed(회귀 없음). 실제 GPU 전체 validation은 하지
-않았다(사용자 지시) — `--dry-run` 확인과 `mock_baseline --no-models` 실제
-smoke 1건(GPU 없이, `n_generate=12` 등 실제 산출물 확인)만 직접 실행했다.
-자세한 모드 정의·config 대응·명령어·결과 해석 주의사항은
-`docs/lgvsc_1c_reproduction_readiness.md` 참조.
-
-**PSSS/SKEM 단계 (2026-07, 1C의 후속)**: 위 "**keyframe 선택(SKIM/SKEM)은
-재현하지 않았다**" 문단이 지적한 gap을 메웠다 — §5.1의 로드맵이 7단계로
-미뤄뒀던 PSSS(아래 "7단계" 참조)를 실제로 구현했다. `video/psss.py`가 논문
-Eq.1-2(`S_rel = P("No") − P("Yes")`)를 실제 모델의 다음-토큰 확률로 계산하는
-`real` 백엔드(yes/no 최종 텍스트 비교 아님, multi-token 표면형 처리 포함),
-그리고 mock/proxy(CLIP) 근사 백엔드 2종을 제공한다. `video/skem_selector.py`
-가 그 PSSS로 자동회귀 variable-length keyframe 선택을 구현하며,
-`keyframe.selector: fixed`(기존, 이 절 위쪽에 적힌 4개 1C 모드는 여전히 이
-경로) vs `psss`(신규)로 완전히 독립적인 selector를 고른다. 비교 config 4종
-(`skim_sfa_fixed`/`skem_dsa_psss`/`skem_dsa_mock_psss`/`skem_dsa_proxy_psss`)
-과 `scripts/batch_lgvsc_1c_reproduce.py`의 summary 확장(`selector_backend`/
-`psss_backend_kind`/segment 길이 통계/PSSS score 통계 + SKIM-vs-SKEM aggregate
-비교표)까지 포함해 CPU mock 스모크(같은 두 영상, fixed selector는 동일한
-[2,12] 분할 / PSSS selector는 영상마다 다른 [1,3]·[4,6] 분할)와
-`skim_sfa_fixed`의 실제 GPU(Wan 14B) 스모크를 직접 실행·확인했다. 여전히
-없는 것: PSSS `real` 백엔드의 실제 MLLM 실행, side-info 인코더, 학습된 DSA
-adapter, CBR 캘리브레이션 — `docs/lgvsc_psss_skem_readiness.md`에 전부
-명시했다.
+**1A/1B/1C, Wan 체크포인트 이슈 해결, PSSS/SKEM 구현 상세**는
+[archive/etri_implementation_log.md](./archive/etri_implementation_log.md)와
+[lgvsc_1b_worker_readiness.md](./lgvsc_1b_worker_readiness.md) /
+[lgvsc_1c_reproduction_readiness.md](./lgvsc_1c_reproduction_readiness.md) /
+[lgvsc_psss_skem_readiness.md](./lgvsc_psss_skem_readiness.md)에 있다(중복 방지를 위해
+이 문서에서는 상세 로그를 제거했다). 요약: 1A(segment 계약)·1B(실제 GPU, start-only+
+bidirectional)·PSSS/SKEM 코드/CPU 스모크는 완료, 1C는 재현 baseline 준비 완료·실제
+10영상×4모드 실행은 사용자 몫이다.
 
 ### 6.1 검증 설계 (전략이 아니라 "무엇을·무엇과·언제까지")
 
@@ -805,7 +654,8 @@ MVP 임계경로가 아닌 고도화 묶음.
 
 ## 관련 문서
 
-- [etri_strategy.md](./etri_strategy.md) — 핵심 한계 3가지와 해결 방안 (이 문서는 한계 3의 장기 확장 축)
+- [etri_strategy.md](./etri_strategy.md) — 핵심 한계 3가지와 현재 상태 (이 문서는 한계 3의 장기 확장 축)
+- [roadmap.md](./roadmap.md) — 2~4단계(수신단 개선/송신단 지능화/전체 검증) 향후 계획
 - [phase4.md](./phase4.md) — 키프레임/시간적 파이프라인 (4-B)
 - [framework_file_roles.md](./framework_file_roles.md) — 파일별 실행 흐름 지도
 - 출처 — 논문: `reference/paper/LGVSC…/main.tex` · 코드: `src/sgdjscc_lab/` ·
