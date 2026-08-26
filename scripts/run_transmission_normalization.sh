@@ -3,8 +3,8 @@
 #
 # One-command entry point for the full fixed/SKEM x {float32,int16,int8,int6,
 # int4} + AWGN-reference grid via scripts/run_transmission_reduction_eval.py,
-# followed by scripts/summarize_transmission_normalization.py's separate
-# quantization-effect / selector-effect tables. See docs/protocols/
+# The Python driver also runs summarize_transmission_normalization.py before
+# finalizing its manifest, so effect-table hashes cover the complete run. See docs/protocols/
 # transmission_normalization.md for the full design note.
 #
 # Usage:
@@ -43,6 +43,7 @@ PSSS_DTYPE="${PSSS_DTYPE:-fp32}"
 PSSS_THRESHOLD="${PSSS_THRESHOLD:-}"
 PSSS_MAX_SEGMENT_LENGTH="${PSSS_MAX_SEGMENT_LENGTH:-}"
 USE_SCENE_DETECTOR=0
+RETRY_FAILED=0
 
 usage() {
   cat <<'EOF'
@@ -79,6 +80,7 @@ Usage: run_transmission_normalization.sh [options]
   --psss-threshold FLOAT        PSSS/SKEM selection threshold (python default: 0.35).
   --psss-max-segment-length N   PSSS/SKEM max segment length (python default: 16).
   --use-scene-detector          Combine real scene-change detection with SKEM/PSSS.
+  --retry-failed                On resume, retry pairs already in failed_pairs.csv.
   -h, --help                   Show this message.
 EOF
 }
@@ -105,6 +107,7 @@ while [ $# -gt 0 ]; do
     --psss-threshold) PSSS_THRESHOLD="$2"; shift 2 ;;
     --psss-max-segment-length) PSSS_MAX_SEGMENT_LENGTH="$2"; shift 2 ;;
     --use-scene-detector) USE_SCENE_DETECTOR=1; shift ;;
+    --retry-failed) RETRY_FAILED=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -127,6 +130,25 @@ command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "no python interpreter on PATH 
 
 # ── preflight: data / checkpoint / disk / GPU / CUDA / NVML ────────────────
 run_preflight() {
+  log "preflight: exact git commit provenance"
+  local git_check
+  git_check="$("$PYTHON_BIN" - <<'PYEOF'
+import sys
+from pathlib import Path
+sys.path.insert(0, "src")
+from sgdjscc_lab.utils.run_manifest import UNKNOWN, get_git_state
+state = get_git_state(Path.cwd())
+print(f"commit={state['commit']} dirty={state['dirty']} branch={state['branch']}")
+if state["commit"] == UNKNOWN:
+    raise SystemExit(1)
+if state["dirty"] is True:
+    raise SystemExit(2)
+if state["dirty"] == UNKNOWN:
+    print("warning=tracked dirty state unavailable; set SGDJSCC_GIT_DIRTY=false after host verification")
+PYEOF
+)" || fail "git provenance failed: commit is unknown or tracked checkout is dirty. Keep .git mounted/install git, or inject verified SGDJSCC_GIT_COMMIT and SGDJSCC_GIT_DIRTY=false after host verification."
+  log "preflight: $git_check"
+
   log "preflight: dataset root -> $DATASET_ROOT"
   [ -f "$DATASET_ROOT/manifest.csv" ] || fail "dataset manifest not found: $DATASET_ROOT/manifest.csv"
 
@@ -174,14 +196,19 @@ PYEOF
 
   log "preflight: torch CUDA / NVML via python"
   local cuda_check
-  if ! cuda_check="$("$PYTHON_BIN" - <<'PYEOF' 2>&1
+  if ! cuda_check="$(TXNORM_DEVICE="$DEVICE" "$PYTHON_BIN" - <<'PYEOF' 2>&1
+import os
 import torch
 available = torch.cuda.is_available()
 print(f"cuda_available={available}")
 if not available:
     raise SystemExit(1)
 print(f"device_count={torch.cuda.device_count()}")
-print(f"device_name_0={torch.cuda.get_device_name(0)}")
+device = os.environ["TXNORM_DEVICE"]
+index = int(device.split(":", 1)[1]) if ":" in device else 0
+if index < 0 or index >= torch.cuda.device_count():
+    raise SystemExit(f"invalid CUDA device ordinal: {device}")
+print(f"selected_device={device} device_name={torch.cuda.get_device_name(index)}")
 PYEOF
 )"; then
     echo "$cuda_check" >&2
@@ -237,13 +264,11 @@ SWEEP_CMD=("$PYTHON_BIN" scripts/run_transmission_reduction_eval.py
 [ -n "$PSSS_THRESHOLD" ] && SWEEP_CMD+=(--psss-threshold "$PSSS_THRESHOLD")
 [ -n "$PSSS_MAX_SEGMENT_LENGTH" ] && SWEEP_CMD+=(--psss-max-segment-length "$PSSS_MAX_SEGMENT_LENGTH")
 [ "$USE_SCENE_DETECTOR" -eq 1 ] && SWEEP_CMD+=(--use-scene-detector)
-
-SUMMARIZE_CMD=("$PYTHON_BIN" scripts/summarize_transmission_normalization.py --run-root "$OUTPUT_ROOT")
+[ "$RETRY_FAILED" -eq 1 ] && SWEEP_CMD+=(--retry-failed)
 
 if [ "$DRY_RUN" -eq 1 ]; then
   log "dry-run: would create $OUTPUT_ROOT and run:"
   printf '  %q' "${SWEEP_CMD[@]}"; echo
-  printf '  %q' "${SUMMARIZE_CMD[@]}"; echo
   exit 0
 fi
 
@@ -252,21 +277,26 @@ LOG_FILE="$OUTPUT_ROOT/normalization_run.log"
 log "sweep -> $LOG_FILE"
 log "command: ${SWEEP_CMD[*]}"
 
-if ! "${SWEEP_CMD[@]}" 2>&1 | tee -a "$LOG_FILE"; then
+set +e
+"${SWEEP_CMD[@]}" 2>&1 | tee -a "$LOG_FILE"
+sweep_status="${PIPESTATUS[0]}"
+set -e
+if [ "$sweep_status" -eq 3 ]; then
+  fail "sweep completed_with_failures. Final summaries/manifests were written; inspect failed_pairs.csv and resume with --retry-failed."
+elif [ "$sweep_status" -ne 0 ]; then
   fail "run_transmission_reduction_eval.py exited non-zero -- see $LOG_FILE. Re-run this same command (or with --resume $OUTPUT_ROOT) to continue from the last completed (video, config) pair."
-fi
-
-log "summarize -> quantization_effect.csv / selector_effect.csv"
-log "command: ${SUMMARIZE_CMD[*]}"
-if ! "${SUMMARIZE_CMD[@]}" 2>&1 | tee -a "$LOG_FILE"; then
-  fail "summarize_transmission_normalization.py exited non-zero -- see $LOG_FILE"
 fi
 
 log "done. Results in $OUTPUT_ROOT:"
 log "  per_video_metrics.csv / aggregate.csv        -- full quality + bytes/video + bytes/frame"
 log "  failed_pairs.csv                             -- (video, config) aborted at first non-finite value"
-log "  quantization_effect.csv                      -- bit_depth effect, selector held constant"
-log "  selector_effect.csv                          -- fixed-vs-SKEM effect, bit_depth held constant"
+if [ "$DIGITAL_STEP_POLICY" = "fixed_reference" ]; then
+  log "  quantization_effect.csv                      -- bit_depth effect, selector held constant"
+  log "  selector_effect.csv                          -- fixed-vs-SKEM effect, bit_depth held constant"
+else
+  log "  quantization_effect_ablation.csv             -- decoder-step ablation table"
+  log "  selector_effect_ablation.csv                 -- decoder-step ablation selector table"
+fi
 log "  rate_matching.csv                            -- fixed vs SKEM byte closeness at matched keyframe count"
 log "  pareto_frontier.csv / summary.json            -- Pareto candidate under the quality gate"
 log "  run_manifest_initial.json / run_manifest.json -- commit/dirty, argv, resolved config, hashes, env"

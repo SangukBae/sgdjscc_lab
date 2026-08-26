@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -86,16 +87,32 @@ def _is_valid(row: Dict[str, Any]) -> bool:
     ``_row_is_valid`` (this script reads that function's own output columns,
     already carrying these fields in aggregate.csv, so it never re-derives
     them from raw per-frame data)."""
-    n_nan = _to_float(row.get("total_nan_or_inf_frames", 0)) or 0.0
-    if n_nan != 0.0:
+    required = {
+        "total_nan_or_inf_frames", "all_finite_metrics", "valid_frame_ratio",
+        "all_expected_videos_present", "mean_psnr", "mean_ssim",
+        "mean_total_bundle_bytes_per_video",
+    }
+    if not required.issubset(row):
         return False
-    if str(row.get("all_finite_metrics", "True")).strip().lower() == "false":
+    n_nan = _to_float(row.get("total_nan_or_inf_frames"))
+    if n_nan is None or n_nan != 0.0:
         return False
-    vfr = _to_float(row.get("valid_frame_ratio", 1.0))
-    if vfr is not None and vfr != 1.0:
+    if str(row.get("all_finite_metrics", "")).strip().lower() != "true":
         return False
-    if str(row.get("all_expected_videos_present", "True")).strip().lower() == "false":
+    vfr = _to_float(row.get("valid_frame_ratio"))
+    if vfr is None or not math.isfinite(vfr) or not math.isclose(vfr, 1.0):
         return False
+    if str(row.get("all_expected_videos_present", "")).strip().lower() != "true":
+        return False
+    for field in ("mean_psnr", "mean_ssim", "mean_total_bundle_bytes_per_video"):
+        value = _to_float(row.get(field))
+        if value is None or not math.isfinite(value):
+            return False
+    lpips = row.get("mean_lpips", "")
+    if lpips not in (None, ""):
+        value = _to_float(lpips)
+        if value is None or not math.isfinite(value):
+            return False
     return True
 
 
@@ -143,6 +160,7 @@ def build_quantization_effect(aggregate_rows: List[Dict[str, Any]]) -> List[Dict
                 "channel": channel,
                 "bit_depth": row.get("bit_depth", ""),
                 "digital_step_policy": row.get("digital_step_policy", ""),
+                "ablation_label": row.get("ablation_label", ""),
                 "psss_backend_kind": row.get("psss_backend_kind", ""),
                 "reference_channel": reference_channel or "",
                 "n_videos": row.get("n_videos", ""),
@@ -173,7 +191,7 @@ def build_quantization_effect(aggregate_rows: List[Dict[str, Any]]) -> List[Dict
                 if not has_reference:
                     entry["note"] = "no valid float32/int16 reference for this selector"
                 elif not valid_row:
-                    entry["note"] = "excluded: this config has non-finite frames"
+                    entry["note"] = "excluded: config failed the strict validity contract"
                 else:
                     entry["note"] = ""
             entry.setdefault("note", "")
@@ -206,6 +224,8 @@ def build_selector_effect(aggregate_rows: List[Dict[str, Any]]) -> List[Dict[str
             # never presented as "real SKEM" (task requirement) -- fixed has no
             # PSSS backend at all (not_applicable) so only skem's is reported.
             "skem_psss_backend_kind": skem_row.get("psss_backend_kind", ""),
+            "digital_step_policy": skem_row.get("digital_step_policy", ""),
+            "ablation_label": skem_row.get("ablation_label", ""),
             "fixed_mean_psnr": fixed_row.get("mean_psnr", ""),
             "skem_mean_psnr": skem_row.get("mean_psnr", ""),
             "fixed_mean_ssim": fixed_row.get("mean_ssim", ""),
@@ -238,7 +258,7 @@ def build_selector_effect(aggregate_rows: List[Dict[str, Any]]) -> List[Dict[str
                 "psnr_delta_skem_minus_fixed": "", "ssim_delta_skem_minus_fixed": "",
                 "lpips_delta_skem_minus_fixed": "", "byte_ratio_skem_over_fixed": "",
                 "keyframe_count_delta_skem_minus_fixed": "",
-                "note": "excluded: fixed and/or skem side has non-finite frames at this bit_depth",
+                "note": "excluded: fixed and/or skem side failed the strict validity contract",
             })
         out.append(entry)
     return out
@@ -254,21 +274,23 @@ def run(argv=None) -> int:
     quant_rows = build_quantization_effect(aggregate_rows)
     selector_rows = build_selector_effect(aggregate_rows)
 
-    _write_csv(output_root / "quantization_effect.csv", quant_rows)
-    _write_csv(output_root / "selector_effect.csv", selector_rows)
-
     ablation_policies = sorted({
         r.get("digital_step_policy", "") for r in aggregate_rows
         if r.get("digital_step_policy", "") not in ("", "fixed_reference")
     })
     if ablation_policies:
+        quant_name = "quantization_effect_ablation.csv"
+        selector_name = "selector_effect_ablation.csv"
         print(
-            f"WARNING: this run mixes digital_step_policy={ablation_policies} into "
-            "quantization_effect.csv -- those rows are a decoder-step ABLATION, not "
-            "the pure quantization comparison ('fixed_reference' is); do not present "
-            "them as isolating quantization alone.",
+            f"ABLATION: digital_step_policy={ablation_policies}; writing separate "
+            f"{quant_name} / {selector_name}, never the pure-effect filenames.",
             file=sys.stderr,
         )
+    else:
+        quant_name = "quantization_effect.csv"
+        selector_name = "selector_effect.csv"
+    _write_csv(output_root / quant_name, quant_rows)
+    _write_csv(output_root / selector_name, selector_rows)
 
     skem_backend_kinds = sorted({
         r.get("psss_backend_kind", "") for r in aggregate_rows
@@ -281,6 +303,8 @@ def run(argv=None) -> int:
         "n_selector_effect_rows": len(selector_rows),
         "n_invalid_configs": sum(1 for r in quant_rows if not r["valid"]),
         "ablation_policies_present": ablation_policies,
+        "quantization_effect_file": quant_name,
+        "selector_effect_file": selector_name,
         "skem_backend_kinds_present": skem_backend_kinds,
     }
     (output_root / "normalization_effect_summary.json").write_text(

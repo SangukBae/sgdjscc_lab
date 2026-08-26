@@ -140,6 +140,20 @@ def _load_manifest_reader():
     return mod.read_manifest
 
 
+def _run_effect_summarizer(output_root: Path) -> None:
+    """Write effect tables before the final manifest hashes its artifacts."""
+    spec = importlib.util.spec_from_file_location(
+        "_txred_summarize_transmission_normalization",
+        _REPO_ROOT / "scripts" / "summarize_transmission_normalization.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    rc = mod.run(["--run-root", str(output_root)])
+    if rc != 0:
+        raise RuntimeError(f"effect summarizer exited with status {rc}")
+
+
 def _parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Real packet-bundle/quantization/SKEM transmission-reduction sweep.",
@@ -175,10 +189,9 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--fixed-max-gop", type=int, default=16, help="max_gop for the fixed selector.")
     p.add_argument(
         "--match-fixed-keyframes", action="store_true",
-        help="Per video, override the fixed selector's max_gop so its keyframe count "
-             "approximately matches this run's SKEM (--psss-threshold/--psss-max-segment-length) "
-             "selection for that same video -- isolates the quantization effect from the "
-             "selector effect at (approximately) equal keyframe count/rate, instead of comparing "
+        help="Per video, replace the fixed selector with FixedCountKeyframeSelector so its "
+             "keyframe count exactly matches this run's SKEM selection for the same video. "
+             "Rate matching additionally requires the measured bundle-byte tolerance, instead of comparing "
              "fixed's fixed --fixed-max-gop against whatever count SKEM happens to pick.",
     )
     p.add_argument("--skip-keyframe-sweep", action="store_true",
@@ -198,6 +211,11 @@ def _parse_args(argv=None) -> argparse.Namespace:
                          "frame) seed derived from this is set before each frame's reconstruction "
                          "so different configs reconstructing the SAME frame share the same RNG "
                          "state as much as possible (see utils/seed.py::derive_frame_seed).")
+    p.add_argument(
+        "--retry-failed", action="store_true",
+        help="On resume, retry pairs already recorded in failed_pairs.csv. By default failed "
+             "pairs are skipped, preventing duplicate failure rows.",
+    )
     # digital step-matching policy (see pipelines/infer_pipeline.py::DIGITAL_STEP_POLICIES)
     p.add_argument(
         "--digital-step-policy", default="fixed_reference",
@@ -428,7 +446,8 @@ def _run_temporal_pipeline(
 ):
     """Reconstruct *frames* via TemporalPipeline.
 
-    Returns ``(pipeline_result, transmitted_bundles, transmitted_semantic_packets)``
+    Returns ``(pipeline_result, transmitted_bundles, transmitted_semantic_packets,
+    quantization_diagnostics)``
     on success — success means every frame's reconstruction was finite by
     construction (enforced deep inside the forward pass by ``pipelines/
     infer_pipeline.py``'s ``assert_finite`` stage guards).
@@ -456,6 +475,7 @@ def _run_temporal_pipeline(
     frame_index_by_id = {id(frame): i for i, frame in enumerate(frames)}
     transmitted_bundles = {}
     transmitted_semantic_packets = {}
+    quantization_diagnostics: List[Dict[str, Any]] = []
 
     def reconstruct_fn(frame, run_cfg):
         resolved_cfg = run_cfg if run_cfg is not None else cfg
@@ -471,6 +491,7 @@ def _run_temporal_pipeline(
         try:
             if channel_kind == "awgn":
                 return _reconstruct_with_cfg(frame, models, resolved_cfg)
+            frame_quantization_diagnostics: List[Dict[str, Any]] = []
             data, n_elements = encode_frame_to_bundle_bytes(
                 frame, models, resolved_cfg, bit_depth=bit_depth,
                 granularity=granularity, keyframe_index=index,
@@ -478,7 +499,17 @@ def _run_temporal_pipeline(
                 selected_keyframes=selected_keyframes,
                 caption_override=(captions[index] if captions and index < len(captions) else None),
                 semantic_packet=transmitted_semantic_packets.get(index),
+                include_quantization_error_metadata=(digital_step_policy == "quant_nmse"),
+                quantization_diagnostics=frame_quantization_diagnostics,
             )
+            for diagnostic in frame_quantization_diagnostics:
+                quantization_diagnostics.append({
+                    "video": video_key,
+                    "config": config_name,
+                    "frame_index": index,
+                    "wire_metadata": digital_step_policy == "quant_nmse",
+                    **diagnostic,
+                })
             # This dictionary is sender output storage only.  The receiver call
             # below is deliberately passed bytes, models and config — no frame or
             # sender-side tensors can cross the boundary.
@@ -564,7 +595,10 @@ def _run_temporal_pipeline(
             cfg, "video_generator.conditioning_mode", default="start_only"
         )),
     )
-    return pipeline.run(frames), transmitted_bundles, transmitted_semantic_packets
+    return (
+        pipeline.run(frames), transmitted_bundles, transmitted_semantic_packets,
+        quantization_diagnostics,
+    )
 
 
 def _shadow_measure_frame(
@@ -631,7 +665,28 @@ def run(argv=None) -> int:
     # granularity/PSSS settings/eval options) is refused immediately, and the
     # INITIAL manifest/run spec is recorded before any video is processed.
     signature = _build_run_signature(args, cfg, entries, _model_root())
+    if signature.get("git_commit") == rm.UNKNOWN:
+        raise SystemExit(
+            "experiment provenance unavailable: git commit is unknown. Install git in the "
+            "container, keep the checkout's .git metadata mounted, or inject the verified host "
+            "commit with SGDJSCC_GIT_COMMIT before running the sweep."
+        )
+    if signature.get("git_dirty") is True:
+        raise SystemExit(
+            "experiment checkout has tracked/indexed changes relative to HEAD. Commit or restore "
+            "them before running so the recorded commit fully identifies the executed code."
+        )
     _check_resume_signature(output_root, signature)
+
+    per_video_rows_initial: List[Dict[str, Any]] = [
+        _coerce_per_video_row(r) for r in _read_csv_dicts(output_root / "per_video_metrics.csv")
+    ]
+    failed_pairs: List[Dict[str, Any]] = _read_csv_dicts(output_root / "failed_pairs.csv")
+    if not (output_root / "run_manifest_initial.json").exists():
+        _write_manifest(
+            args, output_root, cfg, per_video_rows_initial, failed_pairs,
+            signature, phase="initial",
+        )
 
     from sgdjscc_lab.utils.finite_checks import NonFiniteError
     from sgdjscc_lab.utils.seed import set_global_seed
@@ -645,21 +700,18 @@ def run(argv=None) -> int:
 
     models = _build_models(cfg, device)
 
-    per_video_rows_initial: List[Dict[str, Any]] = [
-        _coerce_per_video_row(r) for r in _read_csv_dicts(output_root / "per_video_metrics.csv")
-    ]
-    if not (output_root / "run_manifest_initial.json").exists():
-        _write_manifest(args, output_root, cfg, per_video_rows_initial, signature, phase="initial")
-
     # Resume: reload any prior (possibly interrupted) run's CSVs from this same
     # output_root so already-completed (video, config) pairs are skipped, not
     # redone. An empty/fresh output_root reloads nothing (normal full run).
     keyframe_rows: List[Dict[str, Any]] = _read_csv_dicts(output_root / "keyframe_selection.csv")
     packet_rows: List[Dict[str, Any]] = _read_csv_dicts(output_root / "packet_components.csv")
     keyframe_sweep_rows: List[Dict[str, Any]] = _read_csv_dicts(output_root / "keyframe_sweep.csv")
-    failed_pairs: List[Dict[str, Any]] = _read_csv_dicts(output_root / "failed_pairs.csv")
+    quantization_diagnostic_rows: List[Dict[str, Any]] = _read_csv_dicts(
+        output_root / "quantization_diagnostics.csv"
+    )
     per_video_rows: List[Dict[str, Any]] = per_video_rows_initial
     done_pairs = {(r["video"], r["config"]) for r in per_video_rows}
+    failed_pair_keys = {(r["video"], r["config"]) for r in failed_pairs}
     done_sweep_videos = {r["video"] for r in keyframe_sweep_rows}
 
     log_path = output_root / "logs" / "run.log"
@@ -672,9 +724,23 @@ def run(argv=None) -> int:
 
         if done_pairs:
             log(f"resume: {len(done_pairs)} (video,config) pair(s) already completed in {output_root} — will skip those")
+        if failed_pair_keys:
+            action = "will retry once" if args.retry_failed else "will skip (use --retry-failed to retry)"
+            log(f"resume: {len(failed_pair_keys)} failed (video,config) pair(s) already recorded — {action}")
 
         for entry in entries:
             video_key = entry["key"]
+            pending_configs = [
+                name for name in configs
+                if (video_key, name) not in done_pairs
+                and (args.retry_failed or (video_key, name) not in failed_pair_keys)
+            ]
+            needs_keyframe_sweep = (
+                not args.skip_keyframe_sweep and video_key not in done_sweep_videos
+            )
+            if not pending_configs and not needs_keyframe_sweep:
+                log(f"resume: [{video_key}] no pending config or keyframe sweep, skipping video load")
+                continue
             work_dir = output_root / "logs" / f"{video_key}_frames"
             log(f"loading frames for {video_key} ...")
             frames, info = _load_frames(entry["processed"], work_dir)
@@ -690,11 +756,21 @@ def run(argv=None) -> int:
             # video/keyframe_extractor.py::FixedCountKeyframeSelector.
             fixed_count_target = None
             keyframe_count_matched_possible = True
-            if args.match_fixed_keyframes:
-                ref_sel = _select_keyframes(
-                    video_key, frames, captions, "skem",
-                    args.psss_threshold, args.psss_max_segment_length, args,
+            selector_results: Dict[str, Any] = {}
+            selector_summaries: Dict[str, KeyframeSelection] = {}
+            requested_selectors = {name.split("_", 1)[0] for name in pending_configs}
+            if "skem" in requested_selectors or args.match_fixed_keyframes:
+                skem_extractor = _build_selector(
+                    "skem", captions, args.psss_threshold,
+                    args.psss_max_segment_length, args,
                 )
+                selector_results["skem"] = skem_extractor.extract(frames)
+                selector_summaries["skem"] = _selection_from_result(
+                    video_key, "skem", args.psss_threshold,
+                    args.psss_max_segment_length, len(frames), selector_results["skem"],
+                )
+            if args.match_fixed_keyframes:
+                ref_sel = selector_summaries["skem"]
                 if 1 <= ref_sel.n_keyframes <= len(frames):
                     fixed_count_target = ref_sel.n_keyframes
                     log(f"  match_fixed_keyframes {video_key}: skem selected {ref_sel.n_keyframes} "
@@ -706,6 +782,18 @@ def run(argv=None) -> int:
                         f"keyframes, which FixedCountKeyframeSelector cannot represent over "
                         f"{len(frames)} frames -- falling back to --fixed-max-gop "
                         f"({args.fixed_max_gop}); keyframe_count_matched=False for this video")
+
+            if "fixed" in requested_selectors:
+                fixed_extractor = _build_selector(
+                    "fixed", captions, args.psss_threshold,
+                    args.psss_max_segment_length, args,
+                    fixed_count_override=fixed_count_target,
+                )
+                selector_results["fixed"] = fixed_extractor.extract(frames)
+                selector_summaries["fixed"] = _selection_from_result(
+                    video_key, "fixed", args.psss_threshold,
+                    args.psss_max_segment_length, len(frames), selector_results["fixed"],
+                )
 
             if not args.skip_keyframe_sweep and video_key not in done_sweep_videos:
                 for th in DEFAULT_PSSS_THRESHOLDS:
@@ -727,22 +815,17 @@ def run(argv=None) -> int:
                 if (video_key, config_name) in done_pairs:
                     log(f"resume: [{video_key}][{config_name}] already completed, skipping")
                     continue
+                if (video_key, config_name) in failed_pair_keys and not args.retry_failed:
+                    log(f"resume: [{video_key}][{config_name}] previously failed, skipping")
+                    continue
                 sel_name, ch_name = config_name.split("_", 1)
                 channel_kind = "awgn" if ch_name == "awgn" else "digital_packet"
                 bit_depth = CHANNEL_CONFIGS[ch_name]["bit_depth"]
 
-                keyframe_extractor = _build_selector(
-                    sel_name, captions, args.psss_threshold, args.psss_max_segment_length, args,
-                    fixed_count_override=(fixed_count_target if sel_name == "fixed" else None),
-                )
-                # PSSS/scene detection may be expensive.  Compute it exactly
-                # once, then give TemporalPipeline a cache wrapper so the same
-                # structure drives both reconstruction and accounting.
-                selection_result = keyframe_extractor.extract(frames)
-                sel = _selection_from_result(
-                    video_key, sel_name, args.psss_threshold,
-                    args.psss_max_segment_length, len(frames), selection_result,
-                )
+                # PSSS/scene detection is computed once per video/selector and
+                # reused across every bit depth/channel configuration.
+                selection_result = selector_results[sel_name]
+                sel = selector_summaries[sel_name]
 
                 class _CachedExtractor:
                     def extract(self, _frames):
@@ -754,7 +837,10 @@ def run(argv=None) -> int:
                 _set_channel(models, channel_kind, bit_depth, args.granularity)
                 start = time.time()
                 try:
-                    result, transmitted_bundles, transmitted_semantic_packets = _run_temporal_pipeline(
+                    (
+                        result, transmitted_bundles, transmitted_semantic_packets,
+                        pair_quantization_diagnostics,
+                    ) = _run_temporal_pipeline(
                         frames, models, cfg, _CachedExtractor(), captions,
                         channel_kind=channel_kind, bit_depth=bit_depth,
                         granularity=args.granularity, video_key=video_key,
@@ -763,6 +849,10 @@ def run(argv=None) -> int:
                         base_seed=int(args.seed),
                     )
                 except NonFiniteError as exc:
+                    failed_pairs = [
+                        r for r in failed_pairs
+                        if (r["video"], r["config"]) != (video_key, config_name)
+                    ]
                     failed_pairs.append({
                         "video": video_key, "config": config_name,
                         "failure_stage": exc.stage, "frame_index": exc.context.get("frame_index", ""),
@@ -774,6 +864,16 @@ def run(argv=None) -> int:
                         "— this pair produces no per_video_metrics.csv row; moving to next pair")
                     _write_csv(output_root / "failed_pairs.csv", failed_pairs)
                     continue
+                # A successful explicit retry replaces (rather than merely
+                # coexisting with) the prior failure record. Keep that record
+                # until success so a process killed mid-retry remains safely
+                # resumable as a known failed pair.
+                failed_pairs = [
+                    r for r in failed_pairs
+                    if (r["video"], r["config"]) != (video_key, config_name)
+                ]
+                _write_csv(output_root / "failed_pairs.csv", failed_pairs)
+                quantization_diagnostic_rows.extend(pair_quantization_diagnostics)
                 video_elapsed = time.time() - start
                 records = sorted(result["records"], key=lambda r: r.index)
 
@@ -932,6 +1032,9 @@ def run(argv=None) -> int:
                     "channel": ch_name, "bit_depth": bit_depth if bit_depth is not None else "",
                     "psss_backend_kind": sel.psss_backend_kind,
                     "digital_step_policy": (args.digital_step_policy if channel_kind == "digital_packet" else ""),
+                    "ablation_label": (
+                        args.ablation_label if channel_kind == "digital_packet" else ""
+                    ),
                     "n_frames_total": len(frames), "n_transmitting_frames": len(transmitting),
                     "n_keyframes_selected": n_kf_in_gop, "n_nan_or_inf_frames": 0,
                     "fixed_selector_kind": fixed_selector_kind,
@@ -972,10 +1075,15 @@ def run(argv=None) -> int:
                 _write_csv(output_root / "per_video_metrics.csv", per_video_rows)
                 _write_csv(output_root / "keyframe_selection.csv", keyframe_rows)
                 _write_csv(output_root / "packet_components.csv", packet_rows)
+                _write_csv(
+                    output_root / "quantization_diagnostics.csv",
+                    quantization_diagnostic_rows,
+                )
 
     _write_csv(output_root / "per_video_metrics.csv", per_video_rows)
     _write_csv(output_root / "keyframe_selection.csv", keyframe_rows)
     _write_csv(output_root / "packet_components.csv", packet_rows)
+    _write_csv(output_root / "quantization_diagnostics.csv", quantization_diagnostic_rows)
     _write_csv(output_root / "keyframe_sweep.csv", keyframe_sweep_rows)
     _write_csv(output_root / "failed_pairs.csv", failed_pairs)
     aggregate_rows = _aggregate(per_video_rows, expected_video_keys=expected_video_keys)
@@ -993,9 +1101,17 @@ def run(argv=None) -> int:
     _write_csv(output_root / "source_size_report.csv", source_size_rows)
 
     _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, baseline_info, failed_pairs)
-    _write_manifest(args, output_root, cfg, per_video_rows, signature, phase="final")
+    _run_effect_summarizer(output_root)
+    _write_manifest(
+        args, output_root, cfg, per_video_rows, failed_pairs,
+        signature, phase="final",
+    )
     if failed_pairs:
-        print(f"done with {len(failed_pairs)} failed (video, config) pair(s) -- see failed_pairs.csv")
+        print(
+            f"completed_with_failures: {len(failed_pairs)} failed (video, config) pair(s) "
+            "-- see failed_pairs.csv; use --retry-failed with the same output root to retry"
+        )
+        return 3
     return 0
 
 
@@ -1039,12 +1155,22 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
         e["key"]: int(e["row"]["n_frames"]) if "n_frames" in e.get("row", {}) else None
         for e in entries
     }
+    dataset_artifact_sha256: Dict[str, Dict[str, str]] = {}
+    for entry in entries:
+        item_hashes: Dict[str, str] = {}
+        for field in ("processed", "captions", "gt"):
+            value = entry.get(field)
+            if value is not None and Path(value).is_file():
+                item_hashes[field] = rm.sha256_file(value)
+        dataset_artifact_sha256[entry["key"]] = item_hashes
 
     return {
         "git_commit": git_state["commit"],
         "git_dirty": git_state["dirty"],
+        "git_branch": git_state["branch"],
         "dataset_root": str(args.dataset_root),
         "dataset_manifest_sha256": dataset_hash,
+        "dataset_artifact_sha256": dataset_artifact_sha256,
         "resolved_config_sha256": config_hash,
         "checkpoint_sha256": _checkpoint_hashes(model_root),
         "seed": args.seed,
@@ -1064,6 +1190,7 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
         },
         "configs": sorted(c for c in args.configs.split(",") if c),
         "digital_step_policy": args.digital_step_policy,
+        "ablation_label": args.ablation_label,
         "match_fixed_keyframes": bool(args.match_fixed_keyframes),
         "fixed_max_gop": args.fixed_max_gop,
     }
@@ -1102,7 +1229,7 @@ def _check_resume_signature(output_root: Path, signature: Dict[str, Any]) -> Non
 
 def _write_manifest(
     args, output_root: Path, cfg, per_video_rows: List[Dict[str, Any]],
-    signature: Dict[str, Any], phase: str,
+    failed_pairs: List[Dict[str, Any]], signature: Dict[str, Any], phase: str,
 ) -> None:
     """Reproducibility manifest via utils/run_manifest.py (hard dependency —
     see the module-level ``from sgdjscc_lab.utils import run_manifest as rm``
@@ -1126,7 +1253,19 @@ def _write_manifest(
     except Exception:  # noqa: BLE001 — manifest generation must never crash a completed sweep
         resolved_config = None
 
-    extra: Dict[str, Any] = {"configs_run": args.configs.split(","), "phase": phase, "run_signature": signature}
+    failure_stages: Dict[str, int] = {}
+    for row in failed_pairs:
+        stage = str(row.get("failure_stage") or "unknown")
+        failure_stages[stage] = failure_stages.get(stage, 0) + 1
+    run_status = "completed_with_failures" if failed_pairs else (
+        "completed" if phase == "final" else "running"
+    )
+    extra: Dict[str, Any] = {
+        "configs_run": args.configs.split(","),
+        "phase": phase,
+        "run_status": run_status,
+        "run_signature": signature,
+    }
     if phase == "final":
         extra["output_artifact_sha256"] = _hash_output_artifacts(output_root)
 
@@ -1149,8 +1288,16 @@ def _write_manifest(
             "bitdepth_proxy (pipelines/infer_pipeline.py::_digital_quant_snr_db)",
         ],
         nan_or_failure_counts={
-            "total_nan_or_inf_frames": sum(int(r.get("n_nan_or_inf_frames", 0)) for r in per_video_rows),
+            "total_nan_or_inf_frames": (
+                sum(int(r.get("n_nan_or_inf_frames", 0)) for r in per_video_rows)
+                + len(failed_pairs)
+            ),
+            "n_failed_pairs": len(failed_pairs),
+            "failed_pair_nan_values": sum(int(float(r.get("n_nan") or 0)) for r in failed_pairs),
+            "failed_pair_inf_values": sum(int(float(r.get("n_inf") or 0)) for r in failed_pairs),
+            "failure_stages": failure_stages,
         },
+        repo_root=_REPO_ROOT,
         extra=extra,
     )
     rm.write_run_manifest(output_root / f"run_manifest_{phase}.json", manifest)
@@ -1164,6 +1311,9 @@ _ARTIFACT_HASH_FILES = (
     "aggregate.csv", "per_video_metrics.csv", "pareto_frontier.csv",
     "keyframe_selection.csv", "packet_components.csv", "keyframe_sweep.csv",
     "rate_matching.csv", "failed_pairs.csv", "source_size_report.csv",
+    "quantization_diagnostics.csv", "quantization_effect.csv",
+    "selector_effect.csv", "quantization_effect_ablation.csv",
+    "selector_effect_ablation.csv", "normalization_effect_summary.json",
     "summary.json", "README.md",
 )
 
@@ -1315,6 +1465,7 @@ def _aggregate(
             "bit_depth": rows[0]["bit_depth"],
             "psss_backend_kind": rows[0]["psss_backend_kind"],
             "digital_step_policy": rows[0].get("digital_step_policy", ""),
+            "ablation_label": rows[0].get("ablation_label", ""),
             "n_videos": n,
             "video_keys": ",".join(sorted(video_keys)),
             "n_videos_expected": (len(expected_video_keys) if expected_video_keys is not None else n),
@@ -1337,6 +1488,7 @@ def _aggregate(
             "mean_n_keyframes_selected": sum(r.get("n_keyframes_selected", 0) for r in rows) / n,
             "keyframe_count_matched": (all(bool(v) for v in kfcm_applicable) if kfcm_applicable else ""),
             "analog_no_wire_bytes": rows[0]["analog_no_wire_bytes"],
+            "visual_transport_complete": rows[0].get("visual_transport_complete", False),
             "total_nan_or_inf_frames": sum(r.get("n_nan_or_inf_frames", 0) for r in rows),
             "nonfinite_stages": ",".join(sorted({
                 s for r in rows for s in str(r.get("nonfinite_stages", "")).split(",") if s
@@ -1348,7 +1500,7 @@ def _aggregate(
 def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
     """Validity gate (task requirement, ALL must hold for baseline OR candidate):
     zero non-finite frames, PSNR/SSIM/LPIPS all finite, valid_frame_ratio == 1
-    (transmitting frames only — see _aggregate), every expected video present.
+    (all reconstructed video frames — see _aggregate), every expected video present.
     A candidate additionally needs its video_keys to equal the BASELINE's
     video_keys (never compared across mismatched video sets)."""
     by_config = {r["config"]: r for r in aggregate_rows}
@@ -1379,8 +1531,14 @@ def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
 
     baseline_video_keys = set(str(baseline.get("video_keys", "")).split(",")) if baseline.get("video_keys") else set()
 
-    candidates = [r for r in aggregate_rows
-                  if r["config"] != baseline_config and r["mean_total_bundle_bytes_per_video"] != ""]
+    candidates = [
+        r for r in aggregate_rows
+        if r["config"] != baseline_config
+        and r["mean_total_bundle_bytes_per_video"] != ""
+        and r.get("channel") != "awgn"
+        and not bool(r.get("analog_no_wire_bytes", False))
+        and bool(r.get("visual_transport_complete", False))
+    ]
     in_budget = []
     for r in candidates:
         psnr_drop = baseline["mean_psnr"] - r["mean_psnr"]
@@ -1452,7 +1610,10 @@ def _compute_rate_matching(per_video_rows: List[Dict[str, Any]]) -> List[Dict[st
         skem_bytes = skem_row["total_bundle_bytes"]
         larger = max(fixed_bytes, skem_bytes)
         byte_diff_ratio = (abs(fixed_bytes - skem_bytes) / larger) if larger > 0 else 0.0
-        keyframe_count_matched = fixed_row.get("keyframe_count_matched") is True
+        keyframe_count_matched = (
+            int(fixed_row["n_keyframes_selected"])
+            == int(skem_row["n_keyframes_selected"])
+        )
         rows.append({
             "video": video, "channel": channel,
             "fixed_n_keyframes": fixed_row["n_keyframes_selected"],
@@ -1493,6 +1654,7 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
         "configs_run": args.configs.split(","),
         "n_videos": len({r["video"] for r in per_video_rows}),
         "n_failed_pairs": len(failed_pairs),
+        "run_status": "completed_with_failures" if failed_pairs else "completed",
         "quality_gate": QUALITY_GATE,
         "pareto_baseline": baseline_info,
         "pareto_selected": next((r for r in pareto_rows if r.get("selected_as_smallest_in_budget")), None),
@@ -1515,7 +1677,7 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
     })
     ablation_note = (
         f"- **ablation 실행**: `--digital-step-policy {args.digital_step_policy}` "
-        f"(label: `{args.ablation_label}`) — quantization_effect.csv 비교에는 포함하지 말 것"
+        f"(label: `{args.ablation_label}`) — `quantization_effect_ablation.csv`로 분리 기록"
         if args.digital_step_policy != "fixed_reference" else
         "- 양자화 비교 policy: `fixed_reference` (모든 bit_depth를 동일 step으로 디코딩 — "
         "decoder step 변화가 섞이지 않은 순수 양자화 효과)"
@@ -1540,7 +1702,7 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
 - run 상태
   - 완료 (video, config) 쌍: {len(per_video_rows)}개
   - 실패 (video, config) 쌍: {len(failed_pairs)}개 (`failed_pairs.csv`) — 첫 non-finite 발생 즉시
-    해당 pair 중단, 다음 pair로 진행(NaN placeholder로 계속 처리하지 않음)
+    해당 pair 중단, 다음 pair로 진행. 재개 시 기본 skip, `--retry-failed`일 때만 재시도
   - digital step 정책: `{args.digital_step_policy}`
 {ablation_note}
   - keyframe 수 정합: `{"ON — FixedCountKeyframeSelector로 fixed를 SKEM과 정확히 동일 개수로 강제" if args.match_fixed_keyframes else "OFF"}`
@@ -1557,6 +1719,8 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
   - `keyframe_selection.csv` — 프레임별 decision, 구조화된 `force_reason`,
     5필드 회계 스키마, `psss_backend_kind`(`mock`|`proxy`|`real`)
   - `packet_components.csv` — 실제 `.sgbundle` byte의 정확한 구성 breakdown
+  - `quantization_diagnostics.csv` — packet별 실측 NMSE/SNR 분석값. `quant_nmse`에서만
+    receiver 입력 metadata로 전송되며, 다른 정책에서는 bundle bytes에 포함되지 않음
   - `packets/<video>/<config>/frame_NNNNN.sgbundle` — 실제 직렬화 전송 bundle
   - `recon_videos/<video>/<config>/recon.mp4` + `frame_*.png` — 전체 복원 영상
   - `keyframe_sweep.csv` — PSSS threshold x max_segment_length grid (선택만, 복원 없음)
@@ -1564,7 +1728,8 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
     SSIM 저하 <= {QUALITY_GATE['ssim_drop']}, LPIPS 상승 <= {QUALITY_GATE['lpips_rise']}) 통과 config 중
     bytes/video 최소. 유효 조건: non-finite 0·PSNR/SSIM/LPIPS 전부 finite·
     valid_frame_ratio==1·기대 영상 전부 완료·baseline과 영상 집합 동일. 미달이어도
-    가장 가까운 후보를 숨기지 않고 나열
+    가장 가까운 후보를 숨기지 않고 나열. AWGN 행은 visual waveform bytes가 없으므로
+    Pareto 후보에서 제외하고 참고 기준으로만 유지
   - `run_manifest_initial.json` / `run_manifest_final.json` (= `run_manifest.json`) /
     `run_signature.json` — 재현성(commit·dataset/config/checkpoint hash·seed·환경) 및
     resume 안전성 서명. `run_manifest.json`에 핵심 artifact SHA-256 포함

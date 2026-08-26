@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: cdcb7b9
+source_commit: 27245df
 supersedes:
 ---
 
@@ -58,8 +58,11 @@ supersedes:
 - `fixed_reference`가 아닌 정책으로 실행하려면 `--ablation-label`이 **필수**(양자화
   비교(`quantization_effect.csv`)에 decoder-step ablation이 섞여 들어가지 않도록 강제)
 - `quant_nmse`의 실측값 계산: 송신단이 `quantize_tensor()` 직후 같은 텐서를
-  `dequantize_tensor()`로 복원해 `10*log10(signal_power/mse)`를 계산하고, 그 값을
-  packet의 JSON metadata에 실어 전송(byte도 실제로 카운트됨) —
+  `dequantize_tensor()`로 복원해 `10*log10(signal_power/mse)`를 계산
+  - `quant_nmse`: packet JSON metadata에 실어 전송하고 byte에 포함
+  - `fixed_reference`/`bitdepth_proxy`: packet에서는 제외하고
+    `quantization_diagnostics.csv`에만 기록
+  - 구현:
   `transmission/packet_bundle.py::measure_quantization_error`
 
 ## receiver가 packet metadata를 쓴다 (전역 channel 객체 아님)
@@ -104,9 +107,14 @@ supersedes:
   - 최초 실행 시 생성
   - `--resume` 시 현재 조건과 다르면 **즉시 거부**하고 차이를 출력(다른 run이 같은
     디렉터리에 섞여 들어가는 것을 방지)
+  - commit이 `unknown`이면 실험 시작을 거부
+  - 컨테이너에 `git`이 없어도 `.git/HEAD`와 refs에서 commit을 직접 읽음
+  - `.git`도 없으면 검증한 host 값을 `SGDJSCC_GIT_COMMIT`으로 주입
 - `run_manifest_initial.json`: 영상 처리 시작 **전**에 기록(의도한 run spec)
-- `run_manifest_final.json` (= `run_manifest.json`): 모든 산출물(CSV/JSON/README) 기록
-  **후**에 기록, `extra.output_artifact_sha256`에 핵심 artifact SHA-256 포함
+- `run_manifest_final.json` (= `run_manifest.json`): effect summarizer까지 끝나 모든
+  산출물(CSV/JSON/README)이 기록된 **후** 생성, `extra.output_artifact_sha256`에
+  `quantization_effect*`/`selector_effect*`/`normalization_effect_summary.json`을 포함한
+  핵심 artifact SHA-256 저장
   (`_hash_output_artifacts` — 실제 존재하는 파일만, 없는 파일은 절대 조작하지 않음)
 
 ## fixed/SKEM keyframe 수 정확히 일치 (`--match-fixed-keyframes`)
@@ -121,8 +129,11 @@ supersedes:
   bytes/frame·byte 차이 비율(`byte_diff_ratio`)을 기록. **byte 차이가
   `RATE_MATCH_BYTE_TOLERANCE`(10%) 이내일 때만** `rate_matched=true` — keyframe 수만
   맞다고 "rate-matched"라 부르지 않음
-- 양자화 효과(`quantization_effect.csv`)와 selector 효과(`selector_effect.csv`)는 여전히
-  별도 표로 유지(각각 selector 고정/bit_depth 고정)
+- 효과 표
+  - `fixed_reference`: `quantization_effect.csv` / `selector_effect.csv`
+  - decoder-step ablation: `quantization_effect_ablation.csv` /
+    `selector_effect_ablation.csv`
+  - `ablation_label`은 per-video·aggregate·effect 표·run signature에 보존
 
 ## bytes/video vs bytes/frame — 단위 혼동 금지
 
@@ -137,10 +148,16 @@ supersedes:
 
 1. non-finite frame 0건 (`total_nan_or_inf_frames == 0`)
 2. PSNR·SSIM·LPIPS 전부 finite (`all_finite_metrics`)
-3. `valid_frame_ratio == 1`(전송 프레임 기준)
+3. `valid_frame_ratio == 1`(reuse/generate를 포함한 전체 복원 프레임 기준)
 4. 기대 영상이 모두 완료됨 (`all_expected_videos_present`)
 5. (baseline 대비 후보만) 후보의 영상 집합이 baseline의 영상 집합과 **동일**
    (`video_set_mismatch_vs_baseline`)
+
+- AWGN
+  - visual waveform의 wire byte가 없으므로 Pareto 후보에서 항상 제외
+  - 별도 품질 참고 행으로만 유지
+- 요약기
+  - 필수 컬럼 누락·파싱 실패·NaN 품질값을 모두 invalid로 처리(fail-closed)
 
 미달이면 baseline·Pareto·effect delta에서 제외하되 실패 이유(`quality_gate_failure_reason`)를
 남기고, 가장 가까운 후보라도 숨기지 않고 나열한다.
@@ -162,16 +179,20 @@ bash scripts/run_transmission_normalization.sh
 bash scripts/run_transmission_normalization.sh --preflight-only
 bash scripts/run_transmission_normalization.sh --dry-run
 bash scripts/run_transmission_normalization.sh --resume outputs/transmission_normalization_<timestamp>
+bash scripts/run_transmission_normalization.sh --resume outputs/transmission_normalization_<timestamp> --retry-failed
 bash scripts/run_transmission_normalization.sh --digital-step-policy bitdepth_proxy --ablation-label bp_ablation_v1
 ```
 
-- preflight (항상 먼저 실행, 실패 시 즉시 종료): 데이터 manifest, checkpoint 4종, 디스크
-  여유, `nvidia-smi`, `torch.cuda.is_available()`(NVML 오류는 별도로 명확히 보고, 컨테이너
-  재생성 유도하지 않음)
+- preflight (항상 먼저 실행, 실패 시 즉시 종료): 정확한 Git commit, 데이터 manifest,
+  checkpoint 4종, 디스크 여유, 선택한 CUDA ordinal, `nvidia-smi`,
+  `torch.cuda.is_available()`(NVML 오류는 별도로 명확히 보고)
 - 기본 config grid (11개): `fixed_awgn, {fixed,skem}_{float32,int16,int8,int6,int4}`
 - resume: python 드라이버가 `run_signature.json`으로 조건 일치를 확인하고, 완료된
   (video, config)는 건너뛰며, 매 pair마다 CSV를 원자적(`os.replace`)으로 즉시 갱신 —
   중단돼도 마지막 완료 pair부터 이어서 실행됨
+  - 실패 pair도 기본적으로 skip해 중복 행을 만들지 않음
+  - `--retry-failed`를 지정할 때만 기존 실패 행을 제거하고 재시도
+  - 실패가 남으면 `completed_with_failures`와 비정상 종료 코드 3을 기록·반환
 
 ## 알려진 한계
 

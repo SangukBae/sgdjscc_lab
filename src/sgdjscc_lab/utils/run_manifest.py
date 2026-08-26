@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import platform
+import re
 import shlex
 import subprocess
 import sys
@@ -65,6 +67,91 @@ def _run_git(args: list, cwd: Path) -> Optional[str]:
     return out.stdout.strip()
 
 
+_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{40,64}$")
+
+
+def _git_dir(root: Path) -> Optional[Path]:
+    """Resolve a normal or linked-worktree ``.git`` directory without git."""
+    marker = root / ".git"
+    if marker.is_dir():
+        return marker
+    if marker.is_file():
+        try:
+            line = marker.read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
+        if line.startswith("gitdir:"):
+            path = Path(line.split(":", 1)[1].strip())
+            return path if path.is_absolute() else (root / path).resolve()
+    return None
+
+
+def _read_git_metadata(root: Path) -> Dict[str, Any]:
+    """Read HEAD/refs directly when the container has no ``git`` binary.
+
+    This deliberately leaves ``dirty`` unknown: determining worktree/index
+    differences correctly requires git.  The commit and branch, however, are
+    exact checkout metadata and are sufficient to reject a resume after a
+    code-version change.
+    """
+    git_dir = _git_dir(root)
+    if git_dir is None:
+        return {"commit": UNKNOWN, "dirty": UNKNOWN, "branch": UNKNOWN}
+    try:
+        head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+    except OSError:
+        return {"commit": UNKNOWN, "dirty": UNKNOWN, "branch": UNKNOWN}
+
+    branch: Any = UNKNOWN
+    commit: Any = UNKNOWN
+    if head.startswith("ref:"):
+        ref = head.split(":", 1)[1].strip()
+        branch = ref.removeprefix("refs/heads/") if ref.startswith("refs/heads/") else ref
+        ref_path = git_dir / ref
+        try:
+            value = ref_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            value = ""
+            try:
+                for line in (git_dir / "packed-refs").read_text(encoding="utf-8").splitlines():
+                    if not line.startswith(("#", "^")):
+                        candidate, _, candidate_ref = line.partition(" ")
+                        if candidate_ref == ref:
+                            value = candidate
+                            break
+            except OSError:
+                pass
+        if _COMMIT_RE.fullmatch(value):
+            commit = value.lower()
+    elif _COMMIT_RE.fullmatch(head):
+        commit = head.lower()
+        branch = "HEAD"
+    return {"commit": commit, "dirty": UNKNOWN, "branch": branch}
+
+
+def _git_env_override() -> Optional[Dict[str, Any]]:
+    """Return explicitly injected host provenance, if provided and valid."""
+    commit = os.environ.get("SGDJSCC_GIT_COMMIT")
+    if commit is None:
+        return None
+    if not _COMMIT_RE.fullmatch(commit.strip()):
+        raise ValueError("SGDJSCC_GIT_COMMIT must be a 40-64 character hexadecimal commit")
+    dirty_text = os.environ.get("SGDJSCC_GIT_DIRTY")
+    if dirty_text is None:
+        dirty: Any = UNKNOWN
+    elif dirty_text.strip().lower() in {"1", "true", "yes"}:
+        dirty = True
+    elif dirty_text.strip().lower() in {"0", "false", "no"}:
+        dirty = False
+    else:
+        raise ValueError("SGDJSCC_GIT_DIRTY must be true/false (or 1/0) when set")
+    return {
+        "commit": commit.strip().lower(),
+        "dirty": dirty,
+        "branch": os.environ.get("SGDJSCC_GIT_BRANCH", UNKNOWN),
+    }
+
+
 def get_git_state(repo_root: Optional[Union[str, Path]] = None) -> Dict[str, Any]:
     """Return ``{"commit", "dirty", "branch"}`` for the repo at `repo_root`.
 
@@ -75,15 +162,27 @@ def get_git_state(repo_root: Optional[Union[str, Path]] = None) -> Dict[str, Any
     if not root.exists():
         return {"commit": UNKNOWN, "dirty": UNKNOWN, "branch": UNKNOWN}
 
+    override = _git_env_override()
+    if override is not None:
+        return override
+
     commit = _run_git(["rev-parse", "HEAD"], root)
     branch = _run_git(["rev-parse", "--abbrev-ref", "HEAD"], root)
-    status = _run_git(["status", "--porcelain"], root)
+    # Untracked reports/assets cannot change the committed Python checkout and
+    # are intentionally excluded. ``dirty`` means tracked/indexed code or
+    # configuration differs from HEAD.
+    status = _run_git(["status", "--porcelain", "--untracked-files=no"], root)
 
-    return {
+    state = {
         "commit": commit if commit else UNKNOWN,
         "dirty": (len(status) > 0) if status is not None else UNKNOWN,
         "branch": branch if branch else UNKNOWN,
     }
+    if state["commit"] == UNKNOWN:
+        fallback = _read_git_metadata(root)
+        state["commit"] = fallback["commit"]
+        state["branch"] = fallback["branch"]
+    return state
 
 
 def get_python_env() -> Dict[str, Any]:

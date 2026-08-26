@@ -1,0 +1,4 @@
+# Immutable experiment CSVs preserve the exact source artifact bytes (including
+# their original CRLF endings). Treat them as binary so Git does not normalize
+# or report the carriage return as trailing whitespace.
+results/**/*.csv -text

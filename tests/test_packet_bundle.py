@@ -36,7 +36,7 @@ from sgdjscc_lab.transmission.packet_bundle import (
 from sgdjscc_lab.transmission.quantization import quantize_tensor
 
 
-def _make_digital_bundle(keyframe_index=3, bit_depth=8):
+def _make_digital_bundle(keyframe_index=3, bit_depth=8, include_quant_metadata=True):
     torch.manual_seed(0)
     visual = torch.randn(2, 16, 16, 16)   # 2 patches
     edge = torch.rand(2, 11, 128, 128)
@@ -52,6 +52,7 @@ def _make_digital_bundle(keyframe_index=3, bit_depth=8):
         edge_bit_depth=8,
         keyframe_index=keyframe_index,
         manifest={"video": "01_person_walk", "selector": "skem"},
+        include_quantization_error_metadata=include_quant_metadata,
     ), visual, edge
 
 
@@ -165,6 +166,23 @@ class TestQuantizationMetadataRoundTrip:
         visual_item = bundle.get("visual_patch_000")
         assert visual_item is not None
         assert visual_item.byte_len > 0
+
+    def test_unused_quant_metadata_is_omitted_but_diagnostics_are_preserved(self):
+        diagnostics = []
+        torch.manual_seed(0)
+        visual = torch.randn(1, 16, 16, 16)
+        bundle = build_frame_bundle(
+            visual_latent_patches=visual, visual_is_analog=False,
+            visual_bit_depth=8, visual_granularity="per_tensor",
+            visual_channel_dim=1, visual_channel_symbols=visual.numel(),
+            caption="x", edge_tensor=None, edge_bit_depth=8,
+            keyframe_index=0, manifest={},
+            include_quantization_error_metadata=False,
+            quantization_diagnostics=diagnostics,
+        )
+        decoded = decode_frame_bundle(serialize_bundle(bundle))
+        assert "quant_snr_db" not in decoded["visual_metadata"][0]
+        assert diagnostics[0]["quant_snr_db"] is not None
 
 
 class TestExactByteAccounting:

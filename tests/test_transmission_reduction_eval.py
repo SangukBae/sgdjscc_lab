@@ -69,6 +69,10 @@ class TestArgParsing:
         assert "fixed_float32" in mod.ALL_CONFIGS
         assert "skem_int16" in mod.ALL_CONFIGS
 
+    def test_retry_failed_is_explicit_opt_in(self):
+        assert mod._parse_args(["--output-root", "/tmp/x"]).retry_failed is False
+        assert mod._parse_args(["--output-root", "/tmp/x", "--retry-failed"]).retry_failed is True
+
 
 def _pv_row(**overrides):
     """A complete, valid per_video_metrics.csv-shaped row (all fields
@@ -135,6 +139,15 @@ class TestAggregateAndPareto:
         assert baseline_info["baseline_config"] == "fixed_int16"
         assert baseline_info["baseline_is_analog"] is False
         assert not any(r["config"] == "fixed_awgn" for r in pareto)  # AWGN never a Pareto candidate here
+
+    def test_awgn_with_side_information_bytes_is_still_not_a_pareto_candidate(self):
+        rows = self._rows()
+        awgn = rows[0]
+        awgn["total_bundle_bytes"] = 1
+        awgn["total_bundle_bytes_per_frame"] = 1 / 12
+        awgn["visual_transport_complete"] = False
+        pareto, _ = mod._pareto_frontier(mod._aggregate(rows))
+        assert not any(r["channel"] == "awgn" for r in pareto)
 
     def test_pareto_never_falls_back_to_awgn_when_no_digital_baseline_present(self):
         # float32/int16 (or a "정상" i.e. zero-NaN version of either) are the
@@ -470,6 +483,7 @@ class TestWriteManifest:
         mod._write_manifest(
             args, output_root, cfg,
             per_video_rows=[_pv_row(n_nan_or_inf_frames=0)],
+            failed_pairs=[],
             signature=signature, phase="final",
         )
 
@@ -485,6 +499,26 @@ class TestWriteManifest:
         assert manifest["extra"]["run_signature"] == signature
         assert "output_artifact_sha256" in manifest["extra"]
 
+    def test_manifest_counts_failed_pairs_and_stages(self, tmp_path, monkeypatch):
+        from omegaconf import OmegaConf
+
+        args = _default_args(dataset_root=str(tmp_path), seed=1)
+        output_root = tmp_path / "out"
+        output_root.mkdir()
+        monkeypatch.setattr(sys, "argv", ["prog", "--output-root", str(output_root)])
+        mod._write_manifest(
+            args, output_root, OmegaConf.create({"snr_db": 10}), [],
+            [{"failure_stage": "diffusion_latent", "n_nan": "2", "n_inf": "1"}],
+            {}, phase="final",
+        )
+        manifest = json.loads((output_root / "run_manifest.json").read_text())
+        counts = manifest["nan_or_failure_counts"]
+        assert counts["total_nan_or_inf_frames"] == 1
+        assert counts["n_failed_pairs"] == 1
+        assert counts["failed_pair_nan_values"] == 2
+        assert counts["failure_stages"] == {"diffusion_latent": 1}
+        assert manifest["extra"]["run_status"] == "completed_with_failures"
+
     def test_initial_phase_has_no_artifact_hashes(self, tmp_path, monkeypatch):
         from omegaconf import OmegaConf
 
@@ -494,7 +528,10 @@ class TestWriteManifest:
         output_root.mkdir()
         monkeypatch.setattr(sys, "argv", ["prog", "--output-root", str(output_root)])
 
-        mod._write_manifest(args, output_root, cfg, per_video_rows=[], signature={}, phase="initial")
+        mod._write_manifest(
+            args, output_root, cfg, per_video_rows=[], failed_pairs=[],
+            signature={}, phase="initial",
+        )
         manifest = json.loads((output_root / "run_manifest_initial.json").read_text(encoding="utf-8"))
         assert "output_artifact_sha256" not in manifest["extra"]
         assert not (output_root / "run_manifest.json").exists()  # only the final phase writes this name
@@ -528,6 +565,7 @@ class TestRunSignatureAndResumeSafety:
         assert sig["configs"] == ["fixed_int8", "skem_int8"]
         assert sig["video_keys"] == ["01_person_walk", "02_car_pass"]
         assert sig["video_frame_counts"] == {"01_person_walk": 100, "02_car_pass": 100}
+        assert "ablation_label" in sig
 
     def test_check_resume_signature_writes_on_first_run(self, tmp_path):
         output_root = tmp_path / "out"
@@ -568,6 +606,18 @@ class TestHashOutputArtifacts:
         (tmp_path / "summary.json").write_text("{}", encoding="utf-8")
         hashes = mod._hash_output_artifacts(tmp_path)
         assert len(hashes["summary.json"]) == 64
+
+    def test_hashes_post_summarizer_artifacts(self, tmp_path):
+        for name in (
+            "quantization_effect.csv", "selector_effect.csv",
+            "normalization_effect_summary.json",
+        ):
+            (tmp_path / name).write_text("x", encoding="utf-8")
+        hashes = mod._hash_output_artifacts(tmp_path)
+        assert set(hashes) == {
+            "quantization_effect.csv", "selector_effect.csv",
+            "normalization_effect_summary.json",
+        }
 
 
 class TestRateMatching:
@@ -611,6 +661,16 @@ class TestRateMatching:
         ]
         out = mod._compute_rate_matching(rows)
         assert out[0]["rate_matched"] is False
+
+    def test_actual_equal_counts_override_stale_fixed_boolean(self):
+        rows = [
+            _pv_row(video="v1", config="fixed_int8", selector="fixed", channel="int8",
+                    total_bundle_bytes=10000, n_keyframes_selected=5,
+                    keyframe_count_matched=False),
+            _pv_row(video="v1", config="skem_int8", selector="skem", channel="int8",
+                    total_bundle_bytes=10100, n_keyframes_selected=5),
+        ]
+        assert mod._compute_rate_matching(rows)[0]["rate_matched"] is True
 
     def test_awgn_channel_excluded(self):
         rows = [

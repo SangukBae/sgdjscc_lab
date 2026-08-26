@@ -234,12 +234,10 @@ def measure_quantization_error(original, q: QuantizedTensor) -> Dict[str, Any]:
     (labeled ``"bitdepth_proxy"`` there specifically so it is never confused
     with a measurement).
 
-    Returns ``{"quant_mse", "quant_signal_power", "quant_snr_db"}``, embedded
-    into the packet's own ``metadata`` (so its bytes are counted like any
-    other metadata field — see ``transmission/byte_accounting.py``) and later
-    read back by the RECEIVER from the parsed packet (never assumed from a
-    process-global channel object — see ``pipelines/infer_pipeline.py::
-    _compute_step``'s ``digital_policy="quant_nmse"``).
+    Returns ``{"quant_mse", "quant_signal_power", "quant_snr_db"}``. The
+    caller may either keep it in an analysis-only diagnostics table or, for
+    ``digital_policy="quant_nmse"`` only, embed it in packet metadata so the
+    receiver can read the measurement from the received bytes.
 
     ``quant_snr_db`` is ``None`` (never a fabricated number) for a lossless
     packet (``bit_depth=32``, exact zero error) or a degenerate all-zero
@@ -272,6 +270,8 @@ def build_frame_bundle(
     edge_uncertainty_tensor=None,    # torch.Tensor or None
     semantic_packet: Optional[Dict[str, Any]] = None,
     compress_metadata: bool = True,
+    include_quantization_error_metadata: bool = False,
+    quantization_diagnostics: Optional[List[Dict[str, Any]]] = None,
 ) -> TransmissionBundle:
     """Build the full transmission bundle for one keyframe.
 
@@ -300,12 +300,25 @@ def build_frame_bundle(
             sample = visual_latent_patches[patch_idx:patch_idx + 1]
             q = quantize_tensor(sample, bit_depth=visual_bit_depth,
                                  granularity=visual_granularity, channel_dim=visual_channel_dim)
-            quant_metrics = measure_quantization_error(sample, q)
+            quant_metrics = (
+                measure_quantization_error(sample, q)
+                if include_quantization_error_metadata or quantization_diagnostics is not None
+                else {}
+            )
+            if quantization_diagnostics is not None:
+                quantization_diagnostics.append({
+                    "patch_index": patch_idx,
+                    "bit_depth": q.bit_depth,
+                    **quant_metrics,
+                })
+            packet_metadata = {"patch_index": patch_idx}
+            if include_quantization_error_metadata:
+                packet_metadata.update(quant_metrics)
             packet = WirePacket(
                 bit_depth=q.bit_depth, granularity=q.granularity, channel_dim=q.channel_dim,
                 shape=q.shape, scale=q.scale, zero_point=q.zero_point, pad_bits=q.pad_bits,
                 n_elements=q.n_elements, payload=q.packed, keyframe_index=keyframe_index,
-                metadata={"patch_index": patch_idx, **quant_metrics},
+                metadata=packet_metadata,
             )
             data = serialize_wire_packet(packet, compress_metadata=compress_metadata)
             items.append(BundleItem(name=f"visual_patch_{patch_idx:03d}", kind="wire_packet", data=data))
@@ -388,8 +401,12 @@ def decode_frame_bundle(data: bytes, dtype=None, device: str = "cpu") -> Dict[st
       ``visual_latents``: list[Tensor] (one per patch) or None (analog visual)
       ``visual_metadata``: list[dict] (one per patch, same order/length as
         ``visual_latents``) or None. Each entry is
-        ``{"bit_depth", "quant_mse", "quant_signal_power", "quant_snr_db",
-        "patch_index"}`` decoded from THIS packet's own header/metadata — the
+        ``{"bit_depth", "patch_index"}`` plus optional ``quant_mse``,
+        ``quant_signal_power`` and ``quant_snr_db`` decoded from THIS packet's
+        own header/metadata. Quantization metrics are carried on wire only for
+        the ``quant_nmse`` decoder-policy ablation; other policies keep those
+        measurements in a separate diagnostics CSV so accounting is not
+        inflated by unused research metadata. This is the
         receiver-side source of truth for a digital step policy that must not
         read a process-global channel object (see ``pipelines/
         infer_pipeline.py::_compute_step``).

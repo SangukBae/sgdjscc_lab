@@ -34,6 +34,7 @@ def _row(selector, channel, bit_depth, psnr, ssim, lpips, bytes_, n_nan=0, n_kf=
     return {
         "config": f"{selector}_{channel}", "selector": selector, "channel": channel,
         "bit_depth": bit_depth, "psss_backend_kind": "", "digital_step_policy": "fixed_reference",
+        "ablation_label": "",
         "n_videos": 10,
         "total_frames": 120, "total_quality_frames": 120, "valid_frame_ratio": 1.0,
         "all_finite_metrics": True, "all_expected_videos_present": True,
@@ -78,7 +79,7 @@ class TestQuantizationEffect:
         int8_row = next(r for r in out if r["channel"] == "int8")
         assert int8_row["valid"] is False
         assert int8_row["psnr_drop_db"] == ""
-        assert "non-finite" in int8_row["note"]
+        assert "strict validity" in int8_row["note"]
 
     def test_falls_back_to_int16_reference_when_float32_absent_or_invalid(self):
         rows = [
@@ -147,7 +148,7 @@ class TestSelectorEffect:
         out = mod.build_selector_effect(rows)
         assert out[0]["valid"] is False
         assert out[0]["psnr_delta_skem_minus_fixed"] == ""
-        assert "non-finite" in out[0]["note"]
+        assert "strict validity" in out[0]["note"]
 
     def test_skem_backend_kind_reported_never_labeled_real_when_proxy(self):
         rows = [
@@ -186,9 +187,13 @@ class TestValidityConditions:
         row = _row("fixed", "int8", 8, 24.0, 0.79, 0.40, 40000)
         assert mod._is_valid(row) is True
 
-    def test_missing_columns_default_to_valid_for_backward_compat(self):
+    def test_missing_columns_fail_closed(self):
         row = {"total_nan_or_inf_frames": 0}
-        assert mod._is_valid(row) is True
+        assert mod._is_valid(row) is False
+
+    def test_nan_quality_value_fails_closed(self):
+        row = _row("fixed", "int8", 8, float("nan"), 0.79, 0.40, 40000)
+        assert mod._is_valid(row) is False
 
 
 class TestRunCli:
@@ -219,7 +224,8 @@ class TestRunCli:
     def test_run_reports_ablation_policies_in_summary(self, tmp_path, capsys):
         rows = [
             {**_row("fixed", "float32", 32, 24.5, 0.80, 0.38, 100000), "digital_step_policy": "fixed_reference"},
-            {**_row("fixed", "int8", 8, 24.0, 0.79, 0.40, 25000), "digital_step_policy": "bitdepth_proxy"},
+            {**_row("fixed", "int8", 8, 24.0, 0.79, 0.40, 25000),
+             "digital_step_policy": "bitdepth_proxy", "ablation_label": "bp_v1"},
         ]
         agg_path = tmp_path / "aggregate.csv"
         with open(agg_path, "w", newline="", encoding="utf-8") as fh:
@@ -231,3 +237,9 @@ class TestRunCli:
         summary = json.loads((tmp_path / "normalization_effect_summary.json").read_text())
         assert summary["ablation_policies_present"] == ["bitdepth_proxy"]
         assert "ABLATION" in capsys.readouterr().err
+        assert (tmp_path / "quantization_effect_ablation.csv").exists()
+        assert (tmp_path / "selector_effect_ablation.csv").exists()
+        assert not (tmp_path / "quantization_effect.csv").exists()
+        with open(tmp_path / "quantization_effect_ablation.csv", newline="", encoding="utf-8") as fh:
+            written = list(csv.DictReader(fh))
+        assert any(r["ablation_label"] == "bp_v1" for r in written)

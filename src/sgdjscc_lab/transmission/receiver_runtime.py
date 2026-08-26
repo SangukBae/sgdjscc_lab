@@ -54,6 +54,8 @@ def encode_frame_to_bundle_bytes(
     visual_is_analog: bool = False,
     caption_override: Optional[str] = None,
     semantic_packet: Optional[Dict[str, Any]] = None,
+    include_quantization_error_metadata: bool = False,
+    quantization_diagnostics: Optional[list[Dict[str, Any]]] = None,
 ) -> Tuple[bytes, int]:
     """Sender: encode *frame* and return its complete serialized wire bundle."""
     import torch
@@ -100,6 +102,8 @@ def encode_frame_to_bundle_bytes(
         keyframe_index=keyframe_index,
         manifest=frame_manifest,
         semantic_packet=semantic_packet,
+        include_quantization_error_metadata=include_quantization_error_metadata,
+        quantization_diagnostics=quantization_diagnostics,
     )
     return serialize_bundle(bundle), int(encode_features.numel())
 

@@ -1,4 +1,5 @@
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -39,6 +40,7 @@ def test_get_git_state_non_repo_dir_is_unknown(tmp_path):
     assert state["branch"] == rm.UNKNOWN
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="git binary unavailable")
 def test_get_git_state_detects_clean_repo(tmp_path):
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=tmp_path, check=True)
@@ -176,6 +178,7 @@ def test_build_run_manifest_defaults_to_unknown_not_guessed():
     }
 
 
+@pytest.mark.skipif(shutil.which("git") is None, reason="git binary unavailable")
 def test_build_run_manifest_include_git_false_never_probes_repo(tmp_path):
     # tmp_path is a real git repo with real commits — if include_git=False
     # actually skipped the probe, we'd see "unknown" here despite that.
@@ -194,6 +197,26 @@ def test_build_run_manifest_include_git_false_never_probes_repo(tmp_path):
     # Sanity: with include_git=True (default) the same repo_root DOES resolve.
     live = rm.build_run_manifest(run_id="r", repo_root=tmp_path, include_environment=False)
     assert live["git"]["commit"] != rm.UNKNOWN
+
+
+def test_get_git_state_reads_head_without_git_binary(tmp_path, monkeypatch):
+    commit = "a" * 40
+    git_dir = tmp_path / ".git"
+    (git_dir / "refs" / "heads").mkdir(parents=True)
+    (git_dir / "HEAD").write_text("ref: refs/heads/main\n")
+    (git_dir / "refs" / "heads" / "main").write_text(commit + "\n")
+    monkeypatch.setattr(rm, "_run_git", lambda *_args, **_kwargs: None)
+    state = rm.get_git_state(tmp_path)
+    assert state == {"commit": commit, "dirty": rm.UNKNOWN, "branch": "main"}
+
+
+def test_get_git_state_accepts_verified_environment_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("SGDJSCC_GIT_COMMIT", "b" * 40)
+    monkeypatch.setenv("SGDJSCC_GIT_DIRTY", "false")
+    monkeypatch.setenv("SGDJSCC_GIT_BRANCH", "main")
+    assert rm.get_git_state(tmp_path) == {
+        "commit": "b" * 40, "dirty": False, "branch": "main",
+    }
 
 
 def test_build_run_manifest_seed_none_is_rejected():

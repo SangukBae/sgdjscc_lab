@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-26
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 63b7b23
+source_commit: 27245df
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 

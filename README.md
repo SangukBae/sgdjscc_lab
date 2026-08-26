@@ -139,6 +139,7 @@ bash scripts/run_transmission_normalization.sh                 # 전체 grid, �
 bash scripts/run_transmission_normalization.sh --preflight-only  # 데이터·checkpoint·디스크·GPU 점검만
 bash scripts/run_transmission_normalization.sh --dry-run          # 실행할 명령만 출력
 bash scripts/run_transmission_normalization.sh --resume outputs/transmission_normalization_20260826_120000
+bash scripts/run_transmission_normalization.sh --resume outputs/transmission_normalization_20260826_120000 --retry-failed
 ```
 
 - digital 채널의 blind SNR 추정(`jscc.snr_prediction_net`, AWGN 전용 학습)을
@@ -147,13 +148,14 @@ bash scripts/run_transmission_normalization.sh --resume outputs/transmission_nor
 - `--seed`(기본 2025) + 영상·프레임별 결정적 seed, `run_signature.json` 기반 resume
   안전성 검증(조건이 다르면 즉시 거부), `run_manifest.py` 정식(하드) 의존성 + 핵심
   artifact SHA-256 기록.
-- non-finite 발생 시 해당 (video, config)를 즉시 중단(`failed_pairs.csv`) — NaN
-  placeholder로 계속 처리하지 않는다.
+- non-finite 발생 시 해당 pair를 즉시 중단한다. 재개 시 실패 pair는 기본 skip하며
+  `--retry-failed`에서만 재시도하고, 실패가 남으면 `completed_with_failures`로 종료한다.
 - `FixedCountKeyframeSelector`로 fixed selector의 keyframe 수를 SKEM과 정확히 일치,
   `rate_matching.csv`로 byte 근접성까지 확인한 뒤에만 "rate-matched" 표기.
 - 결과: `quantization_effect.csv`(선택기 고정, bit_depth 효과) /
   `selector_effect.csv`(bit_depth 고정, fixed vs SKEM 효과)로 두 효과를 분리 출력
   (`bytes/video`·`bytes/frame` 단위 분리 포함).
+- AWGN은 visual wire byte가 없으므로 Pareto 후보가 아니며 참고 품질 행으로만 유지한다.
 
 ### 학습
 
