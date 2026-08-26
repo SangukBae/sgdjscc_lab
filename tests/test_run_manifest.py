@@ -1,8 +1,13 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
+
+_SRC = Path(__file__).resolve().parent.parent / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
 from sgdjscc_lab.utils import run_manifest as rm
 
