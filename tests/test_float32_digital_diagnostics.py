@@ -528,6 +528,30 @@ class TestVerdict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# REPORT.md doc links must adapt to output_root's actual nesting depth
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestReportLinks:
+    def test_doc_link_depth_matches_top_level_output_root(self):
+        from sgdjscc_lab.diagnostics.report import _doc_link
+
+        link = _doc_link(_REPO_ROOT / "outputs" / "f32dig_run", "docs/current/open_issues.md")
+        assert link == "../../docs/current/open_issues.md"
+
+    def test_doc_link_depth_matches_server_stage_subdirectory(self):
+        # The server driver's stage output roots are one level deeper
+        # (outputs/<run>/stageN_*/) than a plain CLI --output-root
+        # (outputs/<run>/) -- the link must account for that extra level.
+        from sgdjscc_lab.diagnostics.report import _doc_link
+
+        link = _doc_link(
+            _REPO_ROOT / "outputs" / "f32dig_run" / "stage3_single_frame_paths",
+            "docs/protocols/float32_digital_diagnostics.md",
+        )
+        assert link == "../../../docs/protocols/float32_digital_diagnostics.md"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # CLI: dry-run, --no-models end-to-end, resume, signature mismatch
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -644,6 +668,57 @@ class TestCli:
         assert summary2["verdict_summary"]["n_verdicts"] == 1
         assert len(verdicts_path.read_text().strip().splitlines()) == 1  # not duplicated either
 
+    def test_resume_recovers_verdict_lost_to_an_interrupt_right_after_baseline(self, tmp_path):
+        # Regression test for the reproduced bug: a SIGINT/SIGTERM arriving
+        # right after the baseline group's path_comparison.csv/
+        # tensor_pair_comparison.csv rows are written, but BEFORE the verdict
+        # itself is computed, used to lose that frame's verdict permanently
+        # -- a later --resume would find the baseline group already-done and
+        # skip it, and baseline_psnr/baseline_comparisons only ever lived in
+        # the interrupted process's memory. Simulates the exact disk state an
+        # interrupt at that point leaves behind (CSV rows present,
+        # verdicts.jsonl absent) and asserts --resume recovers the verdict
+        # from path_comparison.csv/tensor_pair_comparison.csv rather than
+        # needing to recompute the reconstruction.
+        out_root = tmp_path / "run_interrupted_before_verdict"
+        args = [
+            "--output-root", str(out_root), "--video-ids", "01_person_walk", "--frames", "0",
+            "--no-models", "--device", "cpu", "--no-lpips",
+        ]
+        r1 = _run_cli(args)
+        assert r1.returncode == 0, r1.stderr
+        assert (out_root / "verdicts.jsonl").exists()
+
+        # Simulate "the process was killed before the verdict was written":
+        # the evidence (CSV/tensor-pair rows) reached disk, but verdicts.jsonl
+        # never did.
+        (out_root / "verdicts.jsonl").unlink()
+        summary_before = json.loads((out_root / "summary.json").read_text())
+        summary_before["verdict_summary"] = None
+        (out_root / "summary.json").write_text(json.dumps(summary_before))
+
+        r2 = _run_cli(args + ["--resume"])
+        assert r2.returncode == 0, r2.stderr
+
+        assert (out_root / "verdicts.jsonl").exists()
+        verdict_lines = (out_root / "verdicts.jsonl").read_text().strip().splitlines()
+        assert len(verdict_lines) == 1
+        recovered = json.loads(verdict_lines[0])
+        assert recovered["video"] == "01_person_walk"
+        assert recovered["frame"] == 0
+        assert recovered["ablation"] == "baseline"
+
+        summary2 = json.loads((out_root / "summary.json").read_text())
+        assert summary2["verdict_summary"] is not None
+        assert summary2["verdict_summary"]["n_verdicts"] == 1
+
+        # And path_comparison.csv must NOT have been duplicated by this
+        # recovery (the baseline group itself was correctly skipped as
+        # already-done; only its verdict was recomputed from disk evidence).
+        with (out_root / "path_comparison.csv").open() as fh:
+            rows = list(csv.DictReader(fh))
+        assert len(rows) == 3  # awgn + digital_inprocess + digital_wire, once each
+
     def test_ssim_and_lpips_delta_columns_are_populated(self, tmp_path):
         out_root = tmp_path / "run_deltas"
         result = _run_cli([
@@ -690,6 +765,50 @@ class TestCli:
         assert len(failed_rows) == 3  # awgn + digital_inprocess + digital_wire all failed
         summary = json.loads((out_root / "summary.json").read_text())
         assert summary["counts"]["n_frames_processed"] == 1
+
+    def test_edge_equalizing_ablations_get_their_own_edge_handling_equalized_verdict(self, tmp_path):
+        # Regression test: serialized_raw_edge/awgn_edge_retransmit results
+        # must actually feed classify(edge_handling_equalized=True), not sit
+        # unused -- each gets its own verdict row distinct from baseline's.
+        out_root = tmp_path / "run_edge_equalized"
+        result = _run_cli([
+            "--output-root", str(out_root), "--video-ids", "01_person_walk", "--frames", "0",
+            "--no-models", "--device", "cpu", "--no-lpips",
+            "--ablations", "baseline,serialized_raw_edge,awgn_edge_retransmit",
+        ])
+        assert result.returncode == 0, result.stderr
+        verdict_lines = (out_root / "verdicts.jsonl").read_text().strip().splitlines()
+        verdicts_by_ablation = {json.loads(line)["ablation"]: json.loads(line) for line in verdict_lines}
+        assert set(verdicts_by_ablation) == {"baseline", "serialized_raw_edge", "awgn_edge_retransmit"}
+        assert verdicts_by_ablation["baseline"]["edge_handling_equalized"] is False
+        assert verdicts_by_ablation["serialized_raw_edge"]["edge_handling_equalized"] is True
+        assert verdicts_by_ablation["awgn_edge_retransmit"]["edge_handling_equalized"] is True
+
+    def test_dataset_content_hash_changes_when_video_bytes_change(self, tmp_path):
+        # Regression test: hashing only manifest.csv cannot detect a video
+        # file being swapped/re-encoded while manifest.csv stays unchanged.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("_f32dig_cli_hash_test", _CLI)
+        cli_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli_mod)
+
+        manifest = tmp_path / "manifest.csv"
+        manifest.write_text("id,name\n01,person_walk\n")
+        video_a = tmp_path / "a.mp4"
+        video_b = tmp_path / "b.mp4"
+        video_a.write_bytes(b"original video bytes")
+        video_b.write_bytes(b"swapped video bytes, same manifest.csv")
+
+        entries_a = [{"key": "01_person_walk", "processed": video_a}]
+        entries_b = [{"key": "01_person_walk", "processed": video_b}]
+
+        hash_a = cli_mod._dataset_content_hash(str(tmp_path), entries_a)
+        hash_b = cli_mod._dataset_content_hash(str(tmp_path), entries_b)
+        assert hash_a != hash_b
+
+        # Re-hashing the SAME content is deterministic/stable.
+        assert hash_a == cli_mod._dataset_content_hash(str(tmp_path), entries_a)
 
     def test_signature_mismatch_on_resume_is_rejected(self, tmp_path):
         out_root = tmp_path / "run3"

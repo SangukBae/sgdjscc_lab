@@ -58,6 +58,14 @@ _CFG_FRAGMENTS = (
 
 PATH_CHOICES = ("awgn", "digital_inprocess", "digital_wire")
 
+# These ablations force edge_already_received identical across
+# digital_inprocess and digital_wire (see diagnostics/ablations.py), which is
+# what makes their edge/decoder-stage tensor comparisons meaningful
+# packet_tx_rx_issue evidence (diagnostics/verdict.py's
+# edge_handling_equalized=True) rather than the expected-by-design divergence
+# under the baseline ablation.
+EDGE_EQUALIZING_ABLATIONS = ("serialized_raw_edge", "awgn_edge_retransmit")
+
 PATH_COMPARISON_FIELDS = [
     "video", "frame", "seed", "ablation", "path",
     "psnr", "ssim", "lpips", "psnr_delta_vs_awgn", "ssim_delta_vs_awgn", "lpips_delta_vs_awgn",
@@ -265,13 +273,32 @@ def _dataset_manifest_hash(dataset_root: str) -> str:
     return rm.sha256_file(manifest_path) if manifest_path.exists() else rm.UNKNOWN
 
 
-def _load_verdicts_index(path: Path) -> Dict[Tuple[str, int], Dict[str, Any]]:
-    """Loads previously-recorded per-(video, frame) verdicts (if any) so a
-    ``--resume`` run's verdict_summary/REPORT.md reflect ALL frames completed
-    across every invocation targeting this --output-root, not just the ones
-    (re)processed in the current invocation (whose baseline group may have
-    been skipped as already-done)."""
-    index: Dict[Tuple[str, int], Dict[str, Any]] = {}
+def _dataset_content_hash(dataset_root: str, entries: List[Dict[str, Any]]) -> str:
+    """SHA-256 covering manifest.csv AND every SELECTED video's actual file
+    bytes (+ captions/GT side files when present) — hashing manifest.csv
+    alone cannot detect a video file being swapped while manifest.csv stays
+    byte-identical, which would let --resume silently continue against
+    different source video content."""
+    import hashlib
+
+    parts = [_dataset_manifest_hash(dataset_root)]
+    for e in sorted(entries, key=lambda e: e["key"]):
+        parts.append(e["key"])
+        for field in ("processed", "captions", "gt"):
+            value = e.get(field)
+            if value is not None and Path(value).is_file():
+                parts.append(f"{field}:{rm.sha256_file(value)}")
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _load_verdicts_index(path: Path) -> Dict[Tuple[str, int, str], Dict[str, Any]]:
+    """Loads previously-recorded per-(video, frame, ablation-kind) verdicts
+    (if any) so a ``--resume`` run's verdict_summary/REPORT.md reflect
+    everything completed across every invocation targeting this
+    --output-root, not just what the current invocation (re)processed.
+    ``ablation-kind`` is ``"baseline"`` (transport-only classification) or
+    one of ``EDGE_EQUALIZING_ABLATIONS`` (edge_handling_equalized=True)."""
+    index: Dict[Tuple[str, int, str], Dict[str, Any]] = {}
     if not path.exists():
         return index
     with path.open(encoding="utf-8") as fh:
@@ -280,15 +307,94 @@ def _load_verdicts_index(path: Path) -> Dict[Tuple[str, int], Dict[str, Any]]:
             if not line:
                 continue
             row = json.loads(line)
-            index[(row["video"], int(row["frame"]))] = row
+            index[(row["video"], int(row["frame"]), row["ablation"])] = row
     return index
+
+
+def _csv_bool(value: Optional[str]) -> Optional[bool]:
+    if value in (None, ""):
+        return None
+    return value == "True"
+
+
+def _csv_float(value: Optional[str]) -> Optional[float]:
+    if value in (None, "", "None"):
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _load_psnr_index(path: Path) -> Dict[Tuple[str, str, str], Dict[str, Dict[str, Optional[float]]]]:
+    """``{(video, frame_str, ablation): {path: {"psnr", "ssim", "lpips"}}}``
+    reloaded from an existing path_comparison.csv. Evidence for a group
+    completed in a PRIOR invocation is available immediately from this index
+    — never only from this invocation's in-memory results — which is what
+    lets a --resume run recompute a verdict for a baseline group that was
+    already-done (skipped) this invocation (see _persist_verdict in run())."""
+    index: Dict[Tuple[str, str, str], Dict[str, Dict[str, Optional[float]]]] = {}
+    if not path.exists():
+        return index
+    with path.open(newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            key = (row["video"], row["frame"], row["ablation"])
+            index.setdefault(key, {})[row["path"]] = {
+                "psnr": _csv_float(row.get("psnr")),
+                "ssim": _csv_float(row.get("ssim")),
+                "lpips": _csv_float(row.get("lpips")),
+            }
+    return index
+
+
+def _load_pair_index(path: Path) -> Dict[Tuple[str, str, str], List[Dict[str, Any]]]:
+    """``{(video, frame_str, ablation): [digital_inprocess-vs-digital_wire pair rows]}``
+    reloaded from an existing tensor_pair_comparison.csv (order-independent —
+    path_a/path_b may have been recorded in either order)."""
+    index: Dict[Tuple[str, str, str], List[Dict[str, Any]]] = {}
+    if not path.exists():
+        return index
+    with path.open(newline="", encoding="utf-8") as fh:
+        for row in csv.DictReader(fh):
+            if {row.get("path_a"), row.get("path_b")} != {"digital_inprocess", "digital_wire"}:
+                continue
+            key = (row["video"], row["frame"], row["ablation"])
+            index.setdefault(key, []).append({
+                "stage": row.get("stage"),
+                "comparable": _csv_bool(row.get("comparable")) or False,
+                "exact_equal": _csv_bool(row.get("exact_equal")),
+                "both_finite": _csv_bool(row.get("both_finite")),
+                "mean_abs_err": _csv_float(row.get("mean_abs_err")),
+                "cosine_similarity": _csv_float(row.get("cosine_similarity")),
+            })
+    return index
+
+
+def _inprocess_wire_pairs(pair_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Filters a freshly-computed group's pair_rows (any path combination)
+    down to digital_inprocess-vs-digital_wire, matching what
+    _load_pair_index keeps from disk."""
+    return [
+        r for r in pair_rows
+        if {r.get("path_a"), r.get("path_b")} == {"digital_inprocess", "digital_wire"}
+    ]
+
+
+def _psnr_triplet(psnr_index: Dict[Tuple[str, str, str], Dict[str, Dict[str, Optional[float]]]],
+                   key: Tuple[str, str, str]) -> Dict[str, Optional[float]]:
+    entry = psnr_index.get(key, {})
+    return {
+        "awgn_psnr": entry.get("awgn", {}).get("psnr"),
+        "digital_inprocess_psnr": entry.get("digital_inprocess", {}).get("psnr"),
+        "digital_wire_psnr": entry.get("digital_wire", {}).get("psnr"),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Run signature (resume safety)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _build_run_signature(args, cfg, video_ids: List[str], frames: List[int], model_root: Path) -> Dict[str, Any]:
+def _build_run_signature(args, cfg, entries: List[Dict[str, Any]], frames: List[int], model_root: Path) -> Dict[str, Any]:
     from omegaconf import OmegaConf
     import hashlib
 
@@ -301,13 +407,16 @@ def _build_run_signature(args, cfg, video_ids: List[str], frames: List[int], mod
 
     return {
         "git_commit": git_state["commit"], "git_dirty": git_state["dirty"], "git_branch": git_state["branch"],
-        "video_ids": sorted(video_ids), "frames": frames, "seed": args.seed,
+        "video_ids": sorted(e["key"] for e in entries), "frames": frames, "seed": args.seed,
         "paths": sorted(args.paths.split(",")), "ablations": args.ablations,
         "bit_depth": args.bit_depth, "granularity": args.granularity,
         "digital_step_policy": args.digital_step_policy,
         "fixed_step_value": args.fixed_step_value, "minimal_denoise_steps": args.minimal_denoise_steps,
         "resolved_config_sha256": config_hash,
-        "dataset_manifest_sha256": _dataset_manifest_hash(args.dataset_root),
+        # Covers manifest.csv AND the actual selected video/caption/GT file
+        # bytes (see _dataset_content_hash) -- a video swap with an
+        # unchanged manifest.csv must still be detected.
+        "dataset_content_sha256": _dataset_content_hash(args.dataset_root, entries),
         "checkpoint_sha256": {} if args.no_models else _checkpoint_hashes(model_root),
         "no_models": bool(args.no_models), "device": args.device,
         # Both affect what actually gets recorded/skippable across a resumed
@@ -423,7 +532,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     tensor_dir = output_root / "tensors" if args.save_tensors else None
 
     cfg = _make_cfg(output_root, model_root or Path("."), snr_db=10.0, config_path=args.config, device=args.device)
-    signature = _build_run_signature(args, cfg, [e["key"] for e in entries], frames, model_root or Path("."))
+    signature = _build_run_signature(args, cfg, entries, frames, model_root or Path("."))
     _check_resume_signature(output_root, signature, args.resume)
 
     path_comparison_csv = output_root / "path_comparison.csv"
@@ -448,6 +557,21 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # in THIS invocation (whose baseline group may already be in already_done
     # and therefore never touched below).
     verdicts_index = _load_verdicts_index(verdicts_jsonl)
+    # Verdict EVIDENCE (PSNR/SSIM/LPIPS per path, digital_inprocess-vs-
+    # digital_wire tensor comparisons) for every group ever completed here,
+    # reloaded from disk. Verdict computation below reads exclusively from
+    # these two indices (updated in-memory as this invocation processes new
+    # groups too) rather than from local variables scoped to "what THIS
+    # invocation's ablation loop just did" -- the previous design lost a
+    # frame's verdict permanently whenever the baseline group finished and
+    # was written to disk, but a SIGINT/SIGTERM arrived before the verdict
+    # itself was computed: a later --resume would skip that now-already-done
+    # baseline group and never revisit it, so baseline_psnr/
+    # baseline_comparisons stayed empty forever. Reading from these
+    # disk-backed indices instead means the verdict is computed the moment
+    # its evidence exists on disk, regardless of which invocation wrote it.
+    psnr_index = _load_psnr_index(path_comparison_csv)
+    pair_index = _load_pair_index(tensor_pair_csv) if not args.no_instrument_tensors else {}
     if already_done and not args.resume:
         raise SystemExit(
             f"{path_comparison_csv} already has {len(already_done)} completed (video, frame, "
@@ -460,7 +584,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         run_id=f"float32_digital_diagnostics_{int(time.time())}",
         command_argv=sys.argv, command_source="captured",
         seed=args.seed, resolved_config_path=None, config_source_path=args.config,
-        dataset_ref=str(args.dataset_root), dataset_hash=_dataset_manifest_hash(args.dataset_root),
+        dataset_ref=str(args.dataset_root), dataset_hash=_dataset_content_hash(args.dataset_root, entries),
         checkpoints=(None if args.no_models else {n: model_root / n for n in _CHECKPOINT_NAMES if (model_root / n).exists()}),
         repo_root=_REPO_ROOT, cuda_device_index=0,
         extra={"phase": "initial", "signature": signature},
@@ -488,6 +612,26 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         except Exception as exc:  # noqa: BLE001 — LPIPS availability is environment-dependent
             print(f"[diagnose_float32_digital_quality] LPIPS unavailable ({exc}); recording None.", file=sys.stderr)
 
+    def _persist_verdict(video: str, frame: int, kind: str, *, path_quality, comparisons,
+                          vae_direct_quality=None, edge_handling_equalized: bool = False) -> None:
+        """Computes + appends one verdict row, unless *kind* already has one
+        (idempotent — never recomputes/duplicates an existing verdict)."""
+        key = (video, frame, kind)
+        if key in verdicts_index:
+            return
+        verdict = classify(
+            inprocess_vs_wire_comparisons=comparisons, path_quality=path_quality,
+            vae_direct_quality=vae_direct_quality, edge_handling_equalized=edge_handling_equalized,
+        )
+        row = {
+            "video": video, "frame": frame, "ablation": kind,
+            "verdict": verdict.verdict, "reason": verdict.reason,
+            "first_divergent_stage": verdict.first_divergent_stage,
+            "edge_handling_equalized": edge_handling_equalized,
+        }
+        verdicts_index[key] = row
+        _append_jsonl_rows(verdicts_jsonl, [row])
+
     n_frames_processed = 0
     interrupted = False
 
@@ -499,9 +643,6 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         for frame_idx in frames:
             frame_tensor = frame_tensors[frame_idx]
             awgn_step_ref: Optional[Tuple[Any, Any]] = None
-            baseline_psnr: Dict[str, Optional[float]] = {}
-            vae_direct_psnr: Dict[str, Optional[float]] = {}
-            baseline_comparisons: List[Dict[str, Any]] = []
 
             for ablation_name in ablation_names:
                 group_key = (video_key, str(frame_idx), ablation_name)
@@ -592,10 +733,22 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                 _append_csv_rows(path_comparison_csv, rows, PATH_COMPARISON_FIELDS)
                 _append_csv_rows(failed_csv, failed_rows, FAILED_CASES_FIELDS)
 
+                # Update the verdict-evidence indices for THIS group immediately
+                # (in addition to whatever was reloaded from disk at start) so a
+                # verdict can be computed for it below without waiting for a
+                # future --resume to reload it from path_comparison.csv.
+                psnr_index[group_key] = {
+                    path_name: {
+                        "psnr": psnr_by_path.get(path_name), "ssim": ssim_by_path.get(path_name),
+                        "lpips": lpips_by_path.get(path_name),
+                    }
+                    for path_name in outcomes
+                }
+
                 # ── tensor stage stats + pairwise comparisons ──
                 if recorder.enabled:
                     _append_jsonl_rows(tensor_stage_jsonl, recorder.rows)
-                    stage_names = sorted({key[5] for key in recorder.live.keys()})
+                    stage_names = sorted({live_key[5] for live_key in recorder.live.keys()})
                     pair_rows = []
                     path_order = [p for p in requested_paths if p in outcomes and not outcomes[p].failed]
                     for i_a in range(len(path_order)):
@@ -611,45 +764,59 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                                 })
                     _append_csv_rows(tensor_pair_csv, pair_rows, TENSOR_PAIR_FIELDS)
 
-                    if ablation_name == "baseline":
-                        baseline_comparisons = [
-                            r for r in pair_rows if r["path_a"] == "digital_inprocess" and r["path_b"] == "digital_wire"
-                        ]
+                    inprocess_wire_pairs = _inprocess_wire_pairs(pair_rows)
+                    if inprocess_wire_pairs:
+                        pair_index[group_key] = inprocess_wire_pairs
                     recorder.clear_live()
-
-                if ablation_name == "baseline":
-                    baseline_psnr = {
-                        "awgn_psnr": psnr_by_path.get("awgn"),
-                        "digital_inprocess_psnr": psnr_by_path.get("digital_inprocess"),
-                        "digital_wire_psnr": psnr_by_path.get("digital_wire"),
-                    }
-                if ablation_name == "diffusion_bypass_vae_direct":
-                    vae_direct_psnr = {
-                        "digital_inprocess_psnr": psnr_by_path.get("digital_inprocess"),
-                        "digital_wire_psnr": psnr_by_path.get("digital_wire"),
-                    }
 
                 if _STOP_REQUESTED:
                     interrupted = True
                     break
+
+            # Verdict computation: ALWAYS attempt this (reads exclusively from
+            # psnr_index/pair_index, which by now include both this
+            # invocation's fresh results above AND anything reloaded from
+            # disk at start) — regardless of whether this frame's ablation
+            # loop was just interrupted. Any group whose CSV/JSONL rows
+            # already reached disk must not have its verdict evidence
+            # orphaned (see the psnr_index/pair_index comment above for why).
+            if not args.no_instrument_tensors:
+                baseline_group = (video_key, str(frame_idx), "baseline")
+                if baseline_group in psnr_index:
+                    vae_direct_group = (video_key, str(frame_idx), "diffusion_bypass_vae_direct")
+                    vae_direct_entry = psnr_index.get(vae_direct_group)
+                    vae_direct_quality = (
+                        {
+                            "digital_inprocess_psnr": vae_direct_entry.get("digital_inprocess", {}).get("psnr"),
+                            "digital_wire_psnr": vae_direct_entry.get("digital_wire", {}).get("psnr"),
+                        }
+                        if vae_direct_entry else None
+                    )
+                    _persist_verdict(
+                        video_key, frame_idx, "baseline",
+                        path_quality=_psnr_triplet(psnr_index, baseline_group),
+                        comparisons=pair_index.get(baseline_group, []),
+                        vae_direct_quality=vae_direct_quality,
+                        edge_handling_equalized=False,
+                    )
+                # Edge-equalizing ablations (serialized_raw_edge / awgn_edge_retransmit)
+                # get their OWN verdict, classified with edge_handling_equalized=True
+                # so their (previously ignored) edge/decoder-stage divergence is
+                # actually usable as packet_tx_rx_issue evidence.
+                for eq_ablation in EDGE_EQUALIZING_ABLATIONS:
+                    eq_group = (video_key, str(frame_idx), eq_ablation)
+                    if eq_group in psnr_index:
+                        _persist_verdict(
+                            video_key, frame_idx, eq_ablation,
+                            path_quality=_psnr_triplet(psnr_index, eq_group),
+                            comparisons=pair_index.get(eq_group, []),
+                            vae_direct_quality=None,
+                            edge_handling_equalized=True,
+                        )
+
+            n_frames_processed += 1
             if interrupted:
                 break
-
-            verdict_key = (video_key, frame_idx)
-            if not args.no_instrument_tensors and baseline_psnr and verdict_key not in verdicts_index:
-                verdict = classify(
-                    inprocess_vs_wire_comparisons=baseline_comparisons,
-                    path_quality=baseline_psnr,
-                    vae_direct_quality=vae_direct_psnr or None,
-                )
-                verdict_row = {
-                    "video": video_key, "frame": frame_idx, "ablation": "baseline",
-                    "verdict": verdict.verdict, "reason": verdict.reason,
-                    "first_divergent_stage": verdict.first_divergent_stage,
-                }
-                verdicts_index[verdict_key] = verdict_row
-                _append_jsonl_rows(verdicts_jsonl, [verdict_row])
-            n_frames_processed += 1
         if interrupted:
             break
 
@@ -658,7 +825,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     # invocation processed -- this is what keeps verdict_summary/REPORT.md
     # correct across --resume.
     all_per_video_verdicts = [
-        verdicts_index[k] for k in sorted(verdicts_index, key=lambda k: (k[0], k[1]))
+        verdicts_index[k] for k in sorted(verdicts_index, key=lambda k: (k[0], k[1], k[2]))
     ]
     verdict_summary = None
     if all_per_video_verdicts:
@@ -690,7 +857,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     manifest_final = rm.build_run_manifest(
         run_id=manifest_initial["run_id"], command_argv=sys.argv, command_source="captured",
         seed=args.seed, resolved_config_path=None, config_source_path=args.config,
-        dataset_ref=str(args.dataset_root), dataset_hash=_dataset_manifest_hash(args.dataset_root),
+        dataset_ref=str(args.dataset_root), dataset_hash=_dataset_content_hash(args.dataset_root, entries),
         checkpoints=(None if args.no_models else {n: model_root / n for n in _CHECKPOINT_NAMES if (model_root / n).exists()}),
         repo_root=_REPO_ROOT, cuda_device_index=0,
         extra={"phase": "final", "signature": signature, "interrupted": interrupted,

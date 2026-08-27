@@ -70,7 +70,10 @@ bitwise identical인지 별도로 검사한다(`roundtrip_bitexact` 컬럼).
      설계상 정상 동작(`transmission/receiver_runtime.py`)이라 이 두 경로가 여기서 다른 것은 그 자체로
      packet 오류의 증거가 아니다. `serialized_raw_edge`/`awgn_edge_retransmit` ablation으로
      `edge_already_received`를 양쪽에서 동일하게 강제한 뒤(`classify(..., edge_handling_equalized=True)`)에만
-     이 stage들의 불일치도 증거로 쓴다.
+     이 stage들의 불일치도 증거로 쓴다 — CLI가 이 두 ablation을 실행할 때마다 자동으로
+     `edge_handling_equalized=True`로 별도 판정을 만들어 `verdicts.jsonl`에
+     `ablation: "serialized_raw_edge"`/`"awgn_edge_retransmit"` 행으로 baseline 판정과 구분해 기록한다
+     (`EDGE_EQUALIZING_ABLATIONS`, `diagnose_float32_digital_quality.py`).
 2. 두 digital 경로는 (transport stage 기준) 일치하지만 AWGN보다 낮음(PSNR 기준 ≥ 1.0 dB 차이) →
    **`decoder_pipeline_issue`**
 3. `diffusion_bypass_vae_direct` ablation(Canny 재전송·ControlNet edge latent encode·diffusion을 **전부**
@@ -130,21 +133,36 @@ python scripts/diagnose_float32_digital_quality.py --output-root outputs/f32dig_
 (`run_transmission_reduction_eval.py`의 기존 관행과 동일). `--resume`이 실제로 게이트하는 것은 **비어있지
 않은 `--output-root`를 재사용해도 되는가**이다 — `--resume` 없이 이미 결과가 있는 `--output-root`를 다시
 가리키면 CSV를 중복 기록하는 대신 즉시 거부한다(재현된 "3행→6행" 버그의 수정). `run_signature.json`은 git
-commit·dataset manifest hash·config hash·checkpoint hash·seed·video/frame·ablation·bit-depth·granularity·
-digital-step-policy·**tensor 계측 여부(`--no-instrument-tensors`)**·`--record-patch-index`를 모두 포함하며,
-하나라도 다르면 `--resume`이어도 즉시 거부한다. 판정(`verdicts.jsonl`)은 `path_comparison.csv`와 별도로
-`(video, frame)`당 한 줄만 누적 기록되고, 매 실행 시작 시 전부 다시 읽어 `verdict_summary`/`REPORT.md`를
-구성하므로 — 이번 실행에서 해당 baseline group이 이미 완료되어 건너뛰었어도 `verdict_summary`가 `None`으로
-덮어써지지 않는다.
+commit·**dataset content hash(아래 참고)**·config hash·checkpoint hash·seed·video/frame·ablation·bit-depth·
+granularity·digital-step-policy·**tensor 계측 여부(`--no-instrument-tensors`)**·`--record-patch-index`를
+모두 포함하며, 하나라도 다르면 `--resume`이어도 즉시 거부한다.
+
+판정(`verdicts.jsonl`)은 `path_comparison.csv`/`tensor_pair_comparison.csv`와 별도로 `(video, frame,
+ablation)`당 한 줄만 누적 기록된다 — 판정은 **디스크에 있는 증거(`path_comparison.csv`의 PSNR/SSIM/LPIPS,
+`tensor_pair_comparison.csv`의 digital_inprocess-vs-digital_wire 비교)로부터 매번 다시 계산**되며(이번
+실행에서 새로 처리한 group이든, 시작 시 다시 읽어들인 이전 실행의 group이든 동일하게), 그 evidence가 이미
+디스크에 있다면 (video, frame) 순회가 진행되는 즉시 판정이 만들어진다. 이 설계는 재현된 회귀 버그(baseline
+group의 CSV/tensor-pair 행이 기록된 직후, 판정이 계산되기 전에 SIGINT/SIGTERM이 들어오면 이후 `--resume`이
+이미-완료된 baseline group을 건너뛰면서 그 판정을 영구히 잃어버림)를 고친다 — 이제는 baseline group이 언제
+디스크에 기록됐는지와 무관하게, 그 evidence가 존재하는 순간 판정이 만들어진다
+(`tests/test_float32_digital_diagnostics.py::test_resume_recovers_verdict_lost_to_an_interrupt_right_after_baseline`
+가 정확히 이 시나리오를 재현·검증한다).
 
 산출물(`--output-root` 하위): `run_manifest_initial.json`/`run_manifest.json`(commit·argv·config·checkpoint
-hash·**dataset manifest hash**·환경 — `utils/run_manifest.py` 재사용), `run_signature.json`(resume 안전성),
+hash·**dataset content hash**·환경 — `utils/run_manifest.py` 재사용), `run_signature.json`(resume 안전성),
 `path_comparison.csv`(경로별 PSNR/SSIM/LPIPS/latency/diffusion step/실패 + AWGN 대비 delta — PSNR/SSIM/LPIPS
-전부), `tensor_stage_stats.jsonl`, `tensor_pair_comparison.csv`, `verdicts.jsonl`((video, frame)당 판정 1줄,
-resume 시 누적 재사용), `failed_cases.csv`(non-finite로 중단된 **path별** 행 — `summary.json`/종료 코드에
-쓰이는 실패 건수는 group 수가 아니라 이 CSV의 실제 행 수), `summary.json`, `REPORT.md`(판정·근거·최초 불일치
-stage — `--no-models`/dry-run에서는 "진단 환경 구현 완료, 서버 실측 대기"만 기록하고 원인 결론을 절대
-주장하지 않음).
+전부), `tensor_stage_stats.jsonl`, `tensor_pair_comparison.csv`, `verdicts.jsonl`((video, frame, ablation)당
+판정 1줄 — `ablation`은 `baseline`이거나 `EDGE_EQUALIZING_ABLATIONS`의 하나), `failed_cases.csv`(non-finite로
+중단된 **path별** 행 — `summary.json`/종료 코드에 쓰이는 실패 건수는 group 수가 아니라 이 CSV의 실제 행 수),
+`summary.json`, `REPORT.md`(판정·근거·최초 불일치 stage — `--no-models`/dry-run에서는 "진단 환경 구현 완료,
+서버 실측 대기"만 기록하고 원인 결론을 절대 주장하지 않음).
+
+### Dataset content hash
+
+`manifest.csv`만 해싱하면 manifest는 그대로 둔 채 영상 파일만 교체/재인코딩된 경우를 탐지하지 못한다.
+`_dataset_content_hash()`는 manifest.csv에 더해 **선택된 영상의 실제 processed 파일**(및 존재하면
+caption/GT side file) bytes를 SHA-256으로 함께 해싱해 `run_signature.json`/`run_manifest.json`에 기록한다 —
+영상 내용이 바뀌면 manifest.csv가 그대로여도 resume이 즉시 거부된다.
 
 ## 서버 단일 실행
 
@@ -172,20 +190,30 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
    tensor 계측 생략(`--no-instrument-tensors`, 규모상 metrics만)
 7. 결과 검증 + 산출물 SHA-256 해시 + `INTEGRATED_REPORT.md`(각 stage의 `summary.json`/`verdicts.jsonl`을
    실제로 읽어 stage별 dominant verdict·판정 개수·실패 건수 표와 전체 통합 판정을 만든다 — 파일 해시 목록만이
-   아니다)
+   아니다. "overall" 절은 `(video, frame, ablation)` 기준으로 stage 간 중복 제거된 판정 집합에서 집계하므로,
+   예를 들어 stage3과 stage5가 둘 다 다루는 (video 01, frame 0, baseline)이 두 번 집계되지 않는다)
 
 불필요한 ablation Cartesian product는 만들지 않는다 — ablation 전체 스윕은 stage 4(1영상 x 1프레임)로만
 한정하고, 다중 프레임/다중 영상 stage는 `baseline`(+ stage 5의 `diffusion_bypass_vae_direct`)만 실행한다.
 
+- `--resume`은 **명시적으로 지정했을 때만** 매 stage 호출에 전달된다 — `--output-root`를 준 것만으로는
+  전달되지 않고, 디렉터리가 이미 존재한다는 사실만으로도 전달되지 않는다. 새 실행이 기존 디렉터리를 가리키면
+  각 stage의 `diagnose_float32_digital_quality.py` 자신이 이를 거부한다(위 "Resume 안전성" 참고) — 셸이
+  암묵적으로 모든 실행을 "resume"으로 취급하지 않는다.
 - python 인터프리터 탐색: `PYTHON_BIN` 환경변수 명시 > conda `ptest` env 활성화(conda가 PATH에 있을 때) >
   `~/anaconda3`/`~/miniconda3`/`~/miniforge3`/`/opt/conda`/`/usr/local/anaconda3`의 `envs/ptest/bin/python`
   순으로 시도 — 매 후보는 실제로 `import torch`가 성공하는지 검증한 뒤에만 채택한다(비대화형 셸에서 conda가
   PATH에 없어 시스템 python으로 조용히 넘어가는 문제의 수정). 전부 실패하면 `PYTHON_BIN`을 직접 지정하라는
   메시지와 함께 즉시 종료한다.
 - 매 stage(2~6)의 stdout/stderr·시작/종료 시각·소요 시간(초)·종료 코드가
-  `$OUTPUT_ROOT/stage_logs/<stage_name>.log`에 보존된다(터미널에도 동시에 출력 — `tee`).
+  `$OUTPUT_ROOT/stage_logs/<stage_name>.log`에 보존된다(터미널에도 동시에 출력 — `tee`). 같은 `--output-root`로
+  재시도할 때마다 로그를 **덮어쓰지 않고 이어붙인다**(`===== attempt at <timestamp> =====` 구분선으로 시도별
+  구간을 나눔) — 이전 시도의 로그가 사라지지 않는다.
+- stage 7(`INTEGRATED_REPORT.md` 생성) 자체가 실패하면(예: 어느 stage의 `summary.json`이 손상됨) 이는
+  `STAGE_FAILURES`에 정상적으로 반영되고, "wrote ..." 성공 메시지는 실제로 파일이 쓰였을 때만 출력된다 —
+  python 실행이 실패했는데도 다음 줄에서 "성공"이라고 보고하지 않는다.
 - preflight 실패 → 즉시 종료(아무 stage도 실행되지 않음)
-- 독립 stage(3~6) 실패 → 기록 후 계속 진행, 최종 exit code는 non-zero(3)
+- 독립 stage(3~7) 실패 → 기록 후 계속 진행, 최종 exit code는 non-zero(3)
 - SIGINT/SIGTERM → 현재 실행 중인 Python 단계가 자체적으로 manifest/summary/report를 저장한 뒤 종료 코드
   130으로 끝나고, 셸 드라이버는 즉시 나머지 stage를 건너뛰며 exit 130 — 동일 `--output-root`로 `--resume` 재실행
 - OOM 무한 재시도 없음 — 매 stage는 정확히 한 번만 실행되고, 재시도는 항상 사용자가 명시적으로 재실행(선택적
@@ -194,9 +222,10 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 ## 상태
 
 **진단 환경 구현 완료, 서버 실측 대기.** 이 문서와 harness 자체는 CPU/mock 테스트와 dry-run으로만 검증되었다
-(`tests/test_float32_digital_diagnostics.py`, 40개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
+(`tests/test_float32_digital_diagnostics.py`, 45개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
 효과(VAE-direct bypass가 Canny/ControlNet을 실제로 호출하지 않는지 포함)·NaN 전파·decode parity·verdict 분류
-(edge 비대칭 오탐 방지 포함)·resume 안전성(중복 방지·판정 보존)·CLI end-to-end). 실제 GPU 추론 기반 판정
+(edge 비대칭 오탐 방지 및 edge_handling_equalized 실제 연동 포함)·resume 안전성(중복 방지·판정 보존·중단
+직후 판정 복구·dataset content hash)·REPORT.md 링크 깊이·CLI end-to-end). 실제 GPU 추론 기반 판정
 (`packet_tx_rx_issue`/`decoder_pipeline_issue`/`latent_normalization_issue`)은 `scripts/
 run_float32_digital_diagnostics.sh`를 서버에서 실행한 뒤에만 유효하다 — 이 문서는 원인 해결이나 품질 정상화를
 주장하지 않는다.

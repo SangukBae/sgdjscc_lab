@@ -3,8 +3,30 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# src/sgdjscc_lab/diagnostics/report.py -> repo root is 3 parents up.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _doc_link(output_root: Path, doc_relpath: str) -> str:
+    """Relative path from *output_root* to ``<repo_root>/<doc_relpath>``.
+
+    ``output_root`` is not always exactly one fixed depth below the repo
+    root (e.g. ``outputs/<run>/`` vs. the server driver's
+    ``outputs/<run>/stage3_single_frame_paths/``) — computing this instead
+    of hardcoding ``"../../docs/..."`` keeps the link correct regardless of
+    how deep *output_root* is nested.
+    """
+    target = _REPO_ROOT / doc_relpath
+    try:
+        return os.path.relpath(target, start=output_root.resolve())
+    except ValueError:
+        # Different drives (Windows) or similar — not expected on this
+        # project's supported platforms, but never crash report writing over it.
+        return doc_relpath
 
 
 def write_report_md(
@@ -27,10 +49,11 @@ def write_report_md(
     """
     lines: List[str] = []
     lines.append("# float32 digital 복원 품질 저하 진단 결과\n")
+    protocols_link = _doc_link(output_root, "docs/protocols/float32_digital_diagnostics.md")
+    open_issues_link = _doc_link(output_root, "docs/current/open_issues.md")
     lines.append(
-        "> 관련 문서: [docs/protocols/float32_digital_diagnostics.md]"
-        "(../../docs/protocols/float32_digital_diagnostics.md), "
-        "[docs/current/open_issues.md](../../docs/current/open_issues.md)\n"
+        f"> 관련 문서: [docs/protocols/float32_digital_diagnostics.md]({protocols_link}), "
+        f"[docs/current/open_issues.md]({open_issues_link})\n"
     )
 
     lines.append("## 실행 정보\n")

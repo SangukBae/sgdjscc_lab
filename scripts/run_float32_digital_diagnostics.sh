@@ -69,11 +69,12 @@ Usage: run_float32_digital_diagnostics.sh [options]
 EOF
 }
 
+RESUME_REQUESTED=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
     --profile) PROFILE="$2"; shift 2 ;;
-    --resume) OUTPUT_ROOT="$2"; shift 2 ;;
+    --resume) OUTPUT_ROOT="$2"; RESUME_REQUESTED=1; shift 2 ;;
     --device) DEVICE="$2"; shift 2 ;;
     --dataset-root) DATASET_ROOT="$2"; shift 2 ;;
     --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
@@ -236,12 +237,21 @@ run_preflight
 if [ -z "$OUTPUT_ROOT" ]; then
   OUTPUT_ROOT="outputs/f32dig_$(date +%Y%m%d_%H%M%S)"
   log "no --resume/--output-root given -- starting a fresh run at $OUTPUT_ROOT"
+elif [ "$RESUME_REQUESTED" -eq 1 ]; then
+  log "resuming existing output root: $OUTPUT_ROOT"
 else
-  log "using output root: $OUTPUT_ROOT (resume-safe per stage via run_signature.json)"
+  log "using output root: $OUTPUT_ROOT (fresh run -- each stage's diagnose_float32_digital_quality.py "
+  log "  invocation will itself refuse if this directory already has completed results; pass --resume "
+  log "  explicitly to continue an interrupted run instead)"
 fi
 mkdir -p "$OUTPUT_ROOT"
+# --resume is passed to every stage ONLY when the user explicitly asked for
+# it (RESUME_REQUESTED=1, set only by --resume, never by --output-root or by
+# the directory already existing) -- a fresh/new run must let each stage's
+# python CLI refuse a non-empty output-root on its own rather than the shell
+# silently making every invocation "a resume".
 RESUME_FLAG=""
-[ -d "$OUTPUT_ROOT" ] && RESUME_FLAG="--resume"
+[ "$RESUME_REQUESTED" -eq 1 ] && RESUME_FLAG="--resume"
 
 # ── profile-dependent scope ─────────────────────────────────────────────
 case "$PROFILE" in
@@ -275,10 +285,10 @@ run_stage() {
     return $?
   fi
   {
-    echo "start: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "===== attempt at $(date -u +%Y-%m-%dT%H:%M:%SZ) ====="
     echo "command: $*"
     echo "---"
-  } > "$log_file"
+  } >> "$log_file"
   set +o pipefail
   "$@" 2>&1 | tee -a "$log_file"
   local rc=${PIPESTATUS[0]}
@@ -317,10 +327,10 @@ else
   start_ts=$(date +%s)
   log "==== stage: $name ===="
   {
-    echo "start: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "===== attempt at $(date -u +%Y-%m-%dT%H:%M:%SZ) ====="
     echo "command: $PYTHON_BIN -m pytest ${TEST_FILES[*]} -q"
     echo "---"
-  } > "$log_file"
+  } >> "$log_file"
   set +o pipefail
   "$PYTHON_BIN" -m pytest "${TEST_FILES[@]}" -q 2>&1 | tee -a "$log_file"
   rc=${PIPESTATUS[0]}
@@ -373,19 +383,19 @@ fi
 # ── stage 7: validate results, hash, integrated report ──────────────────
 log "==== stage: 7_validate_and_report ===="
 STAGE7_DIRS="$OUTPUT_ROOT/stage3_single_frame_paths $OUTPUT_ROOT/stage4_single_frame_ablations $OUTPUT_ROOT/stage5_paired_frames $OUTPUT_ROOT/stage6_core_conditions"
-F32DIG_PROFILE="$PROFILE" F32DIG_OUTPUT_ROOT="$OUTPUT_ROOT" F32DIG_STAGE_FAILURES="$STAGE_FAILURES" \
-F32DIG_STAGE_DIRS="$STAGE7_DIRS" "$PYTHON_BIN" - <<'PYEOF'
+if F32DIG_PROFILE="$PROFILE" F32DIG_OUTPUT_ROOT="$OUTPUT_ROOT" F32DIG_STAGE_FAILURES="$STAGE_FAILURES" \
+   F32DIG_STAGE_DIRS="$STAGE7_DIRS" "$PYTHON_BIN" - <<'PYEOF'
 import json
 import os
 import hashlib
 from pathlib import Path
 from collections import Counter
+from datetime import datetime, timezone
 
 output_root = Path(os.environ["F32DIG_OUTPUT_ROOT"])
 profile = os.environ["F32DIG_PROFILE"]
 stage_failures = os.environ["F32DIG_STAGE_FAILURES"]
 stage_dirs = [Path(p) for p in os.environ["F32DIG_STAGE_DIRS"].split() if p]
-from datetime import datetime, timezone
 
 lines = []
 lines.append(f"# float32 digital diagnostics — integrated run ({profile} profile)")
@@ -404,28 +414,46 @@ lines.append("")
 lines.append("| stage | n_frames_processed | dominant_verdict | verdict counts | failed_cases |")
 lines.append("|---|---:|---|---|---:|")
 
-overall_counts = Counter()
+# (video, frame, ablation-kind) -> verdict label, deduplicated ACROSS stages
+# -- stage3 and stage5 (for example) both cover video 01/frame 0's baseline
+# ablation with the identical config, so summing each stage's own
+# verdict_summary counts directly would count that one verdict twice. Reading
+# each stage's verdicts.jsonl (not its pre-aggregated summary.json counts)
+# and keying by the full (video, frame, ablation) triple across ALL stages
+# combined lets the "overall" section count each real verdict exactly once.
+combined_verdicts = {}
 for stage_dir in stage_dirs:
     if not stage_dir.is_dir():
         continue
     summary_path = stage_dir / "summary.json"
-    if not summary_path.exists():
-        lines.append(f"| {stage_dir.name} | (no summary.json) | | | |")
-        continue
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    vs = summary.get("verdict_summary") or {}
-    counts = vs.get("counts") or {}
-    dominant = vs.get("dominant_verdict")
-    n_frames = summary.get("counts", {}).get("n_frames_processed", "?")
+    n_frames = "?"
+    if summary_path.exists():
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        n_frames = summary.get("counts", {}).get("n_frames_processed", "?")
+
+    verdicts_path = stage_dir / "verdicts.jsonl"
+    stage_counts = Counter()
+    if verdicts_path.exists():
+        with verdicts_path.open(encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                row = json.loads(line)
+                stage_counts[row["verdict"]] += 1
+                combined_verdicts[(row["video"], row["frame"], row["ablation"])] = row["verdict"]
+
     failed_csv = stage_dir / "failed_cases.csv"
     n_failed = max(0, sum(1 for _ in failed_csv.open(encoding="utf-8")) - 1) if failed_csv.exists() else 0
-    counts_str = ", ".join(f"{k}={v}" for k, v in sorted(counts.items())) or "(none)"
-    lines.append(f"| {stage_dir.name} | {n_frames} | {dominant or 'inconclusive'} | {counts_str} | {n_failed} |")
-    overall_counts.update(counts)
+    stage_conclusive = {k: v for k, v in stage_counts.items() if k != "inconclusive"}
+    stage_dominant = max(stage_conclusive, key=stage_conclusive.get) if stage_conclusive else None
+    counts_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_counts.items())) or "(none)"
+    lines.append(f"| {stage_dir.name} | {n_frames} | {stage_dominant or 'inconclusive'} | {counts_str} | {n_failed} |")
 
 lines.append("")
-lines.append("## overall (all stages combined)")
+lines.append("## overall (all stages combined, deduplicated by (video, frame, ablation))")
 lines.append("")
+overall_counts = Counter(combined_verdicts.values())
 if overall_counts:
     conclusive = {k: v for k, v in overall_counts.items() if k != "inconclusive"}
     overall_dominant = max(conclusive, key=conclusive.get) if conclusive else None
@@ -453,7 +481,18 @@ for stage_dir in stage_dirs:
 (output_root / "INTEGRATED_REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 print(f"wrote {output_root / 'INTEGRATED_REPORT.md'}")
 PYEOF
-log "wrote $OUTPUT_ROOT/INTEGRATED_REPORT.md"
+then
+  integrated_report_ok=1
+else
+  integrated_report_ok=0
+fi
+
+if [ "$integrated_report_ok" -eq 1 ] && [ -s "$OUTPUT_ROOT/INTEGRATED_REPORT.md" ]; then
+  log "wrote $OUTPUT_ROOT/INTEGRATED_REPORT.md"
+else
+  log "stage '7_validate_and_report' FAILED -- INTEGRATED_REPORT.md was not written (or is empty); per-stage REPORT.md/summary.json files under each stageN_*/ are still valid on their own."
+  STAGE_FAILURES=$((STAGE_FAILURES + 1))
+fi
 
 log "done. Results in $OUTPUT_ROOT:"
 log "  stage3_single_frame_paths/     -- 1 video x 1 frame, 3 paths, full tensor contract"
