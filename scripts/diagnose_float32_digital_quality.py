@@ -66,6 +66,16 @@ PATH_CHOICES = ("awgn", "digital_inprocess", "digital_wire")
 # under the baseline ablation.
 EDGE_EQUALIZING_ABLATIONS = ("serialized_raw_edge", "awgn_edge_retransmit")
 
+# Baseline verdicts from different server stages are not necessarily based on
+# the same evidence: stage 3 deliberately runs baseline only, while stages 4/5
+# also run the VAE-direct ablation.  Persist this scope explicitly so the
+# integrated report can prefer the richer judgment instead of treating a
+# legitimate evidence-driven reclassification as non-determinism.
+EVIDENCE_BASELINE_PENDING_VAE = "baseline_pending_vae_direct"
+EVIDENCE_BASELINE_ONLY = "baseline_only"
+EVIDENCE_BASELINE_WITH_VAE = "baseline_with_vae_direct"
+EVIDENCE_AUXILIARY_EDGE = "auxiliary_edge_equalized"
+
 PATH_COMPARISON_FIELDS = [
     "video", "frame", "seed", "ablation", "path",
     "psnr", "ssim", "lpips", "psnr_delta_vs_awgn", "ssim_delta_vs_awgn", "lpips_delta_vs_awgn",
@@ -619,7 +629,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
 
     def _persist_verdict(video: str, frame: int, kind: str, *, path_quality, comparisons,
                           vae_direct_quality=None, edge_handling_equalized: bool = False,
-                          provisional: bool = False) -> None:
+                          provisional: bool = False, evidence_level: str) -> None:
         """Computes + appends one verdict row.
 
         A row with ``status: "final"`` is frozen — never recomputed or
@@ -647,6 +657,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             "first_divergent_stage": verdict.first_divergent_stage,
             "edge_handling_equalized": edge_handling_equalized,
             "status": "provisional" if provisional else "final",
+            "evidence_level": evidence_level,
+            "vae_direct_considered": evidence_level == EVIDENCE_BASELINE_WITH_VAE,
         }
         if existing is not None and all(existing.get(k) == row[k] for k in row):
             return  # nothing actually changed -- skip the redundant append
@@ -827,6 +839,12 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     # already tolerates None PSNR values inside
                     # vae_direct_quality), not wait forever.
                     baseline_provisional = vae_direct_requested and vae_direct_entry is None
+                    if baseline_provisional:
+                        baseline_evidence_level = EVIDENCE_BASELINE_PENDING_VAE
+                    elif vae_direct_requested:
+                        baseline_evidence_level = EVIDENCE_BASELINE_WITH_VAE
+                    else:
+                        baseline_evidence_level = EVIDENCE_BASELINE_ONLY
                     _persist_verdict(
                         video_key, frame_idx, "baseline",
                         path_quality=_psnr_triplet(psnr_index, baseline_group),
@@ -834,6 +852,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                         vae_direct_quality=vae_direct_quality,
                         edge_handling_equalized=False,
                         provisional=baseline_provisional,
+                        evidence_level=baseline_evidence_level,
                     )
                 # Edge-equalizing ablations (serialized_raw_edge / awgn_edge_retransmit)
                 # get their OWN verdict, classified with edge_handling_equalized=True
@@ -848,6 +867,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                             comparisons=pair_index.get(eq_group, []),
                             vae_direct_quality=None,
                             edge_handling_equalized=True,
+                            evidence_level=EVIDENCE_AUXILIARY_EDGE,
                         )
 
             n_frames_processed += 1
@@ -880,6 +900,12 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     ]
     n_provisional = sum(1 for r in all_per_video_verdicts if r.get("status") == "provisional")
     n_auxiliary = sum(1 for r in all_per_video_verdicts if r.get("ablation") in EDGE_EQUALIZING_ABLATIONS)
+    n_baseline_with_vae = sum(
+        1 for r in final_baseline_verdicts if r.get("evidence_level") == EVIDENCE_BASELINE_WITH_VAE
+    )
+    n_baseline_only = sum(
+        1 for r in final_baseline_verdicts if r.get("evidence_level") == EVIDENCE_BASELINE_ONLY
+    )
 
     verdict_summary = None
     if final_baseline_verdicts:
@@ -899,6 +925,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             "n_baseline_verdicts_final": len(final_baseline_verdicts),
             "n_baseline_verdicts_provisional": n_provisional,
             "n_auxiliary_edge_equalized_verdicts": n_auxiliary,
+            "n_baseline_verdicts_with_vae_direct": n_baseline_with_vae,
+            "n_baseline_verdicts_without_vae_direct": n_baseline_only,
         },
     )
     write_report_md(

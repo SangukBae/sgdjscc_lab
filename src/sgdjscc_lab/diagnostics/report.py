@@ -116,14 +116,16 @@ def write_report_md(
         lines.append(
             "`ablation` 열이 `baseline`인 행만 위 종합 판정에 집계된다. "
             f"{'/'.join(AUXILIARY_ABLATIONS)}는 별도 보조 증거이며, `status`가 `provisional`인 행은 "
-            "아직 확정되지 않았다.\n"
+            "아직 확정되지 않았다. `evidence_level`은 baseline 판정이 VAE-direct 증거까지 반영했는지 "
+            "명시한다.\n"
         )
-        lines.append("| video | frame | ablation | status | verdict | first_divergent_stage | reason |")
-        lines.append("|---|---:|---|---|---|---|---|")
+        lines.append("| video | frame | ablation | status | evidence_level | verdict | first_divergent_stage | reason |")
+        lines.append("|---|---:|---|---|---|---|---|---|")
         for row in per_video_verdicts:
             lines.append(
                 f"| {row.get('video')} | {row.get('frame')} | {row.get('ablation')} "
                 f"| {row.get('status', 'final')} "
+                f"| {row.get('evidence_level', 'legacy_unspecified')} "
                 f"| {row.get('verdict')} | {row.get('first_divergent_stage') or ''} "
                 f"| {str(row.get('reason', '')).replace(chr(10), ' ')[:200]} |"
             )

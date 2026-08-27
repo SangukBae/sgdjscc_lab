@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -565,6 +566,88 @@ def _run_cli(args, **kwargs):
     )
 
 
+def _run_integrated_report(tmp_path, stages):
+    """Execute the server script's real stage-7 Python payload on fixtures."""
+    output_root = tmp_path / "integrated"
+    output_root.mkdir()
+    stage_dirs = []
+    for stage_name, rows in stages.items():
+        stage_dir = output_root / stage_name
+        stage_dir.mkdir()
+        stage_dirs.append(stage_dir)
+        (stage_dir / "summary.json").write_text(
+            json.dumps({"counts": {"n_frames_processed": 1}}), encoding="utf-8",
+        )
+        (stage_dir / "verdicts.jsonl").write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8",
+        )
+
+    server_script = (_REPO_ROOT / "scripts" / "run_float32_digital_diagnostics.sh").read_text(
+        encoding="utf-8",
+    )
+    payload = server_script.rsplit("<<'PYEOF'\n", 1)[1].split("\nPYEOF", 1)[0]
+    env = os.environ.copy()
+    env.update({
+        "F32DIG_PROFILE": "test",
+        "F32DIG_OUTPUT_ROOT": str(output_root),
+        "F32DIG_STAGE_FAILURES": "0",
+        "F32DIG_STAGE_DIRS": " ".join(str(p) for p in stage_dirs),
+    })
+    result = subprocess.run(
+        [sys.executable, "-c", payload], capture_output=True, text=True, env=env, timeout=30,
+    )
+    report = (output_root / "INTEGRATED_REPORT.md").read_text(encoding="utf-8")
+    return result, report
+
+
+class TestIntegratedReportEvidenceLevels:
+    def test_richer_vae_evidence_upgrades_without_conflict_and_stage_counts_latest_only(self, tmp_path):
+        key = {"video": "01_person_walk", "frame": 0, "ablation": "baseline"}
+        result, report = _run_integrated_report(tmp_path, {
+            "stage3_single_frame_paths": [{
+                **key, "status": "final", "evidence_level": "baseline_only",
+                "vae_direct_considered": False, "verdict": "decoder_pipeline_issue",
+            }],
+            "stage4_single_frame_ablations": [
+                {
+                    **key, "status": "provisional", "evidence_level": "baseline_pending_vae_direct",
+                    "vae_direct_considered": False, "verdict": "decoder_pipeline_issue",
+                },
+                {
+                    **key, "status": "final", "evidence_level": "baseline_with_vae_direct",
+                    "vae_direct_considered": True, "verdict": "latent_normalization_issue",
+                },
+            ],
+        })
+
+        assert result.returncode == 0, result.stderr
+        overall = report.split("## overall", 1)[1].split("## auxiliary evidence", 1)[0]
+        assert "`latent_normalization_issue`: 1" in overall
+        assert "decoder_pipeline_issue" not in overall
+        assert "- none detected." in report
+        stage4_row = next(line for line in report.splitlines() if line.startswith("| stage4_"))
+        assert "baseline_with_vae_direct=1" in stage4_row
+        assert "| 0 |" in stage4_row  # upgraded provisional is not counted as still pending
+
+    def test_same_evidence_level_disagreement_is_still_a_conflict(self, tmp_path):
+        key = {"video": "01_person_walk", "frame": 0, "ablation": "baseline"}
+        result, report = _run_integrated_report(tmp_path, {
+            "stage4_single_frame_ablations": [{
+                **key, "status": "final", "evidence_level": "baseline_with_vae_direct",
+                "vae_direct_considered": True, "verdict": "latent_normalization_issue",
+            }],
+            "stage5_paired_frames": [{
+                **key, "status": "final", "evidence_level": "baseline_with_vae_direct",
+                "vae_direct_considered": True, "verdict": "decoder_pipeline_issue",
+            }],
+        })
+
+        assert result.returncode == 3
+        assert "CONFLICTS_DETECTED: 1" in result.stderr
+        assert "baseline_with_vae_direct" in report
+        assert "1 conflicting verdict(s) detected" in report
+
+
 @pytest.mark.skipif(
     not (_REPO_ROOT / "data" / "etri_video_eval" / "manifest.csv").exists(),
     reason="ETRI dataset manifest not present in this environment",
@@ -602,6 +685,7 @@ class TestCli:
         summary = json.loads((out_root / "summary.json").read_text())
         assert summary["dry_run"] is False
         assert summary["counts"]["n_frames_processed"] == 1
+        assert summary["counts"]["n_baseline_verdicts_with_vae_direct"] == 1
 
     def test_resume_skips_completed_groups(self, tmp_path):
         out_root = tmp_path / "run2"
@@ -707,6 +791,8 @@ class TestCli:
         assert recovered["video"] == "01_person_walk"
         assert recovered["frame"] == 0
         assert recovered["ablation"] == "baseline"
+        assert recovered["evidence_level"] == "baseline_only"
+        assert recovered["vae_direct_considered"] is False
 
         summary2 = json.loads((out_root / "summary.json").read_text())
         assert summary2["verdict_summary"] is not None
@@ -771,6 +857,8 @@ class TestCli:
         assert len(verdict_lines_before) == 1
         provisional_row = json.loads(verdict_lines_before[0])
         assert provisional_row["status"] == "provisional"
+        assert provisional_row["evidence_level"] == "baseline_pending_vae_direct"
+        assert provisional_row["vae_direct_considered"] is False
 
         # Resume (fresh module import, no monkeypatching this time) --
         # completes diffusion_bypass_vae_direct and must recompute (not skip)
@@ -799,6 +887,8 @@ class TestCli:
         assert len(final_rows_by_key) == 1
         final_row = final_rows_by_key[("01_person_walk", 0, "baseline")]
         assert final_row["status"] == "final"
+        assert final_row["evidence_level"] == "baseline_with_vae_direct"
+        assert final_row["vae_direct_considered"] is True
 
         summary = json.loads((out_root / "summary.json").read_text())
         assert summary["verdict_summary"] is not None
@@ -870,6 +960,9 @@ class TestCli:
         assert verdicts_by_ablation["baseline"]["edge_handling_equalized"] is False
         assert verdicts_by_ablation["serialized_raw_edge"]["edge_handling_equalized"] is True
         assert verdicts_by_ablation["awgn_edge_retransmit"]["edge_handling_equalized"] is True
+        assert verdicts_by_ablation["baseline"]["evidence_level"] == "baseline_only"
+        assert verdicts_by_ablation["serialized_raw_edge"]["evidence_level"] == "auxiliary_edge_equalized"
+        assert verdicts_by_ablation["awgn_edge_retransmit"]["evidence_level"] == "auxiliary_edge_equalized"
 
         # Regression test (over-aggregation): 3 verdict rows exist for this
         # ONE frame, but only the "baseline" row is the primary per-frame

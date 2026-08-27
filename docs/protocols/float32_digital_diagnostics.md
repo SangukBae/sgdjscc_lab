@@ -162,6 +162,13 @@ group의 evidence가 아직 없으면(이번 실행에서도, 이전 실행에�
 (`tests/test_float32_digital_diagnostics.py::test_stale_baseline_verdict_upgraded_after_interrupted_vae_direct_arrives_on_resume`
 가 정확히 이 시나리오를 재현·검증한다).
 
+각 판정은 `evidence_level`도 함께 기록한다. baseline 판정은
+`baseline_pending_vae_direct`(provisional) → `baseline_only`(VAE-direct를 요청하지 않은 실행의 final) 또는
+`baseline_with_vae_direct`(VAE-direct evidence를 반영한 final)로 구분되며, edge-equalizing 보조 판정은
+`auxiliary_edge_equalized`다. 서버 stage 3은 의도적으로 baseline만 실행하고 stage 4/5는 VAE-direct까지 실행하므로,
+같은 프레임의 두 final 판정도 evidence 수준이 다를 수 있다. 통합 시 더 풍부한
+`baseline_with_vae_direct`를 우선하며, 이 과정에서 verdict가 바뀌는 것은 정상적인 evidence upgrade이지 충돌이 아니다.
+
 ### 판정 집계 기준 — baseline·final만 종합 판정에 반영
 
 `serialized_raw_edge`/`awgn_edge_retransmit`(edge-equalizing ablation)는 자체 판정 행을 가지지만
@@ -177,6 +184,8 @@ hash·**dataset content hash**·환경 — `utils/run_manifest.py` 재사용), `
 `path_comparison.csv`(경로별 PSNR/SSIM/LPIPS/latency/diffusion step/실패 + AWGN 대비 delta — PSNR/SSIM/LPIPS
 전부), `tensor_stage_stats.jsonl`, `tensor_pair_comparison.csv`, `verdicts.jsonl`((video, frame, ablation)당
 판정 행 — `ablation`은 `baseline`이거나 `EDGE_EQUALIZING_ABLATIONS`의 하나, `status`는 `provisional`/`final`;
+`evidence_level`은 `baseline_pending_vae_direct`/`baseline_only`/`baseline_with_vae_direct`/
+`auxiliary_edge_equalized` 중 하나이며,
 provisional → final 갱신 시 같은 키로 새 행이 추가될 수 있으므로 파일 자체는 append-only이고, 로더가 키당
 마지막 행을 채택해 authoritative 상태를 얻는다), `failed_cases.csv`(non-finite로 중단된 **path별** 행 —
 `summary.json`/종료 코드에 쓰이는 실패 건수는 group 수가 아니라 이 CSV의 실제 행 수), `summary.json`,
@@ -217,17 +226,19 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 7. 결과 검증 + 산출물 SHA-256 해시 + `INTEGRATED_REPORT.md`(각 stage의 `summary.json`/`verdicts.jsonl`을
    실제로 읽어 stage별 dominant verdict·판정 개수·실패 건수 표와 전체 통합 판정을 만든다 — 파일 해시 목록만이
    아니다):
-   - `(video, frame, ablation)` 기준으로 stage 간 중복 제거 — stage3과 stage5가 둘 다 다루는 (video 01,
-     frame 0, baseline)이 두 번 집계되지 않는다.
+   - 먼저 각 stage의 append-only `verdicts.jsonl`을 `(video, frame, ablation)`별 **마지막 행**으로 축약한 뒤 stage 간
+     중복을 제거한다. 따라서 provisional → final로 이미 승격된 행을 per-stage provisional 건수에 다시 세지 않는다.
+   - stage3과 stage4/5가 같은 (video, frame, baseline)을 다룰 때는 `evidence_level` 우선순위
+     (`baseline_with_vae_direct` > `baseline_only` > `baseline_pending_vae_direct`)로 가장 풍부한 판정 하나를 채택한다.
    - "overall" dominant verdict는 **`ablation == "baseline"` AND `status == "final"`** 행만 집계한다 —
      `serialized_raw_edge`/`awgn_edge_retransmit` 보조 증거는 별도 "auxiliary evidence" 절에, provisional
      baseline 판정은 카운트만 별도로 보존되며 어느 쪽도 dominant verdict 합산에 섞이지 않는다.
-   - 같은 키(`(video, frame, ablation)`)에 대해 같은 finality 등급(`final`↔`final` 또는
-     `provisional`↔`provisional`)에서 **다른** stage가 **다른** verdict를 기록했다면(재현성 이상 징후) 조용히
+   - 같은 키(`(video, frame, ablation)`)에 대해 **같은 `evidence_level`**에서 다른 stage가 **다른** verdict를
+     기록했다면(재현성 이상 징후) 조용히
      마지막 값으로 덮어쓰지 않고 `## conflicts` 절에 명시적으로 나열하며, python이 종료 코드 3으로 끝나
      `STAGE_FAILURES`가 증가한다(그래도 `INTEGRATED_REPORT.md` 자체는 항상 끝까지 작성됨 — 실패 처리와
-     리포트 작성은 서로 배타적이지 않다). `provisional` → `final` 갱신은 충돌이 아니라 정상적인 승격으로
-     처리되어 조용히 최신 값을 채택한다.
+     리포트 작성은 서로 배타적이지 않다). 더 높은 `evidence_level`로의 변화는 verdict가 달라져도 충돌이 아니라
+     정상적인 승격으로 처리되어 더 풍부한 판정을 채택한다.
 
 불필요한 ablation Cartesian product는 만들지 않는다 — ablation 전체 스윕은 stage 4(1영상 x 1프레임)로만
 한정하고, 다중 프레임/다중 영상 stage는 `baseline`(+ stage 5의 `diffusion_bypass_vae_direct`)만 실행한다.

@@ -399,6 +399,27 @@ stage_failures = os.environ["F32DIG_STAGE_FAILURES"]
 stage_dirs = [Path(p) for p in os.environ["F32DIG_STAGE_DIRS"].split() if p]
 
 AUXILIARY_ABLATIONS = ("serialized_raw_edge", "awgn_edge_retransmit")
+EVIDENCE_RANK = {
+    "baseline_pending_vae_direct": 0,
+    "baseline_only": 1,
+    "baseline_with_vae_direct": 2,
+    "auxiliary_edge_equalized": 1,
+    "legacy_unspecified": 1,
+}
+
+
+def evidence_level(row):
+    """Return an explicit or backward-compatible verdict evidence scope."""
+    explicit = row.get("evidence_level")
+    if explicit:
+        return explicit
+    if row.get("ablation") in AUXILIARY_ABLATIONS:
+        return "auxiliary_edge_equalized"
+    if row.get("status", "final") != "final":
+        return "baseline_pending_vae_direct"
+    if row.get("vae_direct_considered"):
+        return "baseline_with_vae_direct"
+    return "baseline_only"
 
 lines = []
 lines.append(f"# float32 digital diagnostics — integrated run ({profile} profile)")
@@ -412,19 +433,20 @@ lines.append("**This section consolidates each stage's own verdict (see docs/pro
              "a new judgment, only a rollup of what each stage's own summary.json/verdicts.jsonl "
              "already recorded. Only `ablation == \"baseline\"` AND `status == \"final\"` rows feed "
              "any dominant-verdict tally below -- auxiliary edge-equalizing ablations and "
-             "still-provisional baseline rows are listed separately, never summed into it.**")
+             "still-provisional baseline rows are listed separately, never summed into it. When stages "
+             "overlap, the richest evidence wins (`baseline_with_vae_direct` > `baseline_only` > "
+             "provisional); only disagreements at the same evidence level are conflicts.**")
 lines.append("")
 
-# combined[key] = {"verdict", "status", "stage"} -- ONE canonical entry per
+# combined[key] = {"verdict", "status", "stage", "evidence_level"} -- ONE canonical entry per
 # (video, frame, ablation) across ALL stages (stage3 and stage5, for
-# example, both cover video 01/frame 0's baseline ablation with the
-# identical config, so summing each stage's own verdict_summary counts
-# directly would count that one verdict twice). Precedence: a "final" entry
-# always wins over a "provisional" one for the SAME key (upgrade, not a
-# conflict). Two DIFFERENT verdict labels at the same finality tier for the
-# same key is a genuine reproducibility anomaly -- flagged in "## conflicts"
-# below and treated as a failure (see also `EDGE_EQUALIZING_ABLATIONS`),
-# never silently overwritten with the later stage's value.
+# example, both cover video 01/frame 0's baseline ablation, but stage5 also
+# has VAE-direct evidence). Summing each stage's own verdict_summary counts
+# directly would count that one frame twice. Precedence follows evidence
+# richness: baseline_with_vae_direct > baseline_only > provisional. A verdict
+# change while evidence gets richer is an expected scientific refinement, not
+# a reproducibility conflict. Only DIFFERENT verdict labels at the SAME
+# evidence level for the same key are flagged as conflicts.
 combined = {}
 conflicts = []
 per_stage_rows = []
@@ -442,39 +464,57 @@ for stage_dir in stage_dirs:
     stage_baseline_final_counts = Counter()
     stage_n_provisional = 0
     stage_n_auxiliary = 0
+    stage_evidence_counts = Counter()
     if verdicts_path.exists():
+        # verdicts.jsonl is append-only: provisional -> final upgrades append a
+        # new line for the same logical key. Reduce to the LAST line per key
+        # before either per-stage counting or cross-stage merging; otherwise a
+        # successfully upgraded verdict would still be reported as one stale
+        # provisional row in the per-stage table.
+        stage_latest = {}
         with verdicts_path.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
                     continue
                 row = json.loads(line)
-                status = row.get("status", "final")
                 key = (row["video"], row["frame"], row["ablation"])
-                entry = {"verdict": row["verdict"], "status": status, "stage": stage_dir.name}
+                stage_latest[key] = row
 
-                existing = combined.get(key)
-                if existing is None:
+        for key, row in stage_latest.items():
+            status = row.get("status", "final")
+            level = evidence_level(row)
+            entry = {
+                "verdict": row["verdict"], "status": status, "stage": stage_dir.name,
+                "evidence_level": level,
+            }
+            existing = combined.get(key)
+            if existing is None:
+                combined[key] = entry
+            else:
+                old_rank = EVIDENCE_RANK.get(existing["evidence_level"], 0)
+                new_rank = EVIDENCE_RANK.get(level, 0)
+                if new_rank > old_rank:
                     combined[key] = entry
-                elif existing["status"] == "final" and status != "final":
-                    pass  # existing final wins; ignore a provisional newcomer
-                elif existing["status"] != "final" and status == "final":
-                    combined[key] = entry  # provisional -> final upgrade
+                elif new_rank < old_rank:
+                    pass
                 elif existing["verdict"] != entry["verdict"]:
                     conflicts.append({
                         "key": key, "verdict_a": existing["verdict"], "stage_a": existing["stage"],
-                        "verdict_b": entry["verdict"], "stage_b": entry["stage"], "status": status,
+                        "verdict_b": entry["verdict"], "stage_b": entry["stage"],
+                        "status": status, "evidence_level": level,
                     })
-                    # keep the earlier stage's entry as canonical (deterministic
-                    # first-wins on a genuine tie) -- flagged above, not hidden.
+                    # Equal evidence level: keep the earlier stage
+                    # deterministically, but surface and fail on the anomaly.
 
-                if row["ablation"] == "baseline":
-                    if status == "final":
-                        stage_baseline_final_counts[row["verdict"]] += 1
-                    else:
-                        stage_n_provisional += 1
-                elif row["ablation"] in AUXILIARY_ABLATIONS:
-                    stage_n_auxiliary += 1
+            if row["ablation"] == "baseline":
+                stage_evidence_counts[level] += 1
+                if status == "final":
+                    stage_baseline_final_counts[row["verdict"]] += 1
+                else:
+                    stage_n_provisional += 1
+            elif row["ablation"] in AUXILIARY_ABLATIONS:
+                stage_n_auxiliary += 1
 
     failed_csv = stage_dir / "failed_cases.csv"
     n_failed = max(0, sum(1 for _ in failed_csv.open(encoding="utf-8")) - 1) if failed_csv.exists() else 0
@@ -483,15 +523,16 @@ for stage_dir in stage_dirs:
         if stage_baseline_final_counts else None
     )
     counts_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_baseline_final_counts.items())) or "(none)"
+    evidence_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_evidence_counts.items())) or "(none)"
     per_stage_rows.append(
         f"| {stage_dir.name} | {n_frames} | {stage_dominant or 'inconclusive'} | {counts_str} "
-        f"| {stage_n_provisional} | {stage_n_auxiliary} | {n_failed} |"
+        f"| {evidence_str} | {stage_n_provisional} | {stage_n_auxiliary} | {n_failed} |"
     )
 
 lines.append("## per-stage verdict summary (baseline, final only)")
 lines.append("")
-lines.append("| stage | n_frames_processed | dominant_verdict | baseline verdict counts | provisional | auxiliary | failed_cases |")
-lines.append("|---|---:|---|---|---:|---:|---:|")
+lines.append("| stage | n_frames_processed | dominant_verdict | baseline verdict counts | evidence levels | provisional | auxiliary | failed_cases |")
+lines.append("|---|---:|---|---|---|---:|---:|---:|")
 lines.extend(per_stage_rows)
 
 lines.append("")
@@ -534,13 +575,14 @@ lines.append("")
 if conflicts:
     lines.append(
         f"**{len(conflicts)} conflicting verdict(s) detected** -- the SAME (video, frame, ablation) "
-        "got DIFFERENT verdict labels at the same finality tier from different stages. This is a "
+        "got DIFFERENT verdict labels at the same evidence level from different stages. This is a "
         "reproducibility anomaly (non-determinism or a config mismatch between stages), not expected "
         "behavior -- treated as a stage-7 failure below."
     )
     for c in conflicts:
         lines.append(
-            f"- `{c['key']}` ({c['status']}): `{c['verdict_a']}` (stage `{c['stage_a']}`) vs. "
+            f"- `{c['key']}` ({c['status']}, `{c['evidence_level']}`): "
+            f"`{c['verdict_a']}` (stage `{c['stage_a']}`) vs. "
             f"`{c['verdict_b']}` (stage `{c['stage_b']}`)"
         )
 else:
