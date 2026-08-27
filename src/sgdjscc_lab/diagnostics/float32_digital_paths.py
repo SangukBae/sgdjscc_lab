@@ -196,7 +196,19 @@ def instrumented_decode(
     if ablation.reuse_awgn_step and awgn_step_ref is not None:
         cur_step, cur_snr = awgn_step_ref
     if ablation.fixed_step is not None:
-        cur_step = float(ablation.fixed_step)
+        fixed_step = float(ablation.fixed_step)
+        # The production continuous diffusion implementation calls
+        # ``cur_step.cpu().numpy()`` and expects one value per sample.  Keep
+        # the computed step's tensor contract when possible; the fallback
+        # covers configurations where _compute_step returned a scalar.
+        if torch.is_tensor(cur_step):
+            cur_step = torch.full_like(cur_step, fixed_step)
+        else:
+            cur_step = torch.full(
+                (bsz, 1), fixed_step,
+                dtype=encode_features_hat.dtype,
+                device=encode_features_hat.device,
+            )
 
     latent_init = (
         encode_features_hat / power_scalar if use_jscc_feat

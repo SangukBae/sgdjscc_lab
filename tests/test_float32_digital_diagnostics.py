@@ -287,19 +287,45 @@ class TestAblations:
         )
         assert out.diffusion_steps == 3
 
-    def test_fixed_step_overrides_cur_step_for_every_path(self):
+    def test_fixed_step_preserves_production_tensor_contract_for_every_path(self, monkeypatch):
         models, cfg = _mock_env()
         ablations = build_default_ablations(fixed_step_value=0.42)
-        rec = TensorRecorder(enabled=True)
+        import sgdjscc_lab.pipelines.infer_pipeline as infer
+
+        seen_steps = []
+
+        def _production_contract_spy(**kwargs):
+            cur_step = kwargs["cur_step"]
+            # Mirrors the operation that failed in the real diffusion model.
+            cur_step.cpu().numpy()
+            seen_steps.append(cur_step.detach().clone())
+            return kwargs["encode_features_hat"] / kwargs["power_scalar"]
+
+        monkeypatch.setattr(infer, "_run_diffusion", _production_contract_spy)
+        frame = _frame(128, 128)
+        rec = TensorRecorder(enabled=False)
         run_frame_awgn(
-            _frame(128, 128), models, cfg, ablations["fixed_step"],
-            recorder=rec, video="v", frame_index=0, seed=1, record_patch_index=0,
+            frame, models, cfg, ablations["fixed_step"], recorder=rec,
+            video="v", frame_index=0, seed=1, record_patch_index=None,
         )
-        recorded_step = rec.live[("v", 0, 1, "fixed_step", "awgn", "diffusion_latent_init")]
-        # latent_init is computed from encode_features_hat/power_scalar regardless of
-        # cur_step; assert the recorded stage exists (fixed_step's effect is on
-        # cur_step passed into _run_diffusion, exercised via the smoke run not erroring).
-        assert recorded_step is not None
+        run_frame_digital_inprocess(
+            frame, models, cfg, ablations["fixed_step"], bit_depth=32,
+            granularity="per_tensor", recorder=rec, video="v", frame_index=0,
+            seed=1, record_patch_index=None,
+        )
+        run_frame_digital_wire(
+            frame, models, cfg, ablations["fixed_step"], bit_depth=32,
+            granularity="per_tensor", digital_step_policy="fixed_reference",
+            recorder=rec, video="v", frame_index=0, seed=1,
+            record_patch_index=None,
+        )
+
+        assert len(seen_steps) == 3
+        for cur_step in seen_steps:
+            assert cur_step.shape == (1, 1)
+            assert cur_step.dtype == torch.float32
+            assert cur_step.device.type == "cpu"
+            assert torch.equal(cur_step, torch.full((1, 1), 0.42))
 
     def test_use_edge_false_zeroes_controlnet_input(self):
         models, cfg = _mock_env()
