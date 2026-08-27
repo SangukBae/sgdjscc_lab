@@ -302,18 +302,25 @@ def _run_frame_common(
     recorder: TensorRecorder, video: str, frame_index: int, seed: int,
     record_patch_index: Optional[int], awgn_step_ref: Optional[Tuple[Any, Any]],
 ) -> PathOutcome:
+    from omegaconf import OmegaConf
     from sgdjscc_lab.pipelines.infer_pipeline import _extract_semantic_guidance
     from sgdjscc_lab.utils.preprocessing import merge_patches, prepare_patches
 
     jscc = models.jscc_model
     device = models.device
     channel_setup_fn(jscc)
+    effective_cfg = (
+        OmegaConf.merge(cfg, {"digital_step_policy": ablation.digital_step_policy_override})
+        if ablation.digital_step_policy_override is not None else cfg
+    )
 
     patches, patch_meta = prepare_patches(frame_tensor)
     patches = patches.to(device)
 
     with torch.inference_mode():
-        gt_text, canny_data, canny_uncertainty = _extract_semantic_guidance(patches, models, cfg, device)
+        gt_text, canny_data, canny_uncertainty = _extract_semantic_guidance(
+            patches, models, effective_cfg, device,
+        )
         if ablation.use_edge is False:
             canny_data = None
             canny_uncertainty = None
@@ -334,10 +341,10 @@ def _run_frame_common(
 
         with torch.inference_mode():
             artifacts = instrumented_encode_and_transmit(
-                patch, jscc, models.sem_pipeline, canny_i, unc_i, cfg, device, ctx,
+                patch, jscc, models.sem_pipeline, canny_i, unc_i, effective_cfg, device, ctx,
             )
             out, n_steps = instrumented_decode(
-                artifacts, jscc, models.sem_pipeline, gt_text_i, cfg, device, ctx,
+                artifacts, jscc, models.sem_pipeline, gt_text_i, effective_cfg, device, ctx,
                 edge_already_received=edge_already_received, ablation=ablation,
                 awgn_step_ref=awgn_step_ref, original_image=patch,
             )
@@ -507,6 +514,9 @@ def run_frame_digital_wire(
                 use_jscc_feat=bool(cfg.use_jscc_feature), use_gt_csi=bool(cfg.use_gt_csi), device=device,
                 digital_bit_depth=meta_i.get("bit_depth", bit_depth), digital_policy=policy,
                 digital_quant_snr_db=meta_i.get("quant_snr_db"),
+                digital_reference_snr_db=float(
+                    cfg.get("digital_fixed_reference_snr_db", 10.0)
+                ),
             )
             ctx_i.rec(_as_tensor(cur_step), "cur_step")
             ctx_i.rec(_as_tensor(cur_snr), "cur_snr")

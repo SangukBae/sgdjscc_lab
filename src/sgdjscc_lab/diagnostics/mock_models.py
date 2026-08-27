@@ -99,6 +99,8 @@ def build_diagnostic_cfg(**overrides: Any):
         "step_style": "continuous", "canny_cr": "1", "diffusion_step": 2,
         "guidance_scale": 3.0, "controlnet_scale": 1.0, "cfg_method": "constant",
         "th": 0.5, "snr_db": 10.0, "use_phase4": True,
+        "digital_step_policy": "fixed_reference",
+        "digital_fixed_reference_snr_db": 10.0,
     }
     base.update(overrides)
     return OmegaConf.create(base)

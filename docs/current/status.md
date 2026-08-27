@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: dad4222
+source_commit: 81087e6
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -158,7 +158,7 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 | Semantic-unit 절감 (키프레임+델타 재사용) | 완료 |
 | Channel-symbol/bit accounting PoC (`accounting/bit_accounting.py`) | 완료 — proxy 상수 기반, 실제 CBR/표준 bitstream 검증 아님 |
 | 실제 binary packet 전송 (`transmission/`, 4/6/8/16/32-bit 양자화) | **정상화·3-GPU 실측 완료** — 10영상×11설정 110/110 pair, 실패·NaN/Inf 0건. `fixed_int6`은 보수적 후보, `fixed_int4`는 최대 절감 후보. digital 절대 품질 저하와 SKEM rate matching 불완전은 미해결 — [2026-08-26 결과](../experiments/2026-08-26_transmission_normalization.md) |
-| float32 digital 품질 저하 진단 harness (`diagnostics/`, `scripts/diagnose_float32_digital_quality.py`) | **진단 환경·3-GPU 병렬 실행기·실서버 집중 검증 완료, clean short/full 재실행 대기** — awgn/digital_inprocess/digital_wire 3경로 stage 계측·ablation·판정, worker별 독립 output/resume, evidence-aware 통합 리포트 구현. 서버 smoke에서 발견한 `fixed_step` tensor 계약과 `minimal_denoise` sampler 최솟값 오류를 수정했고, 두 ablation 모두 production GPU 3경로 집중 검증 통과. 중단 없는 최신 `short`(stage 5=20프레임, stage 6=3영상×10프레임) 또는 `full` 결과 전까지 원인 판정은 잠정 — [protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md) |
+| float32 digital 품질 저하 진단 harness (`diagnostics/`, `scripts/diagnose_float32_digital_quality.py`) | **clean short 완료, step 정책 수정의 GPU 재검증 대기** — 2026-08-27 short에서 digital in-process/wire가 일치하고 VAE-direct는 정상인 반면 baseline의 60dB `fixed_reference` step만 품질이 크게 저하되어 decoder-step 정책을 원인으로 압축. `fixed_reference`를 AWGN 기준 SNR(기본 10dB, `cur_step=1/11`)로 재정의하고 in-process/wire·signature·execution plan에 동일하게 전달하도록 구현. 실 GPU short/full 재검증 전이므로 최종 operating point는 미확정 — [protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md) |
 | Importance-aware / 채널 신호 연동 bit allocation | 미착수 — [roadmap.md](./roadmap.md) §3 |
 
 ### 학습 CLI

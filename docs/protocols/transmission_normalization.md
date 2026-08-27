@@ -49,12 +49,13 @@ supersedes:
 
 | 정책 | 의미 | SNR 출처 |
 |---|---|---|
-| `fixed_reference` (기본, 양자화 비교용) | 모든 bit_depth를 float32 기준과 동일한 step으로 디코딩 — decoder step 변화가 섞이지 않은 순수 양자화 효과 | 항상 상한(60dB), bit_depth 무관 |
+| `fixed_reference` (기본, 양자화 비교용) | 모든 bit_depth를 설정한 기준 SNR의 동일한 step으로 디코딩 — decoder step 변화가 섞이지 않은 순수 양자화 효과 | `digital_fixed_reference_snr_db`(기본 10dB), bit_depth 무관 |
 | `bitdepth_proxy` | bit_depth만으로 결정되는 결정론적 휴리스틱 — **실측 SNR 아님**, 데이터 의존성 없음 | `20*log10(2**bit_depth-1)`, [-20,60]dB clamp |
 | `quant_nmse` | 송신단이 **실측한** quantization NMSE/SNR(패킷 metadata로 전송) | receiver가 패킷 자체에서 읽음, 없으면 즉시 `ValueError` |
 
-- `bit_depth=32`(float32, 무손실)는 정책과 무관하게 항상 상한 — lossless transport는
-  정책 선택 대상이 아니라 구조적 사실
+- `bit_depth=32`(float32)의 byte-exact transport와 decoder step은 분리한다.
+  `fixed_reference`는 무손실 여부와 무관하게 기준 SNR(기본 10dB)를 쓰고,
+  distortion-driven `bitdepth_proxy`/`quant_nmse`만 float32에서 60dB 상한을 쓴다.
 - `fixed_reference`가 아닌 정책으로 실행하려면 `--ablation-label`이 **필수**(양자화
   비교(`quantization_effect.csv`)에 decoder-step ablation이 섞여 들어가지 않도록 강제)
 - `quant_nmse`의 실측값 계산: 송신단이 `quantize_tensor()` 직후 같은 텐서를

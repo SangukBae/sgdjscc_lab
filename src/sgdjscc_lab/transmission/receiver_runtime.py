@@ -13,7 +13,7 @@ of silently crossing the receiver boundary.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 
 def _caption_list(gt_text, n_patches: int) -> list[str]:
@@ -225,6 +225,9 @@ def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg, digital_step_p
                 digital_bit_depth=meta_i["bit_depth"],
                 digital_policy=digital_step_policy,
                 digital_quant_snr_db=meta_i.get("quant_snr_db"),
+                digital_reference_snr_db=float(
+                    cfg.get("digital_fixed_reference_snr_db", 10.0)
+                ),
             )
             artifacts = ForwardArtifacts(
                 use_semantic=bool(cfg.use_semantic),

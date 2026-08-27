@@ -31,6 +31,7 @@ def _cfg(mask_method="none"):
         "use_jscc_feature": True,
         "use_gt_csi": False,
         "use_semantic": True,
+        "digital_fixed_reference_snr_db": 7.5,
     })
 
 
@@ -125,6 +126,7 @@ def test_receiver_default_policy_is_bitdepth_proxy(monkeypatch):
     )
     reconstruct_frame_from_bundle_bytes(_data(), _Models(), _cfg())
     assert captured["digital_policy"] == "bitdepth_proxy"
+    assert captured["digital_reference_snr_db"] == 7.5
 
 
 def test_receiver_marks_serialized_edge_as_already_received(monkeypatch):

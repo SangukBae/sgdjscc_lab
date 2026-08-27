@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
 import os
 import signal
 import sys
@@ -121,6 +122,13 @@ def _at_least_two_int(value: str) -> int:
     return steps
 
 
+def _bounded_reference_snr_db(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number) or not -20.0 <= number <= 60.0:
+        raise argparse.ArgumentTypeError("must be a finite value in [-20, 60] dB")
+    return number
+
+
 def _parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="float32 digital Tx/Rx quality diagnostic harness (awgn vs digital_inprocess vs digital_wire).",
@@ -138,6 +146,10 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--granularity", default="per_tensor", choices=["per_tensor", "per_channel"])
     p.add_argument("--digital-step-policy", default="fixed_reference",
                     choices=["fixed_reference", "bitdepth_proxy", "quant_nmse"])
+    p.add_argument(
+        "--fixed-reference-snr-db", type=_bounded_reference_snr_db, default=10.0,
+        help="Decoder reference SNR used only by digital-step-policy=fixed_reference.",
+    )
     p.add_argument("--fixed-step-value", type=float, default=0.5)
     p.add_argument(
         "--minimal-denoise-steps", type=_at_least_two_int, default=2,
@@ -169,7 +181,11 @@ def _parse_args(argv=None) -> argparse.Namespace:
 # Config / model construction
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _make_cfg(output_root: Path, model_root: Path, snr_db: float, config_path: Optional[str], device: str):
+def _make_cfg(
+    output_root: Path, model_root: Path, snr_db: float, config_path: Optional[str],
+    device: str, digital_step_policy: str = "fixed_reference",
+    fixed_reference_snr_db: float = 10.0,
+):
     """Compose a real config via the project's own fragment set — see
     ``docs/protocols/float32_digital_diagnostics.md``. Kept intentionally
     tiny/duplicated (config-loading glue, not algorithm logic) rather than
@@ -192,6 +208,8 @@ def _make_cfg(output_root: Path, model_root: Path, snr_db: float, config_path: O
     cfg = OmegaConf.merge(cfg, OmegaConf.create({
         "model_root": str(model_root), "snr_db": float(snr_db),
         "use_phase4": True, "mask_method": "none",
+        "digital_step_policy": str(digital_step_policy),
+        "digital_fixed_reference_snr_db": float(fixed_reference_snr_db),
     }))
     return cfg
 
@@ -434,6 +452,7 @@ def _build_run_signature(args, cfg, entries: List[Dict[str, Any]], frames: List[
         "paths": sorted(args.paths.split(",")), "ablations": args.ablations,
         "bit_depth": args.bit_depth, "granularity": args.granularity,
         "digital_step_policy": args.digital_step_policy,
+        "fixed_reference_snr_db": args.fixed_reference_snr_db,
         "fixed_step_value": args.fixed_step_value, "minimal_denoise_steps": args.minimal_denoise_steps,
         "resolved_config_sha256": config_hash,
         # Covers manifest.csv AND the actual selected video/caption/GT file
@@ -548,6 +567,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         print(f"  ablations        : {ablation_names}")
         print(f"  bit_depth        : {args.bit_depth}  granularity: {args.granularity}")
         print(f"  digital_step_policy: {args.digital_step_policy}")
+        print(f"  fixed_reference_snr_db: {args.fixed_reference_snr_db}")
         print(f"  seed             : {args.seed}")
         print(f"  no_models (mock) : {args.no_models}  device: {args.device}")
         print(f"  instrument_tensors: {not args.no_instrument_tensors}")
@@ -559,7 +579,12 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     output_root.mkdir(parents=True, exist_ok=True)
     tensor_dir = output_root / "tensors" if args.save_tensors else None
 
-    cfg = _make_cfg(output_root, model_root or Path("."), snr_db=10.0, config_path=args.config, device=args.device)
+    cfg = _make_cfg(
+        output_root, model_root or Path("."), snr_db=10.0,
+        config_path=args.config, device=args.device,
+        digital_step_policy=args.digital_step_policy,
+        fixed_reference_snr_db=args.fixed_reference_snr_db,
+    )
     signature = _build_run_signature(args, cfg, entries, frames, model_root or Path("."))
     _check_resume_signature(output_root, signature, args.resume)
 

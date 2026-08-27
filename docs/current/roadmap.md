@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: dad4222
+source_commit: 81087e6
 supersedes:
 ---
 
@@ -29,7 +29,7 @@ supersedes:
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
-| 1 | digital 복원 품질 정상화 | production 오류 수정이 반영된 clean `short`/`full`로 원인 판정을 확정하고, 수정된 float32 digital baseline을 AWGN과 재비교 — 진단 harness·3-GPU 실행기·`fixed_step`/`minimal_denoise` 집중 GPU 검증은 완료([protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md)) |
+| 1 | digital 복원 품질 정상화 | clean `short`로 60dB `fixed_reference` decoder step을 핵심 원인으로 압축. AWGN 기준 10dB(`cur_step=1/11`)로 수정한 float32 baseline을 3-GPU `short` 후 `full`로 재검증하여 AWGN과의 품질 차이와 최종 operating point를 확정([protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md)) |
 | 2 | fixed–SKEM matched-rate 재평가 | 실제 transmitting frame 또는 byte가 허용 오차 안에서 일치 |
 | 3 | edge·uncertainty 전송량 절감 | int4 packet의 주요 91% 구성요소 ablation |
 | 4 | 통합 평가 harness 확장 | Rate·품질·SRS·할루시네이션·지연을 paired row로 기록 |

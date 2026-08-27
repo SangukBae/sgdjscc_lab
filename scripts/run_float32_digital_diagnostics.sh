@@ -44,6 +44,7 @@ PARALLEL_DEVICES_ARG=""
 PARALLEL_MODE=0
 MIN_FREE_DISK_GIB=10
 SEED="${SEED:-2025}"
+FIXED_REFERENCE_SNR_DB="${FIXED_REFERENCE_SNR_DB:-10.0}"
 
 # Core-condition videos (task spec: normal motion / semantic change / scene cut).
 VIDEO_NORMAL_MOTION="01_person_walk"
@@ -72,6 +73,8 @@ Usage: run_float32_digital_diagnostics.sh [options]
                                 parallel, then the three stage-6 videos run
                                 one per GPU in independent worker directories.
   --seed N                      Base seed (default: 2025).
+  --fixed-reference-snr-db DB  Digital fixed-reference decoder SNR
+                                (default: 10.0 dB; valid range: -20..60).
   -h, --help                    Show this message.
 EOF
 }
@@ -88,6 +91,7 @@ while [ $# -gt 0 ]; do
     --cuda-visible-devices) CUDA_VISIBLE_DEVICES_ARG="$2"; shift 2 ;;
     --parallel-devices) PARALLEL_DEVICES_ARG="$2"; shift 2 ;;
     --seed) SEED="$2"; shift 2 ;;
+    --fixed-reference-snr-db) FIXED_REFERENCE_SNR_DB="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -332,6 +336,7 @@ if [ "$DRY_RUN" -eq 0 ]; then
   F32DIG_OUTPUT_ROOT="$OUTPUT_ROOT" F32DIG_PROFILE="$PROFILE" \
   F32DIG_PARALLEL_DEVICES="$PARALLEL_DEVICES_ARG" F32DIG_SEQUENTIAL_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES_ARG" \
   F32DIG_DEVICE="$DEVICE" F32DIG_SEED="$SEED" F32DIG_DATASET_ROOT="$DATASET_ROOT" \
+  F32DIG_FIXED_REFERENCE_SNR_DB="$FIXED_REFERENCE_SNR_DB" \
   F32DIG_RESUME="$RESUME_REQUESTED" \
   "$PYTHON_BIN" - <<'PYEOF' || \
     fail "execution_plan.json is missing or differs from this invocation; keep the original mode/profile/devices/seed/dataset or use a fresh output root"
@@ -349,13 +354,14 @@ parallel_text = os.environ.get("F32DIG_PARALLEL_DEVICES", "")
 devices = parallel_text.split(",") if parallel_text else []
 parallel = bool(devices)
 plan = {
-    "schema_version": 1,
+    "schema_version": 2,
     "mode": "three_gpu_stage_and_video_parallel" if parallel else "sequential",
     "git": get_git_state(Path.cwd()),
     "profile": os.environ["F32DIG_PROFILE"],
     "physical_devices": devices if parallel else os.environ.get("F32DIG_SEQUENTIAL_VISIBLE_DEVICES") or "inherited",
     "logical_worker_device": "cuda:0" if parallel else os.environ["F32DIG_DEVICE"],
     "seed": int(os.environ["F32DIG_SEED"]),
+    "fixed_reference_snr_db": float(os.environ["F32DIG_FIXED_REFERENCE_SNR_DB"]),
     "dataset_root": str(Path(os.environ["F32DIG_DATASET_ROOT"]).resolve()),
     "phase_a": ({
         "stage3_single_frame_paths": devices[0],
@@ -403,7 +409,11 @@ case "$PROFILE" in
     ;;
 esac
 
-DIAG_CMD=("$PYTHON_BIN" scripts/diagnose_float32_digital_quality.py --dataset-root "$DATASET_ROOT" --device "$DEVICE" --seed "$SEED")
+DIAG_CMD=(
+  "$PYTHON_BIN" scripts/diagnose_float32_digital_quality.py
+  --dataset-root "$DATASET_ROOT" --device "$DEVICE" --seed "$SEED"
+  --fixed-reference-snr-db "$FIXED_REFERENCE_SNR_DB"
+)
 
 STAGE_FAILURES=0
 STAGE_LOG_DIR="$OUTPUT_ROOT/stage_logs"

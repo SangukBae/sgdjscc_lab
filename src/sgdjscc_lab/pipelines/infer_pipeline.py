@@ -26,12 +26,11 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import torch
-import torch.nn.functional as F
 from omegaconf import DictConfig
 
 from sgdjscc_lab._sgdjscc import ensure_sgdjscc_on_path
@@ -390,6 +389,10 @@ def _encode_and_transmit(
         jscc=jscc, encode_features_hat=encode_features_hat, power_scalar=power_scalar,
         signal_scale=signal_scale, pipe=pipe, step_style=step_style,
         use_jscc_feat=use_jscc_feat, use_gt_csi=use_gt_csi, device=device,
+        digital_policy=str(cfg.get("digital_step_policy", "bitdepth_proxy")),
+        digital_reference_snr_db=float(
+            cfg.get("digital_fixed_reference_snr_db", _DIGITAL_FIXED_REFERENCE_SNR_DB)
+        ),
     )
 
     snr_est = None
@@ -959,10 +962,11 @@ def _run_diffusion(
 # latents through jscc.snr_prediction_net.
 _DIGITAL_SNR_FLOOR_DB = -20.0
 _DIGITAL_SNR_CEIL_DB = 60.0
+_DIGITAL_FIXED_REFERENCE_SNR_DB = 10.0
 
 # Digital step-matching policies (see _digital_effective_snr_db):
-#   fixed_reference — every bit_depth is decoded as if it were the clean
-#     (float32) reference, i.e. the SAME fixed step for all bit depths. This
+#   fixed_reference — every bit_depth is decoded at one configured reference
+#     SNR (10 dB by default), i.e. the SAME fixed step for all bit depths. This
 #     is the policy the quantization-effect comparison uses by default: it
 #     isolates what raw quantization distortion alone does to the final
 #     image, uncontaminated by the decoder ALSO adapting its diffusion
@@ -1013,14 +1017,15 @@ def _digital_effective_snr_db(
     bit_depth: int,
     policy: str = "bitdepth_proxy",
     quant_snr_db: Optional[float] = None,
+    reference_snr_db: float = _DIGITAL_FIXED_REFERENCE_SNR_DB,
 ) -> float:
     """Effective SNR (dB) used to derive the digital_packet decoder step.
 
-    ``bit_depth`` at/above ``transmission.quantization.LOSSLESS_BIT_DEPTH``
-    (float32) is always the ceiling regardless of *policy* — it is a
-    structural fact (byte-exact transport, zero quantization error), not a
-    policy choice (task requirement: "float32는 quantization error가 없는
-    lossless transport로 명확히 처리한다").
+    ``policy="fixed_reference"`` intentionally ignores transport distortion
+    and uses *reference_snr_db* for every bit depth, including byte-exact
+    float32.  Lossless transport is still represented structurally by the
+    packet codec; it must not force the diffusion decoder to start at the
+    near-zero 60 dB step.  Other policies retain the lossless ceiling.
 
     See :data:`DIGITAL_STEP_POLICIES` for what each policy name means.
     ``policy="quant_nmse"`` requires *quant_snr_db* (the sender's own
@@ -1030,9 +1035,14 @@ def _digital_effective_snr_db(
     """
     from sgdjscc_lab.transmission.quantization import LOSSLESS_BIT_DEPTH
 
-    if bit_depth >= LOSSLESS_BIT_DEPTH:
-        return _DIGITAL_SNR_CEIL_DB
+    if policy not in DIGITAL_STEP_POLICIES:
+        raise ValueError(f"unknown digital_policy={policy!r}; expected one of {DIGITAL_STEP_POLICIES}")
     if policy == "fixed_reference":
+        reference = float(reference_snr_db)
+        if not math.isfinite(reference):
+            raise ValueError("reference_snr_db must be finite")
+        return float(min(max(reference, _DIGITAL_SNR_FLOOR_DB), _DIGITAL_SNR_CEIL_DB))
+    if bit_depth >= LOSSLESS_BIT_DEPTH:
         return _DIGITAL_SNR_CEIL_DB
     if policy == "bitdepth_proxy":
         return _digital_quant_snr_db(bit_depth)
@@ -1045,7 +1055,7 @@ def _digital_effective_snr_db(
                 "build_frame_bundle); none was supplied for this frame"
             )
         return float(min(max(float(quant_snr_db), _DIGITAL_SNR_FLOOR_DB), _DIGITAL_SNR_CEIL_DB))
-    raise ValueError(f"unknown digital_policy={policy!r}; expected one of {DIGITAL_STEP_POLICIES}")
+    raise AssertionError(f"unhandled validated digital_policy={policy!r}")
 
 
 def _digital_signal_scale(
@@ -1053,6 +1063,7 @@ def _digital_signal_scale(
     like: torch.Tensor,
     policy: str = "bitdepth_proxy",
     quant_snr_db: Optional[float] = None,
+    reference_snr_db: float = _DIGITAL_FIXED_REFERENCE_SNR_DB,
 ) -> Tuple[torch.Tensor, float]:
     """Stable ``(signal_scale, snr_db)`` for a digital_packet-received latent.
 
@@ -1066,7 +1077,9 @@ def _digital_signal_scale(
     always strictly inside ``(0, 1)``, never exactly 0 or 1, so nothing
     downstream divides by zero or takes ``log10`` of a non-positive number.
     """
-    snr_db = _digital_effective_snr_db(bit_depth, policy, quant_snr_db)
+    snr_db = _digital_effective_snr_db(
+        bit_depth, policy, quant_snr_db, reference_snr_db,
+    )
     snr_scale = 10 ** (snr_db / 10)
     signal_scale = (snr_scale / (snr_scale + 1)) * torch.ones_like(like)
     return signal_scale, snr_db
@@ -1085,6 +1098,7 @@ def _compute_step(
     digital_bit_depth: Optional[int] = None,
     digital_policy: str = "bitdepth_proxy",
     digital_quant_snr_db: Optional[float] = None,
+    digital_reference_snr_db: float = _DIGITAL_FIXED_REFERENCE_SNR_DB,
 ):
     """Compute diffusion starting step and estimated SNR.
 
@@ -1128,6 +1142,7 @@ def _compute_step(
                 predicted_signal_scale, snr_db = _digital_signal_scale(
                     bit_depth, encode_features_hat[:, 0:1, 0, 0],
                     policy=digital_policy, quant_snr_db=digital_quant_snr_db,
+                    reference_snr_db=digital_reference_snr_db,
                 )
                 cur_step = 1 - predicted_signal_scale
                 # A tensor, not the raw snr_db float — _retransmit_canny does
@@ -1168,6 +1183,7 @@ def _compute_step(
                 pred, _ = _digital_signal_scale(
                     bit_depth, encode_features_hat[:, 0:1, 0, 0],
                     policy=digital_policy, quant_snr_db=digital_quant_snr_db,
+                    reference_snr_db=digital_reference_snr_db,
                 )
                 cur_step = (
                     torch.argmin(torch.abs(alphas - pred), axis=1)
@@ -1192,7 +1208,10 @@ def _compute_step(
         else:
             cur_step = 981
         cur_snr = (
-            _digital_effective_snr_db(bit_depth, digital_policy, digital_quant_snr_db)
+            _digital_effective_snr_db(
+                bit_depth, digital_policy, digital_quant_snr_db,
+                digital_reference_snr_db,
+            )
             if is_digital and use_jscc_feat and not use_gt_csi
             else float(jscc.snr)
         )

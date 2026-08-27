@@ -99,6 +99,33 @@ class TestRouting:
                 digital_step_policy="fixed_reference", recorder=rec, video="v", frame_index=0, seed=1,
             )
 
+    def test_fixed_reference_snr_is_identical_inprocess_and_wire(self):
+        models = build_mock_models("cpu")
+        cfg = build_diagnostic_cfg(
+            digital_step_policy="fixed_reference",
+            digital_fixed_reference_snr_db=7.5,
+        )
+        rec = TensorRecorder(enabled=True)
+        common = {
+            "recorder": rec, "video": "v", "frame_index": 0, "seed": 1,
+            "record_patch_index": 0,
+        }
+        run_frame_digital_inprocess(
+            _frame(), models, cfg, BASELINE_ABLATION, bit_depth=32,
+            granularity="per_tensor", **common,
+        )
+        run_frame_digital_wire(
+            _frame(), models, cfg, BASELINE_ABLATION, bit_depth=32,
+            granularity="per_tensor", digital_step_policy="fixed_reference", **common,
+        )
+        inprocess_step = rec.live[("v", 0, 1, "baseline", "digital_inprocess", "cur_step")]
+        wire_step = rec.live[("v", 0, 1, "baseline", "digital_wire", "cur_step")]
+        inprocess_snr = rec.live[("v", 0, 1, "baseline", "digital_inprocess", "cur_snr")]
+        wire_snr = rec.live[("v", 0, 1, "baseline", "digital_wire", "cur_snr")]
+        assert torch.equal(inprocess_step, wire_step)
+        assert torch.equal(inprocess_snr, wire_snr)
+        assert torch.allclose(wire_snr, torch.full_like(wire_snr, 7.5))
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # float32 round-trip: bit_depth=32 must be bitwise identical sender vs receiver
@@ -747,6 +774,7 @@ class TestThreeGpuServerDriver:
                 "F32DIG_PARALLEL_DEVICES": devices,
                 "F32DIG_SEQUENTIAL_VISIBLE_DEVICES": "", "F32DIG_DEVICE": "cuda:0",
                 "F32DIG_SEED": "2025", "F32DIG_DATASET_ROOT": str(tmp_path),
+                "F32DIG_FIXED_REFERENCE_SNR_DB": "10.0",
                 "F32DIG_RESUME": resume,
                 "SGDJSCC_GIT_COMMIT": "a" * 40, "SGDJSCC_GIT_DIRTY": "false",
                 "SGDJSCC_GIT_BRANCH": "main",
@@ -762,6 +790,7 @@ class TestThreeGpuServerDriver:
         assert run_plan("", resume="1").returncode != 0
         plan = json.loads((root / "execution_plan.json").read_text(encoding="utf-8"))
         assert plan["mode"] == "three_gpu_stage_and_video_parallel"
+        assert plan["fixed_reference_snr_db"] == 10.0
         assert plan["phase_b"]["09_scene_cut_chair_car"] == "2"
 
     def test_resume_requires_an_existing_execution_plan(self, tmp_path):
@@ -777,6 +806,7 @@ class TestThreeGpuServerDriver:
             "F32DIG_OUTPUT_ROOT": str(root), "F32DIG_PROFILE": "smoke",
             "F32DIG_PARALLEL_DEVICES": "0,1,2", "F32DIG_SEQUENTIAL_VISIBLE_DEVICES": "",
             "F32DIG_DEVICE": "cuda:0", "F32DIG_SEED": "2025",
+            "F32DIG_FIXED_REFERENCE_SNR_DB": "10.0",
             "F32DIG_DATASET_ROOT": str(tmp_path), "F32DIG_RESUME": "1",
             "SGDJSCC_GIT_COMMIT": "a" * 40, "SGDJSCC_GIT_DIRTY": "false",
             "SGDJSCC_GIT_BRANCH": "main",
@@ -802,6 +832,7 @@ class TestCli:
         ])
         assert result.returncode == 0, result.stderr
         assert "dry-run" in result.stdout
+        assert "fixed_reference_snr_db: 10.0" in result.stdout
         assert not out_root.exists()
 
     def test_no_models_end_to_end_produces_all_outputs(self, tmp_path):

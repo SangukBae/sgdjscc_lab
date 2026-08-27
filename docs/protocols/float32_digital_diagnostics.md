@@ -123,7 +123,8 @@ python scripts/diagnose_float32_digital_quality.py --output-root outputs/f32dig_
 
 주요 옵션: `--video-ids`(comma), `--frames`(`"0"`/`"0,5,9"`/`"0-19"`/`"0-4,10,20-24"`), `--seed`,
 `--paths`(subset of `awgn,digital_inprocess,digital_wire`), `--ablations`(`baseline`|`all`|comma list),
-`--bit-depth`(기본 32), `--granularity`, `--digital-step-policy`, `--fixed-step-value`,
+`--bit-depth`(기본 32), `--granularity`, `--digital-step-policy`,
+`--fixed-reference-snr-db`(기본 10dB; `fixed_reference`의 디코더 기준), `--fixed-step-value`,
 `--minimal-denoise-steps`(최솟값·기본값 2; production sampler의 noise level 2개 = denoising transition 1회),
 `--no-instrument-tensors`(대규모 다중 프레임 실행에서 tensor 계측 생략),
 `--save-tensors`(선택적 `.pt` 저장), `--no-models`(CPU/mock), `--resume`.
@@ -135,7 +136,7 @@ python scripts/diagnose_float32_digital_quality.py --output-root outputs/f32dig_
 않은 `--output-root`를 재사용해도 되는가**이다 — `--resume` 없이 이미 결과가 있는 `--output-root`를 다시
 가리키면 CSV를 중복 기록하는 대신 즉시 거부한다(재현된 "3행→6행" 버그의 수정). `run_signature.json`은 git
 commit·**dataset content hash(아래 참고)**·config hash·checkpoint hash·seed·video/frame·ablation·bit-depth·
-granularity·digital-step-policy·**tensor 계측 여부(`--no-instrument-tensors`)**·`--record-patch-index`를
+granularity·digital-step-policy·fixed-reference SNR·**tensor 계측 여부(`--no-instrument-tensors`)**·`--record-patch-index`를
 모두 포함하며, 하나라도 다르면 `--resume`이어도 즉시 거부한다.
 
 판정(`verdicts.jsonl`)은 `path_comparison.csv`/`tensor_pair_comparison.csv`와 별도로 `(video, frame,

@@ -26,7 +26,7 @@ if str(_SRC) not in sys.path:
 
 from sgdjscc_lab.channels import DigitalPacketChannel
 from sgdjscc_lab.pipelines.infer_pipeline import (
-    DIGITAL_STEP_POLICIES,
+    _DIGITAL_FIXED_REFERENCE_SNR_DB,
     _DIGITAL_SNR_CEIL_DB,
     _DIGITAL_SNR_FLOOR_DB,
     _apply_channel,
@@ -67,20 +67,32 @@ class TestDigitalQuantSnrDb:
 
 
 class TestDigitalEffectiveSnrDbPolicies:
-    def test_fixed_reference_always_returns_ceiling_regardless_of_bit_depth(self):
-        for bit_depth in (4, 6, 8, 16):
-            assert _digital_effective_snr_db(bit_depth, "fixed_reference") == _DIGITAL_SNR_CEIL_DB
+    def test_fixed_reference_uses_default_reference_regardless_of_bit_depth(self):
+        for bit_depth in (4, 6, 8, 16, 32):
+            assert _digital_effective_snr_db(
+                bit_depth, "fixed_reference"
+            ) == _DIGITAL_FIXED_REFERENCE_SNR_DB
+
+    def test_fixed_reference_uses_configured_reference(self):
+        for bit_depth in (4, 8, 16, 32):
+            assert _digital_effective_snr_db(
+                bit_depth, "fixed_reference", reference_snr_db=7.5,
+            ) == pytest.approx(7.5)
 
     def test_bitdepth_proxy_matches_the_proxy_formula(self):
         for bit_depth in (4, 6, 8, 16):
             assert _digital_effective_snr_db(bit_depth, "bitdepth_proxy") == _digital_quant_snr_db(bit_depth)
 
-    def test_lossless_bit_depth_always_ceiling_regardless_of_policy(self):
-        # float32 is a structural fact (no quantization error at all), not a
-        # policy choice -- every policy must agree it's the ceiling.
-        for policy in DIGITAL_STEP_POLICIES:
+    def test_lossless_bit_depth_is_ceiling_for_distortion_driven_policies(self):
+        # fixed_reference deliberately controls decoder strength independently
+        # of byte-exact transport; distortion-driven policies retain 60 dB.
+        for policy in ("bitdepth_proxy", "quant_nmse"):
             kwargs = {"quant_snr_db": 5.0} if policy == "quant_nmse" else {}
             assert _digital_effective_snr_db(32, policy, **kwargs) == _DIGITAL_SNR_CEIL_DB
+
+    def test_fixed_reference_rejects_non_finite_value(self):
+        with pytest.raises(ValueError, match="reference_snr_db"):
+            _digital_effective_snr_db(32, "fixed_reference", reference_snr_db=float("nan"))
 
     def test_quant_nmse_uses_the_supplied_measured_value(self):
         assert _digital_effective_snr_db(8, "quant_nmse", quant_snr_db=17.3) == pytest.approx(17.3)
@@ -96,6 +108,8 @@ class TestDigitalEffectiveSnrDbPolicies:
     def test_unknown_policy_raises(self):
         with pytest.raises(ValueError, match="unknown digital_policy"):
             _digital_effective_snr_db(8, "made_up_policy")
+        with pytest.raises(ValueError, match="unknown digital_policy"):
+            _digital_effective_snr_db(32, "made_up_policy")
 
 
 class TestComputeStepDigitalPolicyDispatch:
@@ -133,10 +147,12 @@ class TestComputeStepDigitalPolicyDispatch:
                 signal_scale=torch.ones(1, 1), pipe=self._pipe(), step_style="continuous",
                 use_jscc_feat=True, use_gt_csi=False, device=torch.device("cpu"),
                 digital_bit_depth=bit_depth, digital_policy="fixed_reference",
+                digital_reference_snr_db=10.0,
             )
             steps.append(cur_step)
         assert torch.allclose(steps[0], steps[1])
         assert torch.allclose(steps[1], steps[2])
+        assert torch.allclose(steps[0], torch.full_like(steps[0], 1.0 / 11.0))
 
     def test_bitdepth_proxy_policy_gives_different_steps_across_bit_depths(self):
         jscc = _fake_jscc(channel_model=None)
