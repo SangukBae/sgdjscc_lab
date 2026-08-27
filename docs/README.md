@@ -61,6 +61,7 @@
 | [protocols/results_registry.md](./protocols/results_registry.md) | 추적 `results/` 구조, run manifest 스키마·생성 절차 |
 | [protocols/training.md](./protocols/training.md) | stage-aware 학습 CLI, export, real-model smoke 검증 |
 | [protocols/transmission_normalization.md](./protocols/transmission_normalization.md) | 전송 정상화와 단일/3-GPU 안전 실행 절차 |
+| [protocols/float32_digital_diagnostics.md](./protocols/float32_digital_diagnostics.md) | float32 digital 복원 품질 저하 진단 harness(경로 비교·stage 계측·ablation) — 진단 환경만, 서버 실측 대기 |
 
 - 데이터 문서
   - 전체 데이터: [data/README.md](../data/README.md)

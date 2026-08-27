@@ -74,6 +74,9 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - **float32 digital 복원 품질이 AWGN 참고 경로보다 크게 낮음**
   - 10영상 평균: PSNR `11.32 vs 23.34`, SSIM `0.081 vs 0.731`, LPIPS `0.739 vs 0.254`.
   - packet byte 비교와 별개로 Tx/Rx edge·ControlNet·`fixed_reference` step 계약을 분리 점검해야 한다.
+  - 원인 분리용 진단 harness 구현 완료 — `scripts/diagnose_float32_digital_quality.py` /
+    `scripts/run_float32_digital_diagnostics.sh`, [protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md).
+    CPU/mock 테스트·dry-run으로만 검증됨; 서버 GPU 실측 전까지 원인 결론 없음.
 - **fixed–SKEM 비교가 실제 rate-matched가 아님**
   - keyframe 수는 맞았지만 `recompute_semantic`으로 실제 transmitting frame 수가 달라졌다.
   - `rate_matching.csv` 통과: 35/50; selector 절감 효과는 잠정 결과로만 사용한다.
