@@ -128,9 +128,8 @@ python scripts/run_transmission_reduction_eval.py \
     --output-root outputs/transmission_reduction
 ```
 
-- 현재 `int4`는 analog AWGN 임시 기준의 픽셀 품질 gate를 통과한 잠정 후보다.
-  reliable-digital 기준과 SRS·할루시네이션 평가 전에는 기본 operating point로
-  확정하지 않는다.
+- 10영상 reliable-digital 정상화 결과에서 `fixed_int6`은 보수적 후보,
+  `fixed_int4`는 최대 절감 후보다. digital 절대 품질과 SKEM matched-rate는 후속 검증이 필요하다.
 
 ### 전송 정상화 (digital NaN 수정 + fixed/SKEM x 양자화 전체 스윕)
 
@@ -236,6 +235,7 @@ transmission/  양자화·packet 직렬화
 | [docs/experiments/2026-07_lgvsc_psss_skem.md](./docs/experiments/2026-07_lgvsc_psss_skem.md) | PSSS/SKEM 검증 |
 | [docs/experiments/2026-08-16_remote_hq_validation.md](./docs/experiments/2026-08-16_remote_hq_validation.md) | 원격 HQ 검증 |
 | [docs/experiments/2026-08-18_transmission_reduction.md](./docs/experiments/2026-08-18_transmission_reduction.md) | 전송량 실험 |
+| [docs/experiments/2026-08-26_transmission_normalization.md](./docs/experiments/2026-08-26_transmission_normalization.md) | 전송 정상화 결과 |
 | [docs/protocols/datasets.md](./docs/protocols/datasets.md) | 데이터 지침 |
 | [docs/protocols/evaluation.md](./docs/protocols/evaluation.md) | 평가 지침 |
 | [docs/protocols/reproducibility.md](./docs/protocols/reproducibility.md) | 재현성 지침 |

@@ -1,0 +1,148 @@
+{
+  "schema_version": 2,
+  "run_id": "transmission_normalization_parallel_20260826_093313",
+  "generated_at": "2026-08-26T11:55:32.097270+00:00",
+  "git": {
+    "commit": "607f72798da24dc3e0c065574efcf6fce90683f3",
+    "dirty": false,
+    "branch": "main"
+  },
+  "command": {
+    "text": "scripts/run_transmission_normalization_parallel.py --devices cuda:0,cuda:1,cuda:2",
+    "argv": [
+      "scripts/run_transmission_normalization_parallel.py",
+      "--devices",
+      "cuda:0,cuda:1,cuda:2"
+    ],
+    "source": "captured"
+  },
+  "seed": 2025,
+  "resolved_config": {
+    "status": "unknown",
+    "resolved": "unknown",
+    "config_source": null
+  },
+  "dataset": {
+    "ref": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+    "hash": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c"
+  },
+  "checkpoints": {
+    "status": "unknown",
+    "items": {}
+  },
+  "environment": {
+    "python_version": "unknown",
+    "platform": "unknown",
+    "torch_version": "unknown",
+    "cuda_available": "unknown",
+    "cuda_version": "unknown",
+    "gpu_name": "unknown"
+  },
+  "evaluator_versions": {},
+  "original_artifact_paths": {},
+  "artifacts": {},
+  "accounting": {
+    "exact_fields": [
+      "worker packet bytes",
+      "merged bytes/video",
+      "merged bytes/frame"
+    ],
+    "proxy_fields": [
+      "estimated channel symbols",
+      "estimated FEC wire bytes"
+    ]
+  },
+  "nan_or_failure_counts": {
+    "n_failed_pairs": 0
+  },
+  "extra": {
+    "run_status": "completed",
+    "parallel_plan": {
+      "schema_version": 1,
+      "git": {
+        "commit": "607f72798da24dc3e0c065574efcf6fce90683f3",
+        "dirty": false,
+        "branch": "main"
+      },
+      "dataset_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+      "dataset_manifest_sha256": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c",
+      "devices": [
+        "cuda:0",
+        "cuda:1",
+        "cuda:2"
+      ],
+      "assignments": [
+        {
+          "device": "cuda:0",
+          "videos": [
+            "01_person_walk",
+            "04_person_car",
+            "07_person_enter",
+            "10_busy_sidewalk"
+          ],
+          "estimated_frames": 400,
+          "worker_id": "worker_00"
+        },
+        {
+          "device": "cuda:1",
+          "videos": [
+            "02_car_pass",
+            "05_camera_pan_person",
+            "08_car_exit"
+          ],
+          "estimated_frames": 300,
+          "worker_id": "worker_01"
+        },
+        {
+          "device": "cuda:2",
+          "videos": [
+            "03_dog_walk",
+            "06_handheld_sign",
+            "09_scene_cut_chair_car"
+          ],
+          "estimated_frames": 300,
+          "worker_id": "worker_02"
+        }
+      ],
+      "settings": {
+        "configs": "fixed_awgn,fixed_float32,fixed_int16,fixed_int8,fixed_int6,fixed_int4,skem_float32,skem_int16,skem_int8,skem_int6,skem_int4",
+        "max_frames": null,
+        "seed": 2025,
+        "digital_step_policy": "fixed_reference",
+        "ablation_label": null,
+        "psss_backend": "proxy",
+        "psss_model_id": null,
+        "psss_device": "cpu",
+        "psss_dtype": "fp32",
+        "psss_threshold": null,
+        "psss_max_segment_length": null,
+        "use_scene_detector": false,
+        "match_fixed_keyframes": true
+      }
+    },
+    "worker_manifest_sha256": {
+      "workers/worker_00": "b8e436a34207a00eed6991fd4bb9aac7bd27184528973d54acae87b66eccf06a",
+      "workers/worker_01": "b573aff08ef55ee9da2ae6bda99a2fd355bc4f92dfa445bf7e9a41bd8118ee04",
+      "workers/worker_02": "0f3adb03a46483488f9ac1b30c892300239555a656595af84c0fab53018c9e54"
+    },
+    "output_artifact_sha256": {
+      "parallel_plan.json": "26a42bb47b1d8c99b52744d220d9acb92aac3ec55cf6b9b92667a38afd5fdfce",
+      "parallel_worker_status.json": "5085181fe6ba297ab6f63c30dd77f87655f95bf032c7b96550eae38e79dab9a7",
+      "per_video_metrics.csv": "6bbeb42426875ffa27344f0b023875ddbfd6b18cd11490fedff850b4f2e790be",
+      "aggregate.csv": "6bb5064e70bd26e24135b33d0db4f136cdf951bd1ae24eb79e07d70ece8c5676",
+      "pareto_frontier.csv": "3c20eef779d8e773c3d22d46091a8bae03b0a0d117c248a7d60317e897c1fe63",
+      "rate_matching.csv": "2ef19702ebb63b39def2d67f4ab6c54da6827268aa85f0a41ac0e43f740b426c",
+      "keyframe_selection.csv": "359438c710c7a4c92aeb67b45acffbb5eb045a3a6e00225542461ebfbacade93",
+      "packet_components.csv": "bd1a2e0fbbff741156798bd92dbdc55846c0c3d09526182552531e138425bdb9",
+      "keyframe_sweep.csv": "ab2864bfa0cc914cb71597e1a67b98e00d22714c4c3f77c45556da205ced33f1",
+      "failed_pairs.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_size_report.csv": "7c66bb19bf7c69abc56571f8682ca18524b3fa214936efb329a2a2603c7ab6eb",
+      "quantization_diagnostics.csv": "084efa7e972f5233711e01b2c291bb901f79bbb89f744f5db0c9fe7e51d87cc2",
+      "quantization_effect.csv": "388e03fd457556b587e0c3b34d35e44caf397e7b1906007efeaeaaf43a68c340",
+      "selector_effect.csv": "cb84b95956a91df9b41ca9937382650e40018e003553ae541cc9e5d1755c5d1b",
+      "normalization_effect_summary.json": "ca92796fef37c81aab41b9744865d5250f9dfc3d313f006b876bc018c603e61d",
+      "summary.json": "0ab0562710e43e2b79509b9ef2086476cd5831f2ae09a166be70104f002e00ff",
+      "README.md": "77913ceb35e4ba7b3716f417f022795c325e25a47d14856ef23d895304ddacfc"
+    }
+  }
+}

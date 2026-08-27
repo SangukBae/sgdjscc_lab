@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-08-27
 owner: ETRI SGD-JSCC 연구팀
-source_commit: aac7f23
+source_commit: 607f727
 supersedes:
 ---
 
@@ -232,10 +232,9 @@ bash scripts/run_transmission_normalization_parallel.sh \
 
 ## 알려진 한계
 
-- **16GB급 단일 GPU에서 digital_packet 설정이 OOM 날 수 있음** — ModelBundle만으로
-  이미 ~13GB 점유. AWGN 경로는 동일 GPU에서 안정적으로 통과 — 이 코드 수정 자체의
-  결함이 아니라 리소스 문제로 확인됨. 실측은 VRAM 여유가 큰 원격 다중-GPU 서버에서
-  수행할 것
+- 완료 실험: [2026-08-26 전송 정상화 결과](../experiments/2026-08-26_transmission_normalization.md)
+- float32 digital 절대 품질과 fixed–SKEM 실제 rate matching은 후속 검증이 필요하다.
+- int4 이후 packet의 약 91%는 edge·uncertainty이므로 latent bit만 낮추는 추가 이득은 제한적이다.
 - 과거 `results/transmission_20260818` run의 `int16: 52 NaN` 수치는 이 수정 **이전**
   상태의 기록이다 — 재현 시도 시 새 run으로 남기고 과거 수치를 덮어쓰지 않음
 

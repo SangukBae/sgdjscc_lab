@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-08-27
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 029f97a
+source_commit: 607f727
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -71,13 +71,15 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - **severity의 인과적 feedback 경로 없음**
   - 현재 프레임의 severity는 복원 후에 계산되므로 다음 프레임/GOP 제어나 재전송 feedback에 연결해야 한다.
   - 관련 byte와 왕복 지연 accounting도 미구현이다.
-- **digital_packet 설정이 16GB급 단일 GPU에서 OOM 위험** (2026-08-26 확인)
-  - ModelBundle 상주만으로 ~13GB — canny 재전송 net(WITT decoder) forward에서
-    추가 할당 시 여유가 없으면 `CUDA out of memory`. AWGN 경로는 동일 GPU·동일
-    프레임에서 안정적으로 통과 — blind-SNR NaN 수정 자체의 결함은 아님(수정 후
-    실측에서 `_compute_step`을 지나 diffusion decode까지는 NaN 없이 정상 진입,
-    이후 순수 리소스 문제로 실패). 실측은 VRAM 여유가 큰 원격 서버 권장. 상세:
-    [protocols/transmission_normalization.md](../protocols/transmission_normalization.md)
+- **float32 digital 복원 품질이 AWGN 참고 경로보다 크게 낮음**
+  - 10영상 평균: PSNR `11.32 vs 23.34`, SSIM `0.081 vs 0.731`, LPIPS `0.739 vs 0.254`.
+  - packet byte 비교와 별개로 Tx/Rx edge·ControlNet·`fixed_reference` step 계약을 분리 점검해야 한다.
+- **fixed–SKEM 비교가 실제 rate-matched가 아님**
+  - keyframe 수는 맞았지만 `recompute_semantic`으로 실제 transmitting frame 수가 달라졌다.
+  - `rate_matching.csv` 통과: 35/50; selector 절감 효과는 잠정 결과로만 사용한다.
+- **int4 이후 packet의 91%가 edge·uncertainty**
+  - visual latent는 약 5.9%라 추가 bit-depth 축소 효과가 제한적이다.
+  - 다음 전송량 절감 대상은 edge/uncertainty 압축·선택 전송이다.
 
 ## 채널·저지연
 

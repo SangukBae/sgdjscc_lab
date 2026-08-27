@@ -78,6 +78,7 @@
 | [experiments/2026-07_lgvsc_psss_skem.md](./experiments/2026-07_lgvsc_psss_skem.md) | PSSS/SKEM variable-length keyframe selector 검증 |
 | [experiments/2026-08-16_remote_hq_validation.md](./experiments/2026-08-16_remote_hq_validation.md) | 원격 3×RTX 4090 고품질 최종 검증 |
 | [experiments/2026-08-18_transmission_reduction.md](./experiments/2026-08-18_transmission_reduction.md) | 직렬화 packet byte Pareto sweep(4/6/8/16-bit 양자화 vs 화질) |
+| [experiments/2026-08-26_transmission_normalization.md](./experiments/2026-08-26_transmission_normalization.md) | 전송 정상화·3-GPU 실측 결과와 후속 과제 |
 
 ## 5. 참조 문서 (`reference/`)
 
