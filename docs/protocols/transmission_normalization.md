@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-27
+updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 607f727
+source_commit: c5721cb
 supersedes:
 ---
 
@@ -234,8 +234,8 @@ bash scripts/run_transmission_normalization_parallel.sh \
 ## 알려진 한계
 
 - 완료 실험: [2026-08-26 전송 정상화 결과](../experiments/2026-08-26_transmission_normalization.md)
-- float32 digital 절대 품질은 10dB step 정책 short에서 회복됨을 확인했다
-  ([실측](../experiments/2026-08-28_float32_digital_step_normalization.md)). full 확정 후 양자화 sweep와
+- float32 digital 절대 품질은 10dB step 정책 full 300프레임에서 회복됨을 확인했다
+  ([실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md)). 핵심 결과 고정 후 양자화 sweep와
   fixed–SKEM 실제 rate matching을 수정된 정책으로 재평가해야 한다.
 - int4 이후 packet의 약 91%는 edge·uncertainty이므로 latent bit만 낮추는 추가 이득은 제한적이다.
 - 과거 `results/transmission_20260818` run의 `int16: 52 NaN` 수치는 이 수정 **이전**

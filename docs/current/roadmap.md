@@ -29,11 +29,11 @@ supersedes:
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
-| 1 | float32 digital 정상화 최종 확정 | 10dB `fixed_reference` 3-GPU `short`는 성공. `full`(3 core condition×100프레임)에서 실패·non-finite 0, in-process/wire 일치, AWGN 대비 품질 유지를 확인하고 핵심 산출물을 `results/` registry에 고정([short 실측](../experiments/2026-08-28_float32_digital_step_normalization.md)) |
+| 1 | float32 full 결과 보존·리포트 계약 마감 | 3-GPU `full` 자체는 완료([full 실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md)). 핵심 CSV·JSON·manifest·checksum을 `results/` registry에 고정하고, `inconclusive`/`no_issue_detected` 분리·stage 6 metric-only 집계·auxiliary edge tolerance를 반영 |
 | 2 | 양자화 성능 재평가 | 수정된 10dB baseline에서 int16·int8·int6·int4 품질·byte Pareto를 재계산하고, 기존 `fixed_int6`/`fixed_int4` 후보를 재확정 |
 | 3 | fixed–SKEM matched-rate 재평가 | 실제 transmitting frame 또는 byte가 허용 오차 안에서 일치 |
 | 4 | edge·uncertainty 전송량 절감 | int4 packet의 주요 91% 구성요소 ablation |
-| 5 | 통합 평가 harness 확장 | Rate·품질·SRS·할루시네이션·지연을 paired row로 기록 |
+| 5 | 통합 평가 harness·복원 정책 비교 | Rate·품질·SRS·할루시네이션·시간축·전체 지연을 paired row로 기록하고 VAE-direct/few-step/full diffusion operating point를 비교 |
 | 6 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
 | 7 | 동적 예산 controller·최종 검증 | 정책 ablation 후 별도 held-out 영상 재검증 |
 
@@ -83,7 +83,7 @@ supersedes:
   - 직렬화 packet byte 집계
   - float32 reliable-digital baseline 포함 10영상 정상화 sweep
 - 현재 판정
-  - float32 10dB baseline: short에서 AWGN 동등 이상, full 확정 대기
+  - float32 10dB baseline: full 300프레임에서 AWGN 동등 이상, transport bit-exact 확인 완료
   - `fixed_int6`/`fixed_int4`: 60dB 정책 결과이므로 10dB 재평가 전까지 잠정
   - `skem_int4`: 10dB 양자화 재평가 + matched-rate 재검증 전 잠정
 - 근사
@@ -128,12 +128,13 @@ supersedes:
   - `PTC`, `SFR`, `SDI` 초기 결과
   - 전송 실험 정상화·3-GPU 10영상 sweep·결과 registry 고정
   - float32 digital 진단 harness·3-GPU 실행기·production 오류 집중 GPU 검증
+  - 10dB decoder-step full 검증(3 core condition×100프레임) 및 raw output 원격–로컬 SHA 대조
 - 근거: [status.md](./status.md)
 - 남은 일정
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|
-| 9월 | digital 품질 정상화 + 공정 비교 기반 확정 | clean short/full 진단, 수정 baseline 재실행, fixed–SKEM matched-rate 결과 |
+| 9월 | digital 결과 고정 + 공정 비교 기반 확정 | full 핵심 artifact registry 고정, 양자화 baseline 재실행, fixed–SKEM matched-rate 결과 |
 | 10월 | 전송량 절감 + verifier 폐루프 | edge·uncertainty 절감 결과, 통합 평가 row, verifier candidate action 실제 sampler 반영 |
 | 11월 | 동적 제어 + 최종 정리 | 예산 controller ablation, 별도 held-out 최종 검증, 비교 프로토콜·최종 보고서 |
 

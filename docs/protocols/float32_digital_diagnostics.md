@@ -15,9 +15,9 @@ supersedes:
     AWGN 참고 경로보다 크게 낮음 (PSNR 11.32 vs 23.34, SSIM 0.081 vs 0.731, LPIPS 0.739 vs 0.254).
   - 원인 분리 결과, float32 byte transport가 아니라 60dB `fixed_reference`가
     diffusion 시작 step을 약 `1e-6`로 만든 것이 핵심 원인이었다.
-  - `fixed_reference`를 AWGN 기준 10dB(`cur_step=1/11`)로 재정의한 후 3-GPU short에서
-    품질 회복을 확인했다. 실측 수치와 제한은
-    [2026-08-28 short 검증](../experiments/2026-08-28_float32_digital_step_normalization.md)을 기준으로 한다.
+  - `fixed_reference`를 AWGN 기준 10dB(`cur_step=1/11`)로 재정의한 후 3-GPU short와
+    full(3 core condition×100프레임)에서 품질 회복을 확인했다. 최종 실측 수치와 제한은
+    [2026-08-28 full 검증](../experiments/2026-08-28_float32_digital_step_normalization_full.md)을 기준으로 한다.
 
 ## 무엇을 비교하는가
 
@@ -301,18 +301,19 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 
 ## 상태
 
-**10dB `fixed_reference` short 실 GPU 검증 성공, full 대기.** 관련 109개 회귀 테스트로
-step 정책·receiver·diagnostic harness를 검증했고, commit `c5721cb`의 3-GPU short는
-모든 stage exit 0, 실패·NaN/Inf·conflict 0건으로 완료됐다. 20프레임 digital wire는
-PSNR `35.146`, SSIM `0.9366`, LPIPS `0.1202`로 AWGN `34.302/0.9317/0.1229`와 동등 이상이었고,
-in-process/wire는 최대 PSNR `0.000752dB` 이내로 일치했다. 따라서 short 범위의 품질 저하는
-60dB decoder-step 정책이 원인이었으며 10dB 정책으로 해소됐다. 최종 확정·artifact 고정·
-양자화 operating point 재평가는 full 실행 후에 수행한다.
+**10dB `fixed_reference` full 실 GPU 검증 완료.** commit `c5721cb`의 3-GPU full은
+모든 stage exit 0, 실패·NaN/Inf·conflict 0건으로 완료됐다. 3 core condition의 300프레임에서
+digital wire는 AWGN 대비 PSNR `+0.721dB`, SSIM `+0.00552`, LPIPS `-0.00223`이었고,
+`-1dB` 이하 PSNR 저하는 0/300이었다. in-process/wire 최대 PSNR 차이는 `0.000752dB`,
+wire round-trip은 300/300 bit-exact였다. 따라서 품질 저하 원인은 float32 transport가 아니라
+60dB decoder-step 정책이었으며 10dB 정책으로 해소됐다. 남은 작업은 핵심 artifact의
+`results/` registry 고정, 통합 verdict 의미·metric-only 집계 보완, 양자화 operating point 재평가다.
 
 ## 관련 문서
 
 - [docs/experiments/2026-08-26_transmission_normalization.md](../experiments/2026-08-26_transmission_normalization.md) — float32 digital 품질 저하가 처음 관측된 실험
 - [docs/experiments/2026-08-28_float32_digital_step_normalization.md](../experiments/2026-08-28_float32_digital_step_normalization.md) — 10dB step 정상화 3-GPU short 실측
+- [docs/experiments/2026-08-28_float32_digital_step_normalization_full.md](../experiments/2026-08-28_float32_digital_step_normalization_full.md) — 10dB step 정상화 3-GPU full 실측
 - [docs/protocols/transmission_normalization.md](./transmission_normalization.md) — 전송 정상화 실행 절차(이 harness가 재사용하는 run manifest/seed/resume 패턴의 출처)
 - [docs/architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md) — Tx/Rx 계약
-- [docs/current/roadmap.md](../current/roadmap.md) §1, [docs/current/open_issues.md](../current/open_issues.md) — 이 진단의 남은 full 확정·보존 항목
+- [docs/current/roadmap.md](../current/roadmap.md) §1, [docs/current/open_issues.md](../current/open_issues.md) — 이 진단의 남은 결과 보존·리포트 계약 항목
