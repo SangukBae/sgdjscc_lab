@@ -108,7 +108,8 @@ trap 'STOPPED_EARLY=1; log "received interrupt signal; current stage handles SIG
 # system "python" (no torch) used to fail deep inside preflight with an
 # unhelpful ModuleNotFoundError. Resolution order: explicit PYTHON_BIN env
 # var override > conda "ptest" env activation (if conda IS on PATH) > a
-# fixed list of common conda install locations for envs/ptest/bin/python >
+# working `python` already on PATH (the production Docker image exposes
+# /opt/ptest/bin/python this way) > common ptest/conda install locations >
 # fail with an actionable message. Every candidate is verified to actually
 # import torch before being accepted -- "on PATH" alone is not enough.
 _try_python() { command -v "$1" >/dev/null 2>&1 && "$1" -c "import torch" >/dev/null 2>&1; }
@@ -127,8 +128,10 @@ elif command -v conda >/dev/null 2>&1; then
 fi
 
 if [ -z "$PYTHON_BIN" ] || ! _try_python "$PYTHON_BIN"; then
-  log "conda not on PATH or 'python' cannot import torch -- searching common conda install locations"
+  log "conda env unavailable or unusable -- searching PATH and common ptest/conda locations"
   for cand in \
+    "python" \
+    "/opt/ptest/bin/python" \
     "$HOME/anaconda3/envs/ptest/bin/python" \
     "$HOME/miniconda3/envs/ptest/bin/python" \
     "$HOME/miniforge3/envs/ptest/bin/python" \
@@ -143,7 +146,7 @@ if [ -z "$PYTHON_BIN" ] || ! _try_python "$PYTHON_BIN"; then
 fi
 
 if [ -z "$PYTHON_BIN" ] || ! _try_python "$PYTHON_BIN"; then
-  fail "no python interpreter that can 'import torch' was found (checked PYTHON_BIN, conda env 'ptest', and common conda install paths). Set PYTHON_BIN=/path/to/envs/ptest/bin/python explicitly, or activate the ptest environment before running this script."
+  fail "no python interpreter that can 'import torch' was found (checked PYTHON_BIN, conda env 'ptest', PATH, /opt/ptest, and common conda install paths). Set PYTHON_BIN=/path/to/python explicitly, or activate the ptest environment before running this script."
 fi
 log "python interpreter: $PYTHON_BIN ($("$PYTHON_BIN" -c 'import torch,sys; print(f"torch={torch.__version__} py={sys.version.split()[0]}")'))"
 

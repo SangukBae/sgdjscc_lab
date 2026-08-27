@@ -211,6 +211,10 @@ bash scripts/run_float32_digital_diagnostics.sh --resume outputs/f32dig_<timesta
 bash scripts/run_float32_digital_diagnostics.sh --cuda-visible-devices 0
 ```
 
+실제 GPU 서버의 `sgdjscc_lab:ptest` 컨테이너처럼 `/opt/ptest/bin/python`을 `python`으로 PATH에 노출하는 환경도
+자동 탐지한다. 탐색 순서는 명시적 `PYTHON_BIN` → conda `ptest` → Torch를 import할 수 있는 PATH의 `python` →
+`/opt/ptest/bin/python` 및 일반적인 conda 설치 경로이며, 모든 후보는 실제 `import torch` 성공 여부로 검증한다.
+
 stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 
 1. preflight — git commit provenance, dataset manifest, checkpoint 4종, 디스크 여유, GPU/CUDA/NVML
