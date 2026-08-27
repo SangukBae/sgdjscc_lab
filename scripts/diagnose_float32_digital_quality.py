@@ -250,6 +250,40 @@ def _completed_groups(path: Path) -> set:
     return completed
 
 
+def _count_csv_rows(path: Path) -> int:
+    """Exact row count (never a proxy for "unique groups") — used for
+    failed_count so an ablation that fails on 3 of 3 paths for one group
+    is not undercounted as "1 failure"."""
+    if not path.exists():
+        return 0
+    with path.open(newline="", encoding="utf-8") as fh:
+        return sum(1 for _ in csv.DictReader(fh))
+
+
+def _dataset_manifest_hash(dataset_root: str) -> str:
+    manifest_path = Path(dataset_root) / "manifest.csv"
+    return rm.sha256_file(manifest_path) if manifest_path.exists() else rm.UNKNOWN
+
+
+def _load_verdicts_index(path: Path) -> Dict[Tuple[str, int], Dict[str, Any]]:
+    """Loads previously-recorded per-(video, frame) verdicts (if any) so a
+    ``--resume`` run's verdict_summary/REPORT.md reflect ALL frames completed
+    across every invocation targeting this --output-root, not just the ones
+    (re)processed in the current invocation (whose baseline group may have
+    been skipped as already-done)."""
+    index: Dict[Tuple[str, int], Dict[str, Any]] = {}
+    if not path.exists():
+        return index
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            index[(row["video"], int(row["frame"]))] = row
+    return index
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Run signature (resume safety)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -273,8 +307,14 @@ def _build_run_signature(args, cfg, video_ids: List[str], frames: List[int], mod
         "digital_step_policy": args.digital_step_policy,
         "fixed_step_value": args.fixed_step_value, "minimal_denoise_steps": args.minimal_denoise_steps,
         "resolved_config_sha256": config_hash,
+        "dataset_manifest_sha256": _dataset_manifest_hash(args.dataset_root),
         "checkpoint_sha256": {} if args.no_models else _checkpoint_hashes(model_root),
         "no_models": bool(args.no_models), "device": args.device,
+        # Both affect what actually gets recorded/skippable across a resumed
+        # run -- must match exactly, or a resume could silently mix
+        # instrumented and non-instrumented frames for the same output-root.
+        "instrument_tensors": not args.no_instrument_tensors,
+        "record_patch_index": args.record_patch_index,
     }
 
 
@@ -386,11 +426,41 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     signature = _build_run_signature(args, cfg, [e["key"] for e in entries], frames, model_root or Path("."))
     _check_resume_signature(output_root, signature, args.resume)
 
+    path_comparison_csv = output_root / "path_comparison.csv"
+    tensor_stage_jsonl = output_root / "tensor_stage_stats.jsonl"
+    tensor_pair_csv = output_root / "tensor_pair_comparison.csv"
+    failed_csv = output_root / "failed_cases.csv"
+    verdicts_jsonl = output_root / "verdicts.jsonl"
+
+    # Skipping already-completed (video, frame, ablation) groups is ALWAYS
+    # on (matches the project's existing convention — see
+    # run_transmission_reduction_eval.py — where resume-skip is unconditional,
+    # not gated behind a flag). What --resume actually gates is whether a
+    # NON-EMPTY output-root is allowed to be reused at all: a bare re-run
+    # (no --resume) into a directory that already has completed groups is
+    # refused outright, rather than silently duplicating rows — this is the
+    # fix for the reproduced "3 rows -> 6 rows" bug (a bare re-run used to
+    # neither skip nor refuse).
+    already_done = _completed_groups(path_comparison_csv)
+    # Verdicts already recorded by a PRIOR invocation targeting this
+    # --output-root -- reloaded so a --resume run's verdict_summary/REPORT.md
+    # cover every frame ever completed here, not just the ones (re)processed
+    # in THIS invocation (whose baseline group may already be in already_done
+    # and therefore never touched below).
+    verdicts_index = _load_verdicts_index(verdicts_jsonl)
+    if already_done and not args.resume:
+        raise SystemExit(
+            f"{path_comparison_csv} already has {len(already_done)} completed (video, frame, "
+            "ablation) group(s) from a previous run. Pass --resume to continue safely (skips "
+            "already-completed groups, keeps prior verdicts) or use a different --output-root "
+            "for a fresh run."
+        )
+
     manifest_initial = rm.build_run_manifest(
         run_id=f"float32_digital_diagnostics_{int(time.time())}",
         command_argv=sys.argv, command_source="captured",
         seed=args.seed, resolved_config_path=None, config_source_path=args.config,
-        dataset_ref=str(args.dataset_root), dataset_hash=rm.UNKNOWN,
+        dataset_ref=str(args.dataset_root), dataset_hash=_dataset_manifest_hash(args.dataset_root),
         checkpoints=(None if args.no_models else {n: model_root / n for n in _CHECKPOINT_NAMES if (model_root / n).exists()}),
         repo_root=_REPO_ROOT, cuda_device_index=0,
         extra={"phase": "initial", "signature": signature},
@@ -398,13 +468,6 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     rm.write_run_manifest(output_root / "run_manifest_initial.json", manifest_initial)
 
     models = _build_models(args.no_models, cfg, args.device)
-
-    path_comparison_csv = output_root / "path_comparison.csv"
-    tensor_stage_jsonl = output_root / "tensor_stage_stats.jsonl"
-    tensor_pair_csv = output_root / "tensor_pair_comparison.csv"
-    failed_csv = output_root / "failed_cases.csv"
-
-    already_done = _completed_groups(path_comparison_csv) if args.resume else set()
 
     from sgdjscc_lab.diagnostics.float32_digital_paths import (
         PathOutcome, run_frame_awgn, run_frame_digital_inprocess, run_frame_digital_wire,
@@ -425,7 +488,6 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         except Exception as exc:  # noqa: BLE001 — LPIPS availability is environment-dependent
             print(f"[diagnose_float32_digital_quality] LPIPS unavailable ({exc}); recording None.", file=sys.stderr)
 
-    all_per_video_verdicts: List[Dict[str, Any]] = []
     n_frames_processed = 0
     interrupted = False
 
@@ -485,6 +547,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                 rows = []
                 failed_rows = []
                 psnr_by_path: Dict[str, Optional[float]] = {}
+                ssim_by_path: Dict[str, Optional[float]] = {}
+                lpips_by_path: Dict[str, Optional[float]] = {}
                 for path_name, outcome in outcomes.items():
                     if outcome.failed:
                         failed_rows.append({
@@ -499,6 +563,8 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                         ssim = compute_ssim(original, recon)
                         lpips_val = lpips_fn(original, recon) if lpips_fn is not None else None
                     psnr_by_path[path_name] = psnr
+                    ssim_by_path[path_name] = ssim
+                    lpips_by_path[path_name] = lpips_val
                     rows.append({
                         "video": video_key, "frame": frame_idx, "seed": seed, "ablation": ablation_name,
                         "path": path_name, "psnr": psnr, "ssim": ssim, "lpips": lpips_val,
@@ -510,13 +576,18 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     })
 
                 awgn_psnr = psnr_by_path.get("awgn")
+                awgn_ssim = ssim_by_path.get("awgn")
+                awgn_lpips = lpips_by_path.get("awgn")
                 for row in rows:
-                    if row["psnr"] is not None and awgn_psnr is not None:
-                        row["psnr_delta_vs_awgn"] = row["psnr"] - awgn_psnr
-                    else:
-                        row["psnr_delta_vs_awgn"] = None
-                    row["ssim_delta_vs_awgn"] = None
-                    row["lpips_delta_vs_awgn"] = None
+                    row["psnr_delta_vs_awgn"] = (
+                        row["psnr"] - awgn_psnr if row["psnr"] is not None and awgn_psnr is not None else None
+                    )
+                    row["ssim_delta_vs_awgn"] = (
+                        row["ssim"] - awgn_ssim if row["ssim"] is not None and awgn_ssim is not None else None
+                    )
+                    row["lpips_delta_vs_awgn"] = (
+                        row["lpips"] - awgn_lpips if row["lpips"] is not None and awgn_lpips is not None else None
+                    )
 
                 _append_csv_rows(path_comparison_csv, rows, PATH_COMPARISON_FIELDS)
                 _append_csv_rows(failed_csv, failed_rows, FAILED_CASES_FIELDS)
@@ -564,21 +635,31 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             if interrupted:
                 break
 
-            if not args.no_instrument_tensors and baseline_psnr:
+            verdict_key = (video_key, frame_idx)
+            if not args.no_instrument_tensors and baseline_psnr and verdict_key not in verdicts_index:
                 verdict = classify(
                     inprocess_vs_wire_comparisons=baseline_comparisons,
                     path_quality=baseline_psnr,
                     vae_direct_quality=vae_direct_psnr or None,
                 )
-                all_per_video_verdicts.append({
+                verdict_row = {
                     "video": video_key, "frame": frame_idx, "ablation": "baseline",
                     "verdict": verdict.verdict, "reason": verdict.reason,
                     "first_divergent_stage": verdict.first_divergent_stage,
-                })
+                }
+                verdicts_index[verdict_key] = verdict_row
+                _append_jsonl_rows(verdicts_jsonl, [verdict_row])
             n_frames_processed += 1
         if interrupted:
             break
 
+    # Authoritative verdict set = everything ever recorded for this
+    # --output-root (loaded at start + appended above), not just what this
+    # invocation processed -- this is what keeps verdict_summary/REPORT.md
+    # correct across --resume.
+    all_per_video_verdicts = [
+        verdicts_index[k] for k in sorted(verdicts_index, key=lambda k: (k[0], k[1]))
+    ]
     verdict_summary = None
     if all_per_video_verdicts:
         from sgdjscc_lab.diagnostics.verdict import VerdictResult
@@ -588,7 +669,7 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         ]
         verdict_summary = aggregate_verdicts(verdict_objs)
 
-    failed_total = len(_completed_groups(failed_csv)) if failed_csv.exists() else 0
+    failed_total = _count_csv_rows(failed_csv)
     write_summary_json(
         output_root, run_kind="float32_digital_diagnostics", dry_run=False,
         args=vars(args), verdict_summary=verdict_summary,
@@ -602,21 +683,21 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         outputs={
             "path_comparison.csv": "path_comparison.csv", "tensor_stage_stats.jsonl": "tensor_stage_stats.jsonl",
             "tensor_pair_comparison.csv": "tensor_pair_comparison.csv", "failed_cases.csv": "failed_cases.csv",
-            "summary.json": "summary.json",
+            "verdicts.jsonl": "verdicts.jsonl", "summary.json": "summary.json",
         },
     )
 
     manifest_final = rm.build_run_manifest(
         run_id=manifest_initial["run_id"], command_argv=sys.argv, command_source="captured",
         seed=args.seed, resolved_config_path=None, config_source_path=args.config,
-        dataset_ref=str(args.dataset_root), dataset_hash=rm.UNKNOWN,
+        dataset_ref=str(args.dataset_root), dataset_hash=_dataset_manifest_hash(args.dataset_root),
         checkpoints=(None if args.no_models else {n: model_root / n for n in _CHECKPOINT_NAMES if (model_root / n).exists()}),
         repo_root=_REPO_ROOT, cuda_device_index=0,
         extra={"phase": "final", "signature": signature, "interrupted": interrupted,
                "output_artifact_sha256": {
                    name: rm.sha256_file(output_root / name)
                    for name in ("path_comparison.csv", "tensor_stage_stats.jsonl",
-                                "tensor_pair_comparison.csv", "failed_cases.csv", "summary.json")
+                                "tensor_pair_comparison.csv", "failed_cases.csv", "verdicts.jsonl", "summary.json")
                    if (output_root / name).exists()
                }},
     )

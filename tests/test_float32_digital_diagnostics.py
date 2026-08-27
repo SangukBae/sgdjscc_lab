@@ -131,6 +131,49 @@ class TestFloat32RoundTrip:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Wire path must record every transport stage the awgn/in-process paths do
+# (previously receiver_post_norm_latent/power_scalar/cur_step/cur_snr and an
+# explicit pre_serialize_latent stage were silently missing for digital_wire).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestWirePathInstrumentation:
+    def test_wire_records_receiver_post_norm_power_scalar_and_step(self):
+        models, cfg = _mock_env()
+        rec = TensorRecorder(enabled=True)
+        out = run_frame_digital_wire(
+            _frame(), models, cfg, BASELINE_ABLATION, bit_depth=32, granularity="per_tensor",
+            digital_step_policy="fixed_reference", recorder=rec, video="v", frame_index=0, seed=1,
+            record_patch_index=0,
+        )
+        assert not out.failed
+        for stage in ("pre_serialize_latent", "receiver_post_norm_latent", "power_scalar", "cur_step", "cur_snr"):
+            key = ("v", 0, 1, "baseline", "digital_wire", stage)
+            assert key in rec.live, f"missing wire-path stage recording: {stage}"
+
+    def test_receiver_post_norm_latent_recorded_and_comparable_across_all_three_paths(self):
+        models, cfg = _mock_env()
+        rec = TensorRecorder(enabled=True)
+        frame = _frame(128, 128)
+        run_frame_awgn(frame, models, cfg, BASELINE_ABLATION, recorder=rec,
+                        video="v", frame_index=0, seed=1, record_patch_index=0)
+        run_frame_digital_inprocess(frame, models, cfg, BASELINE_ABLATION, bit_depth=32,
+                                     granularity="per_tensor", recorder=rec, video="v",
+                                     frame_index=0, seed=1, record_patch_index=0)
+        run_frame_digital_wire(frame, models, cfg, BASELINE_ABLATION, bit_depth=32,
+                                granularity="per_tensor", digital_step_policy="fixed_reference",
+                                recorder=rec, video="v", frame_index=0, seed=1, record_patch_index=0)
+        for path in ("awgn", "digital_inprocess", "digital_wire"):
+            key = ("v", 0, 1, "baseline", path, "receiver_post_norm_latent")
+            assert key in rec.live, f"missing receiver_post_norm_latent for {path}"
+        # digital_inprocess and digital_wire are both lossless at bit_depth=32
+        # and hit the exact same normalize() call on the exact same latent --
+        # they must agree bit-for-bit at this stage.
+        inprocess = rec.live[("v", 0, 1, "baseline", "digital_inprocess", "receiver_post_norm_latent")]
+        wire = rec.live[("v", 0, 1, "baseline", "digital_wire", "receiver_post_norm_latent")]
+        assert torch.equal(inprocess, wire)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Tensor comparison math
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -192,6 +235,46 @@ class TestAblations:
         init = rec.live[("v", 0, 1, "diffusion_bypass_vae_direct", "awgn", "diffusion_latent_init")]
         final = rec.live[("v", 0, 1, "diffusion_bypass_vae_direct", "awgn", "diffusion_latent_final")]
         assert torch.equal(init, final)
+
+    def test_bypass_diffusion_never_calls_canny_retransmit_or_controlnet_encode(self, monkeypatch):
+        # True VAE-direct bypass (not just skipping the diffusion sampler
+        # call): Canny retransmission and ControlNet edge-latent encoding
+        # must also never run, so latency/VRAM measured under this ablation
+        # reflect ONLY the VAE decode and cannot themselves OOM on
+        # edge-processing this ablation's whole point is to rule out.
+        import sgdjscc_lab.pipelines.infer_pipeline as infer
+
+        models, cfg = _mock_env()
+        ablations = build_default_ablations()
+        calls = {"retransmit": 0, "canny_latent": 0}
+
+        def _spy_retransmit(*args, **kwargs):
+            calls["retransmit"] += 1
+            raise AssertionError("_retransmit_canny must not be called under diffusion_bypass_vae_direct")
+
+        def _spy_canny_latent(*args, **kwargs):
+            calls["canny_latent"] += 1
+            raise AssertionError("_encode_canny_latent must not be called under diffusion_bypass_vae_direct")
+
+        monkeypatch.setattr(infer, "_retransmit_canny", _spy_retransmit)
+        monkeypatch.setattr(infer, "_encode_canny_latent", _spy_canny_latent)
+        rec = TensorRecorder(enabled=True)
+        out = run_frame_awgn(
+            _frame(128, 128), models, cfg, ablations["diffusion_bypass_vae_direct"],
+            recorder=rec, video="v", frame_index=0, seed=1, record_patch_index=0,
+        )
+        assert not out.failed
+        assert calls == {"retransmit": 0, "canny_latent": 0}
+        # The skipped stages are still explicitly recorded as absent, not
+        # silently omitted (tensor_stage_stats.jsonl should show
+        # present=False, never leave no record at all).
+        skipped_rows = [
+            r for r in rec.rows
+            if r["stage"] in ("edge_post_retransmit", "uncertainty_post_ablation", "controlnet_input_latent")
+            and r["path"] == "awgn"
+        ]
+        assert len(skipped_rows) == 3
+        assert all(r["present"] is False for r in skipped_rows)
 
     def test_minimal_denoise_uses_configured_step_count(self):
         models, cfg = _mock_env()
@@ -400,6 +483,49 @@ class TestVerdict:
         assert agg["dominant_verdict"] == "packet_tx_rx_issue"
         assert agg["counts"]["inconclusive"] == 1
 
+    def test_expected_edge_asymmetry_alone_is_not_packet_tx_rx_issue(self):
+        # digital_inprocess retransmits its edge through the analog Canny/WITT
+        # net while digital_wire uses its already-received packet edge as-is
+        # -- BY DESIGN (transmission/receiver_runtime.py) -- so these
+        # edge/decoder stages are EXPECTED to differ under the baseline
+        # ablation even when nothing is broken. A divergence confined to
+        # those stages must not be misclassified as packet_tx_rx_issue.
+        comparisons = [
+            {"stage": "sender_vae_latent_post_norm", "comparable": True, "both_finite": True,
+             "exact_equal": True, "mean_abs_err": 0.0, "cosine_similarity": 1.0},
+            {"stage": "power_scalar", "comparable": True, "both_finite": True,
+             "exact_equal": True, "mean_abs_err": 0.0, "cosine_similarity": 1.0},
+            # Expected-to-differ edge/decoder stages -- large divergence:
+            {"stage": "edge_post_retransmit", "comparable": True, "both_finite": True,
+             "exact_equal": False, "mean_abs_err": 0.9, "cosine_similarity": 0.05},
+            {"stage": "controlnet_input_latent", "comparable": True, "both_finite": True,
+             "exact_equal": False, "mean_abs_err": 0.9, "cosine_similarity": 0.05},
+            {"stage": "final_reconstruction", "comparable": True, "both_finite": True,
+             "exact_equal": False, "mean_abs_err": 0.9, "cosine_similarity": 0.05},
+        ]
+        v = classify(
+            inprocess_vs_wire_comparisons=comparisons,
+            path_quality={"awgn_psnr": 23.0, "digital_inprocess_psnr": 22.8, "digital_wire_psnr": 22.5},
+        )
+        assert v.verdict != "packet_tx_rx_issue"
+
+    def test_edge_asymmetry_becomes_evidence_once_equalized(self):
+        # Once edge_handling_equalized=True (e.g. the serialized_raw_edge /
+        # awgn_edge_retransmit ablation forced edge_already_received identical
+        # across paths), a divergence in the edge/decoder stages IS meaningful
+        # evidence again.
+        comparisons = [
+            {"stage": "controlnet_input_latent", "comparable": True, "both_finite": True,
+             "exact_equal": False, "mean_abs_err": 0.9, "cosine_similarity": 0.05},
+        ]
+        v = classify(
+            inprocess_vs_wire_comparisons=comparisons,
+            path_quality={"awgn_psnr": 23.0, "digital_inprocess_psnr": 22.8, "digital_wire_psnr": 22.5},
+            edge_handling_equalized=True,
+        )
+        assert v.verdict == "packet_tx_rx_issue"
+        assert v.first_divergent_stage == "controlnet_input_latent"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI: dry-run, --no-models end-to-end, resume, signature mismatch
@@ -469,6 +595,101 @@ class TestCli:
         with (out_root / "path_comparison.csv").open() as fh:
             rows_after_second = list(csv.DictReader(fh))
         assert len(rows_after_second) == len(rows_after_first)  # no duplicate rows
+
+    def test_bare_rerun_without_resume_flag_is_refused_not_duplicated(self, tmp_path):
+        # Regression test for the reproduced "3 rows -> 6 rows" bug: a bare
+        # re-run (no --resume) into a non-empty output-root must refuse
+        # outright, never silently duplicate CSV rows.
+        out_root = tmp_path / "run_bare"
+        args = [
+            "--output-root", str(out_root), "--video-ids", "01_person_walk", "--frames", "0",
+            "--no-models", "--device", "cpu", "--no-lpips",
+        ]
+        r1 = _run_cli(args)
+        assert r1.returncode == 0, r1.stderr
+        with (out_root / "path_comparison.csv").open() as fh:
+            rows_after_first = list(csv.DictReader(fh))
+        assert len(rows_after_first) == 3
+
+        r2 = _run_cli(args)  # deliberately no --resume
+        assert r2.returncode != 0
+        assert "--resume" in r2.stderr
+
+        with (out_root / "path_comparison.csv").open() as fh:
+            rows_after_bare_rerun = list(csv.DictReader(fh))
+        assert len(rows_after_bare_rerun) == 3  # unchanged, not doubled to 6
+
+    def test_resume_preserves_prior_verdict_summary(self, tmp_path):
+        # Regression test: --resume must not overwrite a previously-computed
+        # verdict_summary with None just because this invocation's baseline
+        # group was already completed (and therefore skipped).
+        out_root = tmp_path / "run_verdict_resume"
+        args = [
+            "--output-root", str(out_root), "--video-ids", "01_person_walk", "--frames", "0",
+            "--no-models", "--device", "cpu", "--no-lpips",
+        ]
+        r1 = _run_cli(args)
+        assert r1.returncode == 0, r1.stderr
+        summary1 = json.loads((out_root / "summary.json").read_text())
+        assert summary1["verdict_summary"] is not None
+        assert summary1["verdict_summary"]["n_verdicts"] == 1
+        verdicts_path = out_root / "verdicts.jsonl"
+        assert verdicts_path.exists()
+        assert len(verdicts_path.read_text().strip().splitlines()) == 1
+
+        r2 = _run_cli(args + ["--resume"])
+        assert r2.returncode == 0, r2.stderr
+        summary2 = json.loads((out_root / "summary.json").read_text())
+        assert summary2["verdict_summary"] is not None
+        assert summary2["verdict_summary"]["n_verdicts"] == 1
+        assert len(verdicts_path.read_text().strip().splitlines()) == 1  # not duplicated either
+
+    def test_ssim_and_lpips_delta_columns_are_populated(self, tmp_path):
+        out_root = tmp_path / "run_deltas"
+        result = _run_cli([
+            "--output-root", str(out_root), "--video-ids", "01_person_walk", "--frames", "0",
+            "--no-models", "--device", "cpu", "--no-lpips",
+        ])
+        assert result.returncode == 0, result.stderr
+        with (out_root / "path_comparison.csv").open() as fh:
+            rows = list(csv.DictReader(fh))
+        awgn_row = next(r for r in rows if r["path"] == "awgn")
+        assert float(awgn_row["ssim_delta_vs_awgn"]) == pytest.approx(0.0)
+        for row in rows:
+            if row["path"] != "awgn":
+                assert row["ssim_delta_vs_awgn"] not in ("", None)
+
+    def test_failed_total_counts_rows_not_unique_groups(self, tmp_path, monkeypatch):
+        # Regression test: failed_count must be the number of FAILED PATH
+        # ATTEMPTS (rows in failed_cases.csv), not the number of unique
+        # (video, frame, ablation) groups -- a single group where all 3
+        # paths fail must count as 3, not 1. Calls run() in-process (not via
+        # the subprocess-based _run_cli helper) so monkeypatch can reach the
+        # mock VAE's decode() the CLI process actually uses.
+        import importlib.util
+
+        import sgdjscc_lab.diagnostics.mock_models as mock_models_mod
+
+        def _nan_decode(self, z):
+            return (torch.full((z.shape[0], 3, 128, 128), float("nan")),)
+
+        monkeypatch.setattr(mock_models_mod._MockVae, "decode", _nan_decode)
+
+        spec = importlib.util.spec_from_file_location("_f32dig_cli_inprocess", _CLI)
+        cli_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli_mod)
+
+        out_root = tmp_path / "run_failures"
+        rc = cli_mod.run([
+            "--output-root", str(out_root), "--video-ids", "01_person_walk", "--frames", "0",
+            "--no-models", "--device", "cpu", "--no-lpips",
+        ])
+        assert rc == 3
+        with (out_root / "failed_cases.csv").open() as fh:
+            failed_rows = list(csv.DictReader(fh))
+        assert len(failed_rows) == 3  # awgn + digital_inprocess + digital_wire all failed
+        summary = json.loads((out_root / "summary.json").read_text())
+        assert summary["counts"]["n_frames_processed"] == 1
 
     def test_signature_mismatch_on_resume_is_rejected(self, tmp_path):
         out_root = tmp_path / "run3"

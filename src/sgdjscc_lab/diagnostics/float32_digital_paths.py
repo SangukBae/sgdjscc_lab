@@ -129,6 +129,12 @@ def instrumented_encode_and_transmit(x, jscc, pipe, canny_data, canny_uncertaint
     ctx.rec(getattr(artifacts, "soft_edge_image", None), "edge_mean")
     ctx.rec(getattr(artifacts, "soft_edge_uncertainty", None), "edge_uncertainty_mean")
     ctx.rec(artifacts.encode_features_hat, "channel_output")
+    # Explicit alias, same tensor: awgn/digital_inprocess fold "apply channel"
+    # and "normalize" into one call (_apply_channel), so there is no separate
+    # deserialize step here -- but digital_wire DOES have one (see
+    # run_frame_digital_wire's "receiver_post_norm_latent"), and both need the
+    # same stage name to be directly comparable across paths.
+    ctx.rec(artifacts.encode_features_hat, "receiver_post_norm_latent")
     ctx.rec(getattr(artifacts, "power_scalar", None), "power_scalar")
     ctx.rec(_as_tensor(getattr(artifacts, "cur_step", None)), "cur_step")
     ctx.rec(_as_tensor(getattr(artifacts, "cur_snr", None)), "cur_snr")
@@ -183,32 +189,9 @@ def instrumented_decode(
     cur_snr = artifacts.cur_snr
     bsz = artifacts.batch_size
 
-    edge_off = ablation.use_edge is False
-    thresholded = (
-        torch.zeros_like(artifacts.soft_edge_image) if edge_off else artifacts.soft_edge_image
-    )
-    soft_uncertainty = (
-        torch.zeros_like(artifacts.soft_edge_uncertainty)
-        if (ablation.uncertainty_off or edge_off) else artifacts.soft_edge_uncertainty
-    )
-
     semantic_text = (
         list(gt_text[0]) if use_text and gt_text is not None else ["" for _ in range(bsz)]
     )
-
-    edge_recv = (
-        edge_already_received if ablation.force_edge_already_received is None
-        else ablation.force_edge_already_received
-    )
-    if canny_cr != "none" and not edge_recv and not edge_off:
-        thresholded = _retransmit_canny(
-            jscc, thresholded, soft_uncertainty, cur_snr, canny_cr, th, bsz, device,
-        )
-    ctx.rec(thresholded, "edge_post_retransmit")
-    ctx.rec(soft_uncertainty, "uncertainty_post_ablation")
-
-    canny_latent = _encode_canny_latent(jscc, thresholded, device)
-    ctx.rec(canny_latent, "controlnet_input_latent")
 
     if ablation.reuse_awgn_step and awgn_step_ref is not None:
         cur_step, cur_snr = awgn_step_ref
@@ -223,9 +206,40 @@ def instrumented_decode(
     ctx.rec(latent_init, "diffusion_latent_init")
 
     if ablation.bypass_diffusion:
+        # True VAE-direct bypass (task requirement): skip Canny retransmission,
+        # edge-latent encoding, AND ControlNet/diffusion entirely -- not just
+        # the diffusion sampler call. This makes latency/VRAM measured under
+        # this ablation reflect ONLY the VAE decode, and removes the edge
+        # processing that this ablation's whole point is to rule out (so it
+        # cannot itself OOM before diffusion would even have started).
+        ctx.rec(None, "edge_post_retransmit")
+        ctx.rec(None, "uncertainty_post_ablation")
+        ctx.rec(None, "controlnet_input_latent")
         denoised_latent = latent_init
         steps_used = 0
     else:
+        edge_off = ablation.use_edge is False
+        thresholded = (
+            torch.zeros_like(artifacts.soft_edge_image) if edge_off else artifacts.soft_edge_image
+        )
+        soft_uncertainty = (
+            torch.zeros_like(artifacts.soft_edge_uncertainty)
+            if (ablation.uncertainty_off or edge_off) else artifacts.soft_edge_uncertainty
+        )
+        edge_recv = (
+            edge_already_received if ablation.force_edge_already_received is None
+            else ablation.force_edge_already_received
+        )
+        if canny_cr != "none" and not edge_recv and not edge_off:
+            thresholded = _retransmit_canny(
+                jscc, thresholded, soft_uncertainty, cur_snr, canny_cr, th, bsz, device,
+            )
+        ctx.rec(thresholded, "edge_post_retransmit")
+        ctx.rec(soft_uncertainty, "uncertainty_post_ablation")
+
+        canny_latent = _encode_canny_latent(jscc, thresholded, device)
+        ctx.rec(canny_latent, "controlnet_input_latent")
+
         not_control = _build_not_control(encode_features_hat, ctrl_scale, use_controlnet)
         denoised_latent = _run_diffusion(
             pipe=pipe, encode_features_hat=encode_features_hat, power_scalar=power_scalar,
@@ -423,6 +437,11 @@ def run_frame_digital_wire(
             pre_norm = jscc.vae.encode(patches[p:p + 1] * 2 - 1).latent_dist.mean / _SCALING_FACTOR
         ctx0.rec(pre_norm, "sender_vae_latent_pre_norm")
         ctx0.rec(encode_features[p:p + 1], "sender_vae_latent_post_norm")
+        # Explicit alias, same tensor: this is what actually gets handed to
+        # encode_frame_to_bundle_bytes() for serialization (task requirement
+        # for a named "immediately before serialize" stage, distinct from
+        # the cross-path sender_vae_latent_post_norm comparability stage).
+        ctx0.rec(encode_features[p:p + 1], "pre_serialize_latent")
         if p < len(visual_latents):
             ctx0.rec(visual_latents[p], "post_deserialize_latent_raw")
 
@@ -442,7 +461,18 @@ def run_frame_digital_wire(
 
     with torch.inference_mode():
         for i, received in enumerate(visual_latents):
+            record_this = record_patch_index is not None and i == record_patch_index
+            ctx_i = _make_ctx(recorder, video=video, frame=frame_index, seed=seed,
+                               ablation=ablation.name, path="digital_wire", record_enabled=record_this)
+
             encode_features_hat = jscc.normalize(received.to(device))
+            # Receiver-side normalization output -- the wire-path analogue of
+            # what _apply_channel() computes in-line for awgn/digital_inprocess
+            # (there it is folded into "channel_output"; here deserialization
+            # and normalization are two separate steps, so this stage makes the
+            # post-normalization point explicit and directly comparable).
+            ctx_i.rec(encode_features_hat, "receiver_post_norm_latent")
+
             dummy_x = torch.empty(
                 encode_features_hat.shape[0], 1, 1, 1, device=device, dtype=encode_features_hat.dtype,
             )
@@ -452,7 +482,11 @@ def run_frame_digital_wire(
                 if edge_uncertainty is not None else (torch.zeros_like(edge_i) if edge_i is not None else None)
             )
             soft_edge, soft_unc = _preprocess_soft_edge(edge_i, unc_i, dummy_x, device)
+            ctx_i.rec(soft_edge, "edge_mean")
+            ctx_i.rec(soft_unc, "edge_uncertainty_mean")
+
             power_scalar = _compute_power_scalar(encode_features_hat, None, dummy_x)
+            ctx_i.rec(power_scalar, "power_scalar")
             signal_scale = (snr_scale / (snr_scale + 1)) * torch.ones_like(encode_features_hat[:, 0:1, 0, 0])
             meta_i = visual_metadata[i] if i < len(visual_metadata) else {"bit_depth": bit_depth}
             cur_step, cur_snr = _compute_step(
@@ -462,6 +496,8 @@ def run_frame_digital_wire(
                 digital_bit_depth=meta_i.get("bit_depth", bit_depth), digital_policy=policy,
                 digital_quant_snr_db=meta_i.get("quant_snr_db"),
             )
+            ctx_i.rec(_as_tensor(cur_step), "cur_step")
+            ctx_i.rec(_as_tensor(cur_snr), "cur_snr")
             artifacts = ForwardArtifacts(
                 use_semantic=bool(cfg.use_semantic), encode_features_hat=encode_features_hat,
                 signal_scale=signal_scale, device=device, batch_size=encode_features_hat.shape[0],
@@ -469,9 +505,6 @@ def run_frame_digital_wire(
                 soft_edge_image=soft_edge, soft_edge_uncertainty=soft_unc,
             )
             gt_text_i = [[captions[i]]] if i < len(captions) else [[""]]
-            record_this = record_patch_index is not None and i == record_patch_index
-            ctx_i = _make_ctx(recorder, video=video, frame=frame_index, seed=seed,
-                               ablation=ablation.name, path="digital_wire", record_enabled=record_this)
             out, n_steps = instrumented_decode(
                 artifacts, jscc, models.sem_pipeline, gt_text_i, cfg, device, ctx_i,
                 edge_already_received=True, ablation=ablation, awgn_step_ref=awgn_step_ref,

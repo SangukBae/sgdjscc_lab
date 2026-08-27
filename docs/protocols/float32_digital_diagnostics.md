@@ -42,11 +42,17 @@ bit-exact 동등성으로 검증한다.
 
 ## 계측 stage
 
-sender VAE latent(scaling/normalization 전후) · 직렬화 직전/역직렬화 직후 latent · receiver scaling/normalization
-전후 · power scalar · edge/uncertainty · ControlNet 입력 · diffusion 초기/최종 latent · VAE decode 입력 ·
-최종 복원 · `cur_step`/`cur_snr`(실제 decoder 정책). 각 tensor는 shape/dtype/finite/NaN·Inf 수/min/max/mean/std/
-norm/fingerprint(SHA-256)를 기록하고(`tensor_stage_stats.jsonl`), 경로 쌍마다 exact equality/max·mean absolute
-error/MSE/cosine similarity/norm ratio를 계산한다(`tensor_pair_comparison.csv`).
+`sender_vae_latent_pre_norm`/`sender_vae_latent_post_norm`(sender VAE latent, scaling/normalization 전후,
+3경로 공통) · `pre_serialize_latent`(digital_wire 전용, 직렬화 직전 — `sender_vae_latent_post_norm`과 동일
+tensor의 명시적 별칭) · `post_deserialize_latent_raw`(digital_wire, 역직렬화 직후, normalize 전) ·
+`channel_output`/`receiver_post_norm_latent`(3경로 공통, normalize 직후 — awgn/digital_inprocess는
+`_apply_channel()` 안에서 channel 적용과 normalize가 한 호출로 합쳐지므로 같은 tensor에 두 이름을 모두 붙이고,
+digital_wire는 역직렬화 후 별도 `jscc.normalize()` 호출이 있으므로 이 이름이 그 지점을 가리킨다) · `power_scalar` ·
+`cur_step`/`cur_snr`(실제 decoder 정책, 3경로 모두 기록) · `edge_mean`/`edge_uncertainty_mean` ·
+`edge_post_retransmit`/`uncertainty_post_ablation` · `controlnet_input_latent` · `diffusion_latent_init`/
+`diffusion_latent_final` · `vae_decode_input` · `final_reconstruction`. 각 tensor는 shape/dtype/finite/
+NaN·Inf 수/min/max/mean/std/norm/fingerprint(SHA-256)를 기록하고(`tensor_stage_stats.jsonl`), 경로 쌍마다
+exact equality/max·mean absolute error/MSE/cosine similarity/norm ratio를 계산한다(`tensor_pair_comparison.csv`).
 float32(`bit_depth=32`)는 무손실이므로 `digital_wire`의 직렬화 왕복이 canonical(contiguous, CPU, float32) 기준
 bitwise identical인지 별도로 검사한다(`roundtrip_bitexact` 컬럼).
 
@@ -54,11 +60,22 @@ bitwise identical인지 별도로 검사한다(`roundtrip_bitexact` 컬럼).
 
 `src/sgdjscc_lab/diagnostics/verdict.py::classify`:
 
-1. `digital_inprocess`와 `digital_wire`가 어떤 stage에서든 다름(`STAGE_ORDER` 순서상 최초 stage) →
-   **`packet_tx_rx_issue`**
-2. 두 digital 경로는 일치하지만 AWGN보다 낮음(PSNR 기준 ≥ 1.0 dB 차이) → **`decoder_pipeline_issue`**
-3. `diffusion_bypass_vae_direct` ablation(ControlNet/diffusion을 완전히 우회하고 받은 latent를 VAE로 바로
-   복원)부터 이미 AWGN보다 낮음 → **`latent_normalization_issue`**
+1. **transport/latent stage**(`TRANSPORT_STAGES` — sender latent·channel/역직렬화·normalize·power scalar·
+   step/SNR·`diffusion_latent_init`)에서 `digital_inprocess`와 `digital_wire`가 다름(그 중 최초 stage) →
+   **`packet_tx_rx_issue`**.
+   - `edge_mean`/`edge_post_retransmit`/`controlnet_input_latent`/`diffusion_latent_final`/
+     `vae_decode_input`/`final_reconstruction` 같은 **edge/decoder stage**(`EDGE_DECODER_STAGES`)는
+     baseline ablation에서 기본적으로 이 판정에 포함하지 않는다 — `digital_inprocess`는 edge를 analog
+     Canny/WITT 재전송망으로 다시 보내고, `digital_wire`는 packet에서 이미 받은 edge를 그대로 쓰는 것이
+     설계상 정상 동작(`transmission/receiver_runtime.py`)이라 이 두 경로가 여기서 다른 것은 그 자체로
+     packet 오류의 증거가 아니다. `serialized_raw_edge`/`awgn_edge_retransmit` ablation으로
+     `edge_already_received`를 양쪽에서 동일하게 강제한 뒤(`classify(..., edge_handling_equalized=True)`)에만
+     이 stage들의 불일치도 증거로 쓴다.
+2. 두 digital 경로는 (transport stage 기준) 일치하지만 AWGN보다 낮음(PSNR 기준 ≥ 1.0 dB 차이) →
+   **`decoder_pipeline_issue`**
+3. `diffusion_bypass_vae_direct` ablation(Canny 재전송·ControlNet edge latent encode·diffusion을 **전부**
+   생략하고 받은 latent를 VAE로 바로 복원 — diffusion 호출만 건너뛰는 것이 아니라 edge 처리 자체가 아예
+   실행되지 않음)부터 이미 AWGN보다 낮음 → **`latent_normalization_issue`**
 4. 위 어느 것도 근거가 부족하면 → **`inconclusive`**
 
 ## Ablation (one-factor-at-a-time)
@@ -107,12 +124,27 @@ python scripts/diagnose_float32_digital_quality.py --output-root outputs/f32dig_
 `--minimal-denoise-steps`, `--no-instrument-tensors`(대규모 다중 프레임 실행에서 tensor 계측 생략),
 `--save-tensors`(선택적 `.pt` 저장), `--no-models`(CPU/mock), `--resume`.
 
+### Resume 안전성
+
+이미 완료된 (video, frame, ablation) group을 건너뛰는 것은 항상(플래그와 무관하게) 켜져 있다
+(`run_transmission_reduction_eval.py`의 기존 관행과 동일). `--resume`이 실제로 게이트하는 것은 **비어있지
+않은 `--output-root`를 재사용해도 되는가**이다 — `--resume` 없이 이미 결과가 있는 `--output-root`를 다시
+가리키면 CSV를 중복 기록하는 대신 즉시 거부한다(재현된 "3행→6행" 버그의 수정). `run_signature.json`은 git
+commit·dataset manifest hash·config hash·checkpoint hash·seed·video/frame·ablation·bit-depth·granularity·
+digital-step-policy·**tensor 계측 여부(`--no-instrument-tensors`)**·`--record-patch-index`를 모두 포함하며,
+하나라도 다르면 `--resume`이어도 즉시 거부한다. 판정(`verdicts.jsonl`)은 `path_comparison.csv`와 별도로
+`(video, frame)`당 한 줄만 누적 기록되고, 매 실행 시작 시 전부 다시 읽어 `verdict_summary`/`REPORT.md`를
+구성하므로 — 이번 실행에서 해당 baseline group이 이미 완료되어 건너뛰었어도 `verdict_summary`가 `None`으로
+덮어써지지 않는다.
+
 산출물(`--output-root` 하위): `run_manifest_initial.json`/`run_manifest.json`(commit·argv·config·checkpoint
-hash·환경 — `utils/run_manifest.py` 재사용), `run_signature.json`(resume 안전성), `path_comparison.csv`
-(경로별 PSNR/SSIM/LPIPS/latency/diffusion step/실패 + AWGN 대비 delta), `tensor_stage_stats.jsonl`,
-`tensor_pair_comparison.csv`, `failed_cases.csv`(non-finite로 중단된 (video,frame,ablation,path,stage)),
-`summary.json`, `REPORT.md`(판정·근거·최초 불일치 stage — `--no-models`/dry-run에서는 "진단 환경 구현 완료,
-서버 실측 대기"만 기록하고 원인 결론을 절대 주장하지 않음).
+hash·**dataset manifest hash**·환경 — `utils/run_manifest.py` 재사용), `run_signature.json`(resume 안전성),
+`path_comparison.csv`(경로별 PSNR/SSIM/LPIPS/latency/diffusion step/실패 + AWGN 대비 delta — PSNR/SSIM/LPIPS
+전부), `tensor_stage_stats.jsonl`, `tensor_pair_comparison.csv`, `verdicts.jsonl`((video, frame)당 판정 1줄,
+resume 시 누적 재사용), `failed_cases.csv`(non-finite로 중단된 **path별** 행 — `summary.json`/종료 코드에
+쓰이는 실패 건수는 group 수가 아니라 이 CSV의 실제 행 수), `summary.json`, `REPORT.md`(판정·근거·최초 불일치
+stage — `--no-models`/dry-run에서는 "진단 환경 구현 완료, 서버 실측 대기"만 기록하고 원인 결론을 절대
+주장하지 않음).
 
 ## 서버 단일 실행
 
@@ -138,11 +170,20 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 6. `stage6_core_conditions/` — 3영상(`01_person_walk` 일반 움직임, `07_person_enter` semantic 변화,
    `09_scene_cut_chair_car` scene cut) x N프레임(`smoke`=3, `short`=10, `full`=100), `baseline`만,
    tensor 계측 생략(`--no-instrument-tensors`, 규모상 metrics만)
-7. 결과 검증 + 산출물 SHA-256 해시 + `INTEGRATED_REPORT.md`
+7. 결과 검증 + 산출물 SHA-256 해시 + `INTEGRATED_REPORT.md`(각 stage의 `summary.json`/`verdicts.jsonl`을
+   실제로 읽어 stage별 dominant verdict·판정 개수·실패 건수 표와 전체 통합 판정을 만든다 — 파일 해시 목록만이
+   아니다)
 
 불필요한 ablation Cartesian product는 만들지 않는다 — ablation 전체 스윕은 stage 4(1영상 x 1프레임)로만
 한정하고, 다중 프레임/다중 영상 stage는 `baseline`(+ stage 5의 `diffusion_bypass_vae_direct`)만 실행한다.
 
+- python 인터프리터 탐색: `PYTHON_BIN` 환경변수 명시 > conda `ptest` env 활성화(conda가 PATH에 있을 때) >
+  `~/anaconda3`/`~/miniconda3`/`~/miniforge3`/`/opt/conda`/`/usr/local/anaconda3`의 `envs/ptest/bin/python`
+  순으로 시도 — 매 후보는 실제로 `import torch`가 성공하는지 검증한 뒤에만 채택한다(비대화형 셸에서 conda가
+  PATH에 없어 시스템 python으로 조용히 넘어가는 문제의 수정). 전부 실패하면 `PYTHON_BIN`을 직접 지정하라는
+  메시지와 함께 즉시 종료한다.
+- 매 stage(2~6)의 stdout/stderr·시작/종료 시각·소요 시간(초)·종료 코드가
+  `$OUTPUT_ROOT/stage_logs/<stage_name>.log`에 보존된다(터미널에도 동시에 출력 — `tee`).
 - preflight 실패 → 즉시 종료(아무 stage도 실행되지 않음)
 - 독립 stage(3~6) 실패 → 기록 후 계속 진행, 최종 exit code는 non-zero(3)
 - SIGINT/SIGTERM → 현재 실행 중인 Python 단계가 자체적으로 manifest/summary/report를 저장한 뒤 종료 코드
@@ -153,8 +194,9 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 ## 상태
 
 **진단 환경 구현 완료, 서버 실측 대기.** 이 문서와 harness 자체는 CPU/mock 테스트와 dry-run으로만 검증되었다
-(`tests/test_float32_digital_diagnostics.py`, 31개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
-효과·NaN 전파·decode parity·verdict 분류·resume/signature mismatch·CLI end-to-end). 실제 GPU 추론 기반 판정
+(`tests/test_float32_digital_diagnostics.py`, 40개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
+효과(VAE-direct bypass가 Canny/ControlNet을 실제로 호출하지 않는지 포함)·NaN 전파·decode parity·verdict 분류
+(edge 비대칭 오탐 방지 포함)·resume 안전성(중복 방지·판정 보존)·CLI end-to-end). 실제 GPU 추론 기반 판정
 (`packet_tx_rx_issue`/`decoder_pipeline_issue`/`latent_normalization_issue`)은 `scripts/
 run_float32_digital_diagnostics.sh`를 서버에서 실행한 뒤에만 유효하다 — 이 문서는 원인 해결이나 품질 정상화를
 주장하지 않는다.

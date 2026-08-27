@@ -58,14 +58,30 @@ def _is_divergent(cmp: Dict[str, Any]) -> bool:
 
 # Stage order matches the sender->receiver->decoder pipeline direction, so the
 # first divergent stage found is the earliest point of disagreement.
-STAGE_ORDER = [
-    "sender_vae_latent_pre_norm", "sender_vae_latent_post_norm",
+#
+# Transport/latent stages: purely a function of the sender's VAE latent, the
+# channel/serialization boundary, and step-matching -- digital_inprocess and
+# digital_wire SHOULD agree here bit-for-bit (both are lossless at
+# bit_depth=32). A divergence here is genuine packet/Tx-Rx evidence.
+TRANSPORT_STAGES = [
+    "sender_vae_latent_pre_norm", "sender_vae_latent_post_norm", "pre_serialize_latent",
     "channel_output", "post_deserialize_latent_raw", "receiver_post_norm_latent",
-    "power_scalar", "cur_step", "cur_snr",
-    "edge_mean", "edge_uncertainty_mean", "edge_post_retransmit", "uncertainty_post_ablation",
-    "controlnet_input_latent", "diffusion_latent_init", "diffusion_latent_final",
-    "vae_decode_input", "final_reconstruction",
+    "power_scalar", "cur_step", "cur_snr", "diffusion_latent_init",
 ]
+# Edge/decoder stages: digital_inprocess retransmits its edge through the
+# analog Canny/WITT net (no packet boundary to read an already-received edge
+# from), while digital_wire uses the edge it already decoded from the packet
+# as-is (transmission/receiver_runtime.py's own established behavior) --
+# these two paths are EXPECTED to diverge here under the baseline ablation
+# even when nothing is broken. A divergence here alone is therefore NOT
+# packet/Tx-Rx evidence (see docs/protocols/float32_digital_diagnostics.md);
+# it only becomes meaningful once the serialized_raw_edge/awgn_edge_retransmit
+# ablation has equalized edge_already_received across paths.
+EDGE_DECODER_STAGES = [
+    "edge_mean", "edge_uncertainty_mean", "edge_post_retransmit", "uncertainty_post_ablation",
+    "controlnet_input_latent", "diffusion_latent_final", "vae_decode_input", "final_reconstruction",
+]
+STAGE_ORDER = TRANSPORT_STAGES + EDGE_DECODER_STAGES
 
 
 def classify(
@@ -73,15 +89,22 @@ def classify(
     inprocess_vs_wire_comparisons: List[Dict[str, Any]],
     path_quality: Dict[str, Optional[float]],  # {"awgn_psnr":..., "digital_inprocess_psnr":..., "digital_wire_psnr":...}
     vae_direct_quality: Optional[Dict[str, Optional[float]]] = None,  # from diffusion_bypass_vae_direct ablation
+    edge_handling_equalized: bool = False,
 ) -> VerdictResult:
     """*inprocess_vs_wire_comparisons*: list of
     ``{"stage": str, **compare_tensors() output}`` for the SAME (video,
     frame, ablation), stage-name ordered by ``STAGE_ORDER`` where possible.
+
+    *edge_handling_equalized*: set True only when the comparisons come from a
+    run where ``edge_already_received`` was forced identical across
+    digital_inprocess and digital_wire (e.g. the ``serialized_raw_edge`` /
+    ``awgn_edge_retransmit`` ablations) — only then are the
+    ``EDGE_DECODER_STAGES`` also inspected for the packet_tx_rx_issue check;
+    otherwise a divergence there is expected behavior, not evidence.
     """
     by_stage = {row["stage"]: row for row in inprocess_vs_wire_comparisons}
-    ordered_stages = [s for s in STAGE_ORDER if s in by_stage] + [
-        s for s in by_stage if s not in STAGE_ORDER
-    ]
+    candidate_stages = TRANSPORT_STAGES + (EDGE_DECODER_STAGES if edge_handling_equalized else [])
+    ordered_stages = [s for s in candidate_stages if s in by_stage]
 
     for stage in ordered_stages:
         cmp = by_stage[stage]
