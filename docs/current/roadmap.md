@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-27
+updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 607f727
+source_commit: dad4222
 supersedes:
 ---
 
@@ -29,13 +29,12 @@ supersedes:
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
-| ~~1~~ | ~~정상화 결과 registry 고정~~ | 완료 — [`results/transmission_normalization_20260826/`](../../results/transmission_normalization_20260826/README.md), `results/registry.csv` 등록 |
-| 2 | digital 복원 품질 정상화 | float32 digital의 AWGN 대비 품질 저하 원인 분리·수정 — 진단 harness와 3-GPU 병렬 실행기 구현 및 서버 GPU 3장 인식 확인([protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md)); 실제 smoke/full 실측 대기 |
-| 3 | fixed–SKEM matched-rate 재평가 | 실제 transmitting frame 또는 byte가 허용 오차 안에서 일치 |
-| 4 | edge·uncertainty 전송량 절감 | int4 packet의 주요 91% 구성요소 ablation |
-| 5 | 통합 평가 harness 확장 | Rate·품질·SRS·할루시네이션·지연을 paired row로 기록 |
-| 6 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
-| 7 | 동적 예산 controller·최종 검증 | 정책 ablation 후 별도 held-out 영상 재검증 |
+| 1 | digital 복원 품질 정상화 | production 오류 수정이 반영된 clean `short`/`full`로 원인 판정을 확정하고, 수정된 float32 digital baseline을 AWGN과 재비교 — 진단 harness·3-GPU 실행기·`fixed_step`/`minimal_denoise` 집중 GPU 검증은 완료([protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md)) |
+| 2 | fixed–SKEM matched-rate 재평가 | 실제 transmitting frame 또는 byte가 허용 오차 안에서 일치 |
+| 3 | edge·uncertainty 전송량 절감 | int4 packet의 주요 91% 구성요소 ablation |
+| 4 | 통합 평가 harness 확장 | Rate·품질·SRS·할루시네이션·지연을 paired row로 기록 |
+| 5 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
+| 6 | 동적 예산 controller·최종 검증 | 정책 ablation 후 별도 held-out 영상 재검증 |
 
 - 역할 분리
   - 평가 harness: hyperparameter 조합 반복 실행
@@ -126,14 +125,16 @@ supersedes:
   - SNR sweep
   - channel-symbol 절감 1차 PoC
   - `PTC`, `SFR`, `SDI` 초기 결과
+  - 전송 실험 정상화·3-GPU 10영상 sweep·결과 registry 고정
+  - float32 digital 진단 harness·3-GPU 실행기·production 오류 집중 GPU 검증
 - 근거: [status.md](./status.md)
 - 남은 일정
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|
-| 9월 | 영상 파이프라인 고도화 + verifier 연동 | motion gate 실데이터 튜닝, VQA/OWLv2 연동 결과 반영 |
-| 10월 | 페이딩 견고성 + verifier 고도화 | Rayleigh/페이딩 결과, packet verifier candidate action 실제 반영 |
-| 11월 | 공정 비교 + 최종 정리 | held-out 평가 기반 최종 실험, 비교 프로토콜, 최종 보고서 |
+| 9월 | digital 품질 정상화 + 공정 비교 기반 확정 | clean short/full 진단, 수정 baseline 재실행, fixed–SKEM matched-rate 결과 |
+| 10월 | 전송량 절감 + verifier 폐루프 | edge·uncertainty 절감 결과, 통합 평가 row, verifier candidate action 실제 sampler 반영 |
+| 11월 | 동적 제어 + 최종 정리 | 예산 controller ablation, 별도 held-out 최종 검증, 비교 프로토콜·최종 보고서 |
 
 ## 신규 연구 아이템 확장 가능성
 

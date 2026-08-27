@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-27
+updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 607f727
+source_commit: dad4222
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -26,9 +26,9 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 | 연구 문제 | 현재 대응 |
 |---|---|
-| 1. 시간축·영상 신뢰성 | keyframe pipeline, scene change, temporal evaluator, semantic delta + motion 이중 게이트, `PTC`/`SFR`/`SDI`, LGVSC 참고 3-way 생성 분기 — 완료(아래 "영상 확장" 참고) |
+| 1. 시간축·영상 신뢰성 | keyframe pipeline, scene change, temporal evaluator, semantic delta + motion 이중 게이트, `PTC`/`SFR`/`SDI`, LGVSC 참고 3-way 생성 분기 — **기본 파이프라인 완료**. real MLLM PSSS·10영상×4모드 재현·학습형 개선선은 미완(아래 "영상 확장" 참고) |
 | 2. 할루시네이션 | semantic packet verifier, 오류 유형별 regeneration controller, OWLv2/VQA 보강 — 판정·로그까지 완료, 실제 sampler 개입은 미구현(아래 "할루시네이션 완화" 참고) |
-| 3. 평가 체계 신뢰도 | loop-internal/held-out 지표 분리, `PTC`/`SFR`/`SDI`, Presence Calibration — 구조·실측 완료, GT/VLM 기반 Temporal SRS Calibration은 스캐폴드만(아래 "평가 체계" 참고) |
+| 3. 평가 체계 신뢰도 | loop-internal/held-out 지표 분리, `PTC`/`SFR`/`SDI`, Presence Calibration — 구조·기존 실측 완료. GT/VLM 기반 Temporal SRS Calibration·DISTS/downstream·최종 paired held-out 검증은 미완(아래 "평가 체계" 참고) |
 
 ## 기능별 구현 상태
 
@@ -158,7 +158,7 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 | Semantic-unit 절감 (키프레임+델타 재사용) | 완료 |
 | Channel-symbol/bit accounting PoC (`accounting/bit_accounting.py`) | 완료 — proxy 상수 기반, 실제 CBR/표준 bitstream 검증 아님 |
 | 실제 binary packet 전송 (`transmission/`, 4/6/8/16/32-bit 양자화) | **정상화·3-GPU 실측 완료** — 10영상×11설정 110/110 pair, 실패·NaN/Inf 0건. `fixed_int6`은 보수적 후보, `fixed_int4`는 최대 절감 후보. digital 절대 품질 저하와 SKEM rate matching 불완전은 미해결 — [2026-08-26 결과](../experiments/2026-08-26_transmission_normalization.md) |
-| float32 digital 품질 저하 진단 harness (`diagnostics/`, `scripts/diagnose_float32_digital_quality.py`) | **진단 환경·3-GPU 병렬 실행기 구현 완료, 서버 실측 대기** — awgn/digital_inprocess/digital_wire 3경로 stage 계측·ablation·판정, worker별 독립 output/resume, evidence-aware 통합 리포트를 CPU/mock 테스트와 dry-run으로 검증. 서버 컨테이너에서 PyTorch의 RTX 4090 3장 인식 확인; 실제 smoke/full 실측 전까지 원인 결론 없음 — [protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md) |
+| float32 digital 품질 저하 진단 harness (`diagnostics/`, `scripts/diagnose_float32_digital_quality.py`) | **진단 환경·3-GPU 병렬 실행기·실서버 집중 검증 완료, clean short/full 재실행 대기** — awgn/digital_inprocess/digital_wire 3경로 stage 계측·ablation·판정, worker별 독립 output/resume, evidence-aware 통합 리포트 구현. 서버 smoke에서 발견한 `fixed_step` tensor 계약과 `minimal_denoise` sampler 최솟값 오류를 수정했고, 두 ablation 모두 production GPU 3경로 집중 검증 통과. 중단 없는 최신 `short`(stage 5=20프레임, stage 6=3영상×10프레임) 또는 `full` 결과 전까지 원인 판정은 잠정 — [protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md) |
 | Importance-aware / 채널 신호 연동 bit allocation | 미착수 — [roadmap.md](./roadmap.md) §3 |
 
 ### 학습 CLI
