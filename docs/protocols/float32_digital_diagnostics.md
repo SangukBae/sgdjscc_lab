@@ -297,8 +297,9 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 
 ## 상태
 
-**진단 환경 구현 완료, 서버 실측 대기.** 이 문서와 harness 자체는 CPU/mock 테스트와 dry-run으로만 검증되었다
-(`tests/test_float32_digital_diagnostics.py`, 54개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
+**진단 환경 구현 완료, 전체 서버 smoke 재실행 대기.** CPU/mock 회귀 테스트와 서버 production 모델 집중 검증을
+완료했다(`tests/test_float32_digital_diagnostics.py`, 54개 테스트 통과; 서버 GPU에서 `fixed_step` 및
+`minimal_denoise`의 AWGN·digital_inprocess·digital_wire 경로 모두 실패 없이 완료) — routing·float32 round-trip·tensor 비교·ablation
 효과(VAE-direct bypass가 Canny/ControlNet을 실제로 호출하지 않는지 포함)·NaN 전파·decode parity·verdict 분류
 (edge 비대칭 오탐 방지 및 edge_handling_equalized 실제 연동 포함)·resume 안전성(중복 방지·판정 보존·중단
 직후 판정 복구·provisional→final 재분류·dataset content hash)·baseline-only 집계(보조 증거 과대 집계 방지)·
