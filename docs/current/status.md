@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 81087e6
+source_commit: c5721cb
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -157,8 +157,8 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 |---|---|
 | Semantic-unit 절감 (키프레임+델타 재사용) | 완료 |
 | Channel-symbol/bit accounting PoC (`accounting/bit_accounting.py`) | 완료 — proxy 상수 기반, 실제 CBR/표준 bitstream 검증 아님 |
-| 실제 binary packet 전송 (`transmission/`, 4/6/8/16/32-bit 양자화) | **정상화·3-GPU 실측 완료** — 10영상×11설정 110/110 pair, 실패·NaN/Inf 0건. `fixed_int6`은 보수적 후보, `fixed_int4`는 최대 절감 후보. digital 절대 품질 저하와 SKEM rate matching 불완전은 미해결 — [2026-08-26 결과](../experiments/2026-08-26_transmission_normalization.md) |
-| float32 digital 품질 저하 진단 harness (`diagnostics/`, `scripts/diagnose_float32_digital_quality.py`) | **clean short 완료, step 정책 수정의 GPU 재검증 대기** — 2026-08-27 short에서 digital in-process/wire가 일치하고 VAE-direct는 정상인 반면 baseline의 60dB `fixed_reference` step만 품질이 크게 저하되어 decoder-step 정책을 원인으로 압축. `fixed_reference`를 AWGN 기준 SNR(기본 10dB, `cur_step=1/11`)로 재정의하고 in-process/wire·signature·execution plan에 동일하게 전달하도록 구현. 실 GPU short/full 재검증 전이므로 최종 operating point는 미확정 — [protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md) |
+| 실제 binary packet 전송 (`transmission/`, 4/6/8/16/32-bit 양자화) | **전송 안정성·3-GPU 실측 완료, 양자화 operating point 재평가 필요** — 2026-08-26 실험은 10영상×11설정 110/110 pair, 실패·NaN/Inf 0건이었지만 이때의 60dB decoder step이 잘못된 것으로 확인됨. 따라서 `fixed_int6`/`fixed_int4`/`skem_int4` 후보는 수정된 10dB 정책으로 재실행 전까지 잠정 — [2026-08-26 결과](../experiments/2026-08-26_transmission_normalization.md) |
+| float32 digital 품질 저하 진단 harness (`diagnostics/`, `scripts/diagnose_float32_digital_quality.py`) | **10dB step 정상화 short GPU 검증 성공, full 대기** — 3-GPU short의 20프레임에서 digital wire가 PSNR `11.543→35.146`, SSIM `0.0876→0.9366`, LPIPS `0.7050→0.1202`로 회복했고 AWGN(`34.302/0.9317/0.1229`)과 동등 이상. 3 core condition×10프레임에서도 digital wire PSNR `36.162` vs AWGN `35.686`. in-process/wire 최대 PSNR 차이 `0.000752dB`, wire round-trip 전부 bit-exact, 실패·NaN/Inf·stage conflict 0건. 최종 확정은 full(3영상×100프레임) 후 — [short 실측](../experiments/2026-08-28_float32_digital_step_normalization.md), [프로토콜](../protocols/float32_digital_diagnostics.md) |
 | Importance-aware / 채널 신호 연동 bit allocation | 미착수 — [roadmap.md](./roadmap.md) §3 |
 
 ### 학습 CLI

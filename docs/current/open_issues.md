@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 81087e6
+source_commit: c5721cb
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -71,13 +71,20 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - **severity의 인과적 feedback 경로 없음**
   - 현재 프레임의 severity는 복원 후에 계산되므로 다음 프레임/GOP 제어나 재전송 feedback에 연결해야 한다.
   - 관련 byte와 왕복 지연 accounting도 미구현이다.
-- **float32 digital 복원 품질이 AWGN 참고 경로보다 크게 낮음**
-  - 10영상 평균: PSNR `11.32 vs 23.34`, SSIM `0.081 vs 0.731`, LPIPS `0.739 vs 0.254`.
-  - 2026-08-27 clean short에서 digital in-process/wire가 일치하고 VAE-direct는 정상이었지만,
-    60dB `fixed_reference` baseline만 PSNR가 약 11.5dB로 저하되어 decoder step 정책을 핵심 원인으로 압축했다.
-  - `fixed_reference`를 AWGN 기준 SNR(기본 10dB, `cur_step=1/11`)로 재정의하고 in-process/wire·run signature·
-    execution plan에 동일하게 적용했다. 3-GPU short/full 실측으로 품질 회복을 확인하기 전까지는 미해결로 유지한다.
-  - 진단 프로토콜: [protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md).
+- **float32 digital 정상화는 short에서 성공, full·산출물 고정은 미완료**
+  - 기존 10영상 60dB 결과(PSNR `11.32 vs 23.34`, SSIM `0.081 vs 0.731`, LPIPS `0.739 vs 0.254`)는
+    decoder step 계약이 잘못된 legacy 결과로 판정했다.
+  - 10dB 3-GPU short 20프레임에서 digital wire `35.146/0.9366/0.1202`,
+    AWGN `34.302/0.9317/0.1229`로 품질 격차가 해소됐고, in-process/wire도 수치적으로 일치했다.
+  - 남은 조건: full 3영상×100프레임 확인, 핵심 artifact의 `results/` registry 보존,
+    수정된 정책으로 int16/int8/int6/int4 재평가.
+  - [short 실측](../experiments/2026-08-28_float32_digital_step_normalization.md),
+    [진단 프로토콜](../protocols/float32_digital_diagnostics.md).
+- **auxiliary edge 판정이 미세 차이도 `packet_tx_rx_issue`로 표시**
+  - `serialized_raw_edge`/`awgn_edge_retransmit`에서 `edge_mean` MAE `0.0005328`, cosine `0.9999906`을
+    packet 문제로 분류했지만, 최종 in-process/wire PSNR 차이는 `0.001dB` 미만이었다.
+  - baseline 판정·full 실행을 막는 문제는 아니며, auxiliary 전용 tolerance 또는
+    `transport_delta_detected` 계열의 중립 label로 보완할 필요가 있다.
 - **fixed–SKEM 비교가 실제 rate-matched가 아님**
   - keyframe 수는 맞았지만 `recompute_semantic`으로 실제 transmitting frame 수가 달라졌다.
   - `rate_matching.csv` 통과: 35/50; selector 절감 효과는 잠정 결과로만 사용한다.

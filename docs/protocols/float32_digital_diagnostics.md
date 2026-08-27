@@ -1,22 +1,23 @@
 ---
 status: active
-updated: 2026-08-27
+updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: a3935b4
+source_commit: c5721cb
 supersedes:
 ---
 
 > [← 문서 색인](../README.md)
 
-# float32 digital 복원 품질 저하 진단 환경
+# float32 digital 복원 품질 저하 진단·검증
 
 - 배경
   - [2026-08-26 전송 정상화 결과](../experiments/2026-08-26_transmission_normalization.md): float32(reliable-digital baseline) 복원이
     AWGN 참고 경로보다 크게 낮음 (PSNR 11.32 vs 23.34, SSIM 0.081 vs 0.731, LPIPS 0.739 vs 0.254).
-  - [roadmap.md](../current/roadmap.md) §2 / [open_issues.md](../current/open_issues.md): 원인이 packet/Tx-Rx 계약
-    문제인지 edge·ControlNet·diffusion 문제인지 latent scaling/normalization 문제인지 미분리.
-  - **이 문서가 서술하는 범위는 진단 환경(harness)의 구현이다. 서버 실측 결과는 아직 없다 —
-    아래 어떤 판정도 이 harness가 실제 GPU에서 실행되기 전까지는 결론이 아니다.**
+  - 원인 분리 결과, float32 byte transport가 아니라 60dB `fixed_reference`가
+    diffusion 시작 step을 약 `1e-6`로 만든 것이 핵심 원인이었다.
+  - `fixed_reference`를 AWGN 기준 10dB(`cur_step=1/11`)로 재정의한 후 3-GPU short에서
+    품질 회복을 확인했다. 실측 수치와 제한은
+    [2026-08-28 short 검증](../experiments/2026-08-28_float32_digital_step_normalization.md)을 기준으로 한다.
 
 ## 무엇을 비교하는가
 
@@ -35,8 +36,9 @@ sender-only mask 통계는 digital_wire 수신 경계를 정당하게 넘을 수
 `diagnostics/float32_digital_paths.py::instrumented_decode`는 `pipelines/infer_pipeline.py::_decode_diffusion`의
 제어 흐름을 재현하되(stage tensor 캡처 + ablation 개입 지점 추가), 모든 실제 텐서 연산은 그대로 real production
 함수(`_compute_power_scalar`, `_compute_step`, `_retransmit_canny`, `_encode_canny_latent`, `_run_diffusion`,
-`jscc.vae.decode`/`jscc.normalize`)를 호출한다. `pipelines/infer_pipeline.py` 자체는 전혀 수정하지 않으므로
-기존 기본 전송 동작은 이 harness와 무관하게 보존된다 — 이 중복 orchestration이 실제 `_decode_diffusion`과
+`jscc.vae.decode`/`jscc.normalize`)를 호출한다. production `pipelines/infer_pipeline.py`의
+digital step 계약도 동일한 `digital_fixed_reference_snr_db`를 소비하며, in-process/wire 경로가
+동일 정책값을 받는지 회귀 테스트한다. 진단용 중복 orchestration이 실제 `_decode_diffusion`과
 어긋나지 않는지는 `tests/test_float32_digital_diagnostics.py::TestDecodeParity`가 baseline ablation에서
 bit-exact 동등성으로 검증한다.
 
@@ -211,7 +213,7 @@ bash scripts/run_float32_digital_diagnostics.sh --profile short
 bash scripts/run_float32_digital_diagnostics.sh --profile full
 bash scripts/run_float32_digital_diagnostics.sh --resume outputs/f32dig_<timestamp>
 bash scripts/run_float32_digital_diagnostics.sh --cuda-visible-devices 0
-bash scripts/run_float32_digital_diagnostics.sh --profile full --parallel-devices 0,1,2
+bash scripts/run_float32_digital_diagnostics.sh --profile full --parallel-devices 0,1,2 --fixed-reference-snr-db 10
 ```
 
 실제 GPU 서버의 `sgdjscc_lab:ptest` 컨테이너처럼 `/opt/ptest/bin/python`을 `python`으로 PATH에 노출하는 환경도
@@ -230,7 +232,8 @@ bash scripts/run_float32_digital_diagnostics.sh --profile full --parallel-device
 - stage 6 출력: `stage6_core_conditions/worker_00_normal_motion/`, `worker_01_semantic_change/`,
   `worker_02_scene_cut/`
 - worker별 output root와 log가 분리되어 CSV/JSONL 동시 쓰기가 없고, 모든 worker 종료 후에만 stage 7 실행
-- `execution_plan.json`에 순차/병렬 모드, commit, profile, 물리 GPU 배치, seed, dataset 경로를 보존한다.
+- `execution_plan.json`에 순차/병렬 모드, commit, profile, 물리 GPU 배치, seed, dataset 경로,
+  fixed-reference SNR를 보존한다.
   `--resume`은 계획이 완전히 동일할 때만 허용하므로 순차 결과와 병렬 결과를 섞지 않는다.
 - SIGINT/SIGTERM은 활성 worker에 전달되고, 완료된 `(video, frame, ablation)` group은 worker별 resume 규칙으로
   건너뛴다.
@@ -298,21 +301,18 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 
 ## 상태
 
-**진단 환경 구현 완료, 전체 서버 smoke 재실행 대기.** CPU/mock 회귀 테스트와 서버 production 모델 집중 검증을
-완료했다(`tests/test_float32_digital_diagnostics.py`, 54개 테스트 통과; 서버 GPU에서 `fixed_step` 및
-`minimal_denoise`의 AWGN·digital_inprocess·digital_wire 경로 모두 실패 없이 완료) — routing·float32 round-trip·tensor 비교·ablation
-효과(VAE-direct bypass가 Canny/ControlNet을 실제로 호출하지 않는지 포함)·NaN 전파·decode parity·verdict 분류
-(edge 비대칭 오탐 방지 및 edge_handling_equalized 실제 연동 포함)·resume 안전성(중복 방지·판정 보존·중단
-직후 판정 복구·provisional→final 재분류·dataset content hash)·baseline-only 집계(보조 증거 과대 집계 방지)·
-REPORT.md 링크 깊이·CLI end-to-end; stage 7의 conflict 검출·auxiliary 분리·3-GPU nested worker 통합과 병렬
-dry-run GPU/영상 배치는 합성 데이터·CPU 실행으로 검증). 실제 GPU 추론 기반 판정
-(`packet_tx_rx_issue`/`decoder_pipeline_issue`/`latent_normalization_issue`)은 `scripts/
-run_float32_digital_diagnostics.sh`를 서버에서 실행한 뒤에만 유효하다 — 이 문서는 원인 해결이나 품질 정상화를
-주장하지 않는다.
+**10dB `fixed_reference` short 실 GPU 검증 성공, full 대기.** 관련 109개 회귀 테스트로
+step 정책·receiver·diagnostic harness를 검증했고, commit `c5721cb`의 3-GPU short는
+모든 stage exit 0, 실패·NaN/Inf·conflict 0건으로 완료됐다. 20프레임 digital wire는
+PSNR `35.146`, SSIM `0.9366`, LPIPS `0.1202`로 AWGN `34.302/0.9317/0.1229`와 동등 이상이었고,
+in-process/wire는 최대 PSNR `0.000752dB` 이내로 일치했다. 따라서 short 범위의 품질 저하는
+60dB decoder-step 정책이 원인이었으며 10dB 정책으로 해소됐다. 최종 확정·artifact 고정·
+양자화 operating point 재평가는 full 실행 후에 수행한다.
 
 ## 관련 문서
 
 - [docs/experiments/2026-08-26_transmission_normalization.md](../experiments/2026-08-26_transmission_normalization.md) — float32 digital 품질 저하가 처음 관측된 실험
+- [docs/experiments/2026-08-28_float32_digital_step_normalization.md](../experiments/2026-08-28_float32_digital_step_normalization.md) — 10dB step 정상화 3-GPU short 실측
 - [docs/protocols/transmission_normalization.md](./transmission_normalization.md) — 전송 정상화 실행 절차(이 harness가 재사용하는 run manifest/seed/resume 패턴의 출처)
 - [docs/architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md) — Tx/Rx 계약
-- [docs/current/roadmap.md](../current/roadmap.md) §2, [docs/current/open_issues.md](../current/open_issues.md) — 이 진단이 해결하려는 미해결 항목
+- [docs/current/roadmap.md](../current/roadmap.md) §1, [docs/current/open_issues.md](../current/open_issues.md) — 이 진단의 남은 full 확정·보존 항목

@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 81087e6
+source_commit: c5721cb
 supersedes:
 ---
 
@@ -29,12 +29,13 @@ supersedes:
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
-| 1 | digital 복원 품질 정상화 | clean `short`로 60dB `fixed_reference` decoder step을 핵심 원인으로 압축. AWGN 기준 10dB(`cur_step=1/11`)로 수정한 float32 baseline을 3-GPU `short` 후 `full`로 재검증하여 AWGN과의 품질 차이와 최종 operating point를 확정([protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md)) |
-| 2 | fixed–SKEM matched-rate 재평가 | 실제 transmitting frame 또는 byte가 허용 오차 안에서 일치 |
-| 3 | edge·uncertainty 전송량 절감 | int4 packet의 주요 91% 구성요소 ablation |
-| 4 | 통합 평가 harness 확장 | Rate·품질·SRS·할루시네이션·지연을 paired row로 기록 |
-| 5 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
-| 6 | 동적 예산 controller·최종 검증 | 정책 ablation 후 별도 held-out 영상 재검증 |
+| 1 | float32 digital 정상화 최종 확정 | 10dB `fixed_reference` 3-GPU `short`는 성공. `full`(3 core condition×100프레임)에서 실패·non-finite 0, in-process/wire 일치, AWGN 대비 품질 유지를 확인하고 핵심 산출물을 `results/` registry에 고정([short 실측](../experiments/2026-08-28_float32_digital_step_normalization.md)) |
+| 2 | 양자화 성능 재평가 | 수정된 10dB baseline에서 int16·int8·int6·int4 품질·byte Pareto를 재계산하고, 기존 `fixed_int6`/`fixed_int4` 후보를 재확정 |
+| 3 | fixed–SKEM matched-rate 재평가 | 실제 transmitting frame 또는 byte가 허용 오차 안에서 일치 |
+| 4 | edge·uncertainty 전송량 절감 | int4 packet의 주요 91% 구성요소 ablation |
+| 5 | 통합 평가 harness 확장 | Rate·품질·SRS·할루시네이션·지연을 paired row로 기록 |
+| 6 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
+| 7 | 동적 예산 controller·최종 검증 | 정책 ablation 후 별도 held-out 영상 재검증 |
 
 - 역할 분리
   - 평가 harness: hyperparameter 조합 반복 실행
@@ -82,9 +83,9 @@ supersedes:
   - 직렬화 packet byte 집계
   - float32 reliable-digital baseline 포함 10영상 정상화 sweep
 - 현재 판정
-  - `fixed_int6`: 보수적 운영 후보
-  - `fixed_int4`: 최대 절감 후보
-  - `skem_int4`: matched-rate 재검증 전 잠정 후보
+  - float32 10dB baseline: short에서 AWGN 동등 이상, full 확정 대기
+  - `fixed_int6`/`fixed_int4`: 60dB 정책 결과이므로 10dB 재평가 전까지 잠정
+  - `skem_int4`: 10dB 양자화 재평가 + matched-rate 재검증 전 잠정
 - 근사
   - 물리 channel symbol·FEC는 proxy
 - 목표
