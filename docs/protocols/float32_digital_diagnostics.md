@@ -148,14 +148,40 @@ group의 CSV/tensor-pair 행이 기록된 직후, 판정이 계산되기 전에 
 (`tests/test_float32_digital_diagnostics.py::test_resume_recovers_verdict_lost_to_an_interrupt_right_after_baseline`
 가 정확히 이 시나리오를 재현·검증한다).
 
+### provisional/final 판정 — VAE-direct 증거를 기다리는 baseline 판정
+
+`--ablations`에 `diffusion_bypass_vae_direct`가 포함된 실행에서, baseline 판정은 `diffusion_bypass_vae_direct`
+group의 evidence가 아직 없으면(이번 실행에서도, 이전 실행에서도 처리되지 않았으면) `status: "provisional"`로
+기록되고, evidence가 생기는 즉시(같은 실행 중이든 이후 `--resume`에서든) `status: "final"`로 **재계산**된다 —
+`diffusion_bypass_vae_direct`가 애초에 요청되지 않은 실행에서는 기다릴 대상이 없으므로 baseline이 즉시
+`final`이다. `final` 판정은 이후 절대 재계산·덮어쓰기되지 않는다(멱등); `provisional` 판정은 evidence가 없는
+동안 재실행해도 내용이 같으면 `verdicts.jsonl`에 중복으로 다시 쓰지 않는다(내용이 바뀔 때만 새 줄을 추가하고,
+로더는 같은 키의 마지막 줄을 채택하므로 갱신이 안전하게 반영된다). 이는 재현된 회귀 버그(baseline 완료 직후
+중단 → provisional 판정 기록 → `--resume`에서 `diffusion_bypass_vae_direct`까지 완료되어도 기존(evidence 없이
+계산된) baseline 판정이 그대로 남는 문제)를 고친다
+(`tests/test_float32_digital_diagnostics.py::test_stale_baseline_verdict_upgraded_after_interrupted_vae_direct_arrives_on_resume`
+가 정확히 이 시나리오를 재현·검증한다).
+
+### 판정 집계 기준 — baseline·final만 종합 판정에 반영
+
+`serialized_raw_edge`/`awgn_edge_retransmit`(edge-equalizing ablation)는 자체 판정 행을 가지지만
+**보조(auxiliary) 증거**다 — 같은 프레임의 baseline 판정과 합산하면 한 프레임의 증거가 여러 번 집계된 것처럼
+과대평가된다. `summary.json`의 `verdict_summary`(그리고 `REPORT.md`의 "종합 판정")는 **`ablation == "baseline"`
+AND `status == "final"`** 행만 집계하고, `counts.n_baseline_verdicts_provisional`/
+`counts.n_auxiliary_edge_equalized_verdicts`로 제외된 건수를 별도로 명시한다 — 보조 증거·provisional 판정
+자체는 `verdicts.jsonl`/`REPORT.md`의 (video, frame)별 표에 `ablation`/`status` 열로 온전히 보존되며, 버려지지
+않는다.
+
 산출물(`--output-root` 하위): `run_manifest_initial.json`/`run_manifest.json`(commit·argv·config·checkpoint
 hash·**dataset content hash**·환경 — `utils/run_manifest.py` 재사용), `run_signature.json`(resume 안전성),
 `path_comparison.csv`(경로별 PSNR/SSIM/LPIPS/latency/diffusion step/실패 + AWGN 대비 delta — PSNR/SSIM/LPIPS
 전부), `tensor_stage_stats.jsonl`, `tensor_pair_comparison.csv`, `verdicts.jsonl`((video, frame, ablation)당
-판정 1줄 — `ablation`은 `baseline`이거나 `EDGE_EQUALIZING_ABLATIONS`의 하나), `failed_cases.csv`(non-finite로
-중단된 **path별** 행 — `summary.json`/종료 코드에 쓰이는 실패 건수는 group 수가 아니라 이 CSV의 실제 행 수),
-`summary.json`, `REPORT.md`(판정·근거·최초 불일치 stage — `--no-models`/dry-run에서는 "진단 환경 구현 완료,
-서버 실측 대기"만 기록하고 원인 결론을 절대 주장하지 않음).
+판정 행 — `ablation`은 `baseline`이거나 `EDGE_EQUALIZING_ABLATIONS`의 하나, `status`는 `provisional`/`final`;
+provisional → final 갱신 시 같은 키로 새 행이 추가될 수 있으므로 파일 자체는 append-only이고, 로더가 키당
+마지막 행을 채택해 authoritative 상태를 얻는다), `failed_cases.csv`(non-finite로 중단된 **path별** 행 —
+`summary.json`/종료 코드에 쓰이는 실패 건수는 group 수가 아니라 이 CSV의 실제 행 수), `summary.json`,
+`REPORT.md`(판정·근거·최초 불일치 stage — `--no-models`/dry-run에서는 "진단 환경 구현 완료, 서버 실측 대기"만
+기록하고 원인 결론을 절대 주장하지 않음).
 
 ### Dataset content hash
 
@@ -190,8 +216,18 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
    tensor 계측 생략(`--no-instrument-tensors`, 규모상 metrics만)
 7. 결과 검증 + 산출물 SHA-256 해시 + `INTEGRATED_REPORT.md`(각 stage의 `summary.json`/`verdicts.jsonl`을
    실제로 읽어 stage별 dominant verdict·판정 개수·실패 건수 표와 전체 통합 판정을 만든다 — 파일 해시 목록만이
-   아니다. "overall" 절은 `(video, frame, ablation)` 기준으로 stage 간 중복 제거된 판정 집합에서 집계하므로,
-   예를 들어 stage3과 stage5가 둘 다 다루는 (video 01, frame 0, baseline)이 두 번 집계되지 않는다)
+   아니다):
+   - `(video, frame, ablation)` 기준으로 stage 간 중복 제거 — stage3과 stage5가 둘 다 다루는 (video 01,
+     frame 0, baseline)이 두 번 집계되지 않는다.
+   - "overall" dominant verdict는 **`ablation == "baseline"` AND `status == "final"`** 행만 집계한다 —
+     `serialized_raw_edge`/`awgn_edge_retransmit` 보조 증거는 별도 "auxiliary evidence" 절에, provisional
+     baseline 판정은 카운트만 별도로 보존되며 어느 쪽도 dominant verdict 합산에 섞이지 않는다.
+   - 같은 키(`(video, frame, ablation)`)에 대해 같은 finality 등급(`final`↔`final` 또는
+     `provisional`↔`provisional`)에서 **다른** stage가 **다른** verdict를 기록했다면(재현성 이상 징후) 조용히
+     마지막 값으로 덮어쓰지 않고 `## conflicts` 절에 명시적으로 나열하며, python이 종료 코드 3으로 끝나
+     `STAGE_FAILURES`가 증가한다(그래도 `INTEGRATED_REPORT.md` 자체는 항상 끝까지 작성됨 — 실패 처리와
+     리포트 작성은 서로 배타적이지 않다). `provisional` → `final` 갱신은 충돌이 아니라 정상적인 승격으로
+     처리되어 조용히 최신 값을 채택한다.
 
 불필요한 ablation Cartesian product는 만들지 않는다 — ablation 전체 스윕은 stage 4(1영상 x 1프레임)로만
 한정하고, 다중 프레임/다중 영상 stage는 `baseline`(+ stage 5의 `diffusion_bypass_vae_direct`)만 실행한다.
@@ -209,9 +245,9 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
   `$OUTPUT_ROOT/stage_logs/<stage_name>.log`에 보존된다(터미널에도 동시에 출력 — `tee`). 같은 `--output-root`로
   재시도할 때마다 로그를 **덮어쓰지 않고 이어붙인다**(`===== attempt at <timestamp> =====` 구분선으로 시도별
   구간을 나눔) — 이전 시도의 로그가 사라지지 않는다.
-- stage 7(`INTEGRATED_REPORT.md` 생성) 자체가 실패하면(예: 어느 stage의 `summary.json`이 손상됨) 이는
-  `STAGE_FAILURES`에 정상적으로 반영되고, "wrote ..." 성공 메시지는 실제로 파일이 쓰였을 때만 출력된다 —
-  python 실행이 실패했는데도 다음 줄에서 "성공"이라고 보고하지 않는다.
+- stage 7(`INTEGRATED_REPORT.md` 생성) 자체가 실패하면(예: 어느 stage의 `summary.json`이 손상됨, 또는 stage
+  간 판정 conflict 발생) 이는 `STAGE_FAILURES`에 정상적으로 반영되고, "wrote ..." 성공 메시지는 실제로 파일이
+  쓰였을 때만 출력된다 — python 실행이 실패했는데도 다음 줄에서 "성공"이라고 보고하지 않는다.
 - preflight 실패 → 즉시 종료(아무 stage도 실행되지 않음)
 - 독립 stage(3~7) 실패 → 기록 후 계속 진행, 최종 exit code는 non-zero(3)
 - SIGINT/SIGTERM → 현재 실행 중인 Python 단계가 자체적으로 manifest/summary/report를 저장한 뒤 종료 코드
@@ -222,10 +258,12 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 ## 상태
 
 **진단 환경 구현 완료, 서버 실측 대기.** 이 문서와 harness 자체는 CPU/mock 테스트와 dry-run으로만 검증되었다
-(`tests/test_float32_digital_diagnostics.py`, 45개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
+(`tests/test_float32_digital_diagnostics.py`, 46개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
 효과(VAE-direct bypass가 Canny/ControlNet을 실제로 호출하지 않는지 포함)·NaN 전파·decode parity·verdict 분류
 (edge 비대칭 오탐 방지 및 edge_handling_equalized 실제 연동 포함)·resume 안전성(중복 방지·판정 보존·중단
-직후 판정 복구·dataset content hash)·REPORT.md 링크 깊이·CLI end-to-end). 실제 GPU 추론 기반 판정
+직후 판정 복구·provisional→final 재분류·dataset content hash)·baseline-only 집계(보조 증거 과대 집계 방지)·
+REPORT.md 링크 깊이·CLI end-to-end; stage 7의 conflict 검출·auxiliary 분리는 합성 다중-stage 데이터로 별도
+검증). 실제 GPU 추론 기반 판정
 (`packet_tx_rx_issue`/`decoder_pipeline_issue`/`latent_normalization_issue`)은 `scripts/
 run_float32_digital_diagnostics.sh`를 서버에서 실행한 뒤에만 유효하다 — 이 문서는 원인 해결이나 품질 정상화를
 주장하지 않는다.

@@ -383,10 +383,11 @@ fi
 # ── stage 7: validate results, hash, integrated report ──────────────────
 log "==== stage: 7_validate_and_report ===="
 STAGE7_DIRS="$OUTPUT_ROOT/stage3_single_frame_paths $OUTPUT_ROOT/stage4_single_frame_ablations $OUTPUT_ROOT/stage5_paired_frames $OUTPUT_ROOT/stage6_core_conditions"
-if F32DIG_PROFILE="$PROFILE" F32DIG_OUTPUT_ROOT="$OUTPUT_ROOT" F32DIG_STAGE_FAILURES="$STAGE_FAILURES" \
-   F32DIG_STAGE_DIRS="$STAGE7_DIRS" "$PYTHON_BIN" - <<'PYEOF'
+F32DIG_PROFILE="$PROFILE" F32DIG_OUTPUT_ROOT="$OUTPUT_ROOT" F32DIG_STAGE_FAILURES="$STAGE_FAILURES" \
+F32DIG_STAGE_DIRS="$STAGE7_DIRS" "$PYTHON_BIN" - <<'PYEOF'
 import json
 import os
+import sys
 import hashlib
 from pathlib import Path
 from collections import Counter
@@ -396,6 +397,8 @@ output_root = Path(os.environ["F32DIG_OUTPUT_ROOT"])
 profile = os.environ["F32DIG_PROFILE"]
 stage_failures = os.environ["F32DIG_STAGE_FAILURES"]
 stage_dirs = [Path(p) for p in os.environ["F32DIG_STAGE_DIRS"].split() if p]
+
+AUXILIARY_ABLATIONS = ("serialized_raw_edge", "awgn_edge_retransmit")
 
 lines = []
 lines.append(f"# float32 digital diagnostics — integrated run ({profile} profile)")
@@ -407,21 +410,25 @@ lines.append("")
 lines.append("**This section consolidates each stage's own verdict (see docs/protocols/"
              "float32_digital_diagnostics.md for the classification criteria); it is NOT itself "
              "a new judgment, only a rollup of what each stage's own summary.json/verdicts.jsonl "
-             "already recorded.**")
+             "already recorded. Only `ablation == \"baseline\"` AND `status == \"final\"` rows feed "
+             "any dominant-verdict tally below -- auxiliary edge-equalizing ablations and "
+             "still-provisional baseline rows are listed separately, never summed into it.**")
 lines.append("")
-lines.append("## per-stage verdict summary")
-lines.append("")
-lines.append("| stage | n_frames_processed | dominant_verdict | verdict counts | failed_cases |")
-lines.append("|---|---:|---|---|---:|")
 
-# (video, frame, ablation-kind) -> verdict label, deduplicated ACROSS stages
-# -- stage3 and stage5 (for example) both cover video 01/frame 0's baseline
-# ablation with the identical config, so summing each stage's own
-# verdict_summary counts directly would count that one verdict twice. Reading
-# each stage's verdicts.jsonl (not its pre-aggregated summary.json counts)
-# and keying by the full (video, frame, ablation) triple across ALL stages
-# combined lets the "overall" section count each real verdict exactly once.
-combined_verdicts = {}
+# combined[key] = {"verdict", "status", "stage"} -- ONE canonical entry per
+# (video, frame, ablation) across ALL stages (stage3 and stage5, for
+# example, both cover video 01/frame 0's baseline ablation with the
+# identical config, so summing each stage's own verdict_summary counts
+# directly would count that one verdict twice). Precedence: a "final" entry
+# always wins over a "provisional" one for the SAME key (upgrade, not a
+# conflict). Two DIFFERENT verdict labels at the same finality tier for the
+# same key is a genuine reproducibility anomaly -- flagged in "## conflicts"
+# below and treated as a failure (see also `EDGE_EQUALIZING_ABLATIONS`),
+# never silently overwritten with the later stage's value.
+combined = {}
+conflicts = []
+per_stage_rows = []
+
 for stage_dir in stage_dirs:
     if not stage_dir.is_dir():
         continue
@@ -432,7 +439,9 @@ for stage_dir in stage_dirs:
         n_frames = summary.get("counts", {}).get("n_frames_processed", "?")
 
     verdicts_path = stage_dir / "verdicts.jsonl"
-    stage_counts = Counter()
+    stage_baseline_final_counts = Counter()
+    stage_n_provisional = 0
+    stage_n_auxiliary = 0
     if verdicts_path.exists():
         with verdicts_path.open(encoding="utf-8") as fh:
             for line in fh:
@@ -440,20 +449,61 @@ for stage_dir in stage_dirs:
                 if not line:
                     continue
                 row = json.loads(line)
-                stage_counts[row["verdict"]] += 1
-                combined_verdicts[(row["video"], row["frame"], row["ablation"])] = row["verdict"]
+                status = row.get("status", "final")
+                key = (row["video"], row["frame"], row["ablation"])
+                entry = {"verdict": row["verdict"], "status": status, "stage": stage_dir.name}
+
+                existing = combined.get(key)
+                if existing is None:
+                    combined[key] = entry
+                elif existing["status"] == "final" and status != "final":
+                    pass  # existing final wins; ignore a provisional newcomer
+                elif existing["status"] != "final" and status == "final":
+                    combined[key] = entry  # provisional -> final upgrade
+                elif existing["verdict"] != entry["verdict"]:
+                    conflicts.append({
+                        "key": key, "verdict_a": existing["verdict"], "stage_a": existing["stage"],
+                        "verdict_b": entry["verdict"], "stage_b": entry["stage"], "status": status,
+                    })
+                    # keep the earlier stage's entry as canonical (deterministic
+                    # first-wins on a genuine tie) -- flagged above, not hidden.
+
+                if row["ablation"] == "baseline":
+                    if status == "final":
+                        stage_baseline_final_counts[row["verdict"]] += 1
+                    else:
+                        stage_n_provisional += 1
+                elif row["ablation"] in AUXILIARY_ABLATIONS:
+                    stage_n_auxiliary += 1
 
     failed_csv = stage_dir / "failed_cases.csv"
     n_failed = max(0, sum(1 for _ in failed_csv.open(encoding="utf-8")) - 1) if failed_csv.exists() else 0
-    stage_conclusive = {k: v for k, v in stage_counts.items() if k != "inconclusive"}
-    stage_dominant = max(stage_conclusive, key=stage_conclusive.get) if stage_conclusive else None
-    counts_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_counts.items())) or "(none)"
-    lines.append(f"| {stage_dir.name} | {n_frames} | {stage_dominant or 'inconclusive'} | {counts_str} | {n_failed} |")
+    stage_dominant = (
+        max(stage_baseline_final_counts, key=stage_baseline_final_counts.get)
+        if stage_baseline_final_counts else None
+    )
+    counts_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_baseline_final_counts.items())) or "(none)"
+    per_stage_rows.append(
+        f"| {stage_dir.name} | {n_frames} | {stage_dominant or 'inconclusive'} | {counts_str} "
+        f"| {stage_n_provisional} | {stage_n_auxiliary} | {n_failed} |"
+    )
+
+lines.append("## per-stage verdict summary (baseline, final only)")
+lines.append("")
+lines.append("| stage | n_frames_processed | dominant_verdict | baseline verdict counts | provisional | auxiliary | failed_cases |")
+lines.append("|---|---:|---|---|---:|---:|---:|")
+lines.extend(per_stage_rows)
 
 lines.append("")
-lines.append("## overall (all stages combined, deduplicated by (video, frame, ablation))")
+lines.append("## overall (baseline, final only, deduplicated across stages by (video, frame))")
 lines.append("")
-overall_counts = Counter(combined_verdicts.values())
+overall_counts = Counter(
+    entry["verdict"] for key, entry in combined.items()
+    if key[2] == "baseline" and entry["status"] == "final"
+)
+n_provisional_overall = sum(
+    1 for key, entry in combined.items() if key[2] == "baseline" and entry["status"] != "final"
+)
 if overall_counts:
     conclusive = {k: v for k, v in overall_counts.items() if k != "inconclusive"}
     overall_dominant = max(conclusive, key=conclusive.get) if conclusive else None
@@ -461,8 +511,40 @@ if overall_counts:
     for label, count in sorted(overall_counts.items(), key=lambda kv: -kv[1]):
         lines.append(f"  - `{label}`: {count}")
 else:
-    lines.append("- no verdicts recorded across any stage (tensor instrumentation may have been "
-                 "disabled, or no stage completed).")
+    lines.append("- no final baseline verdicts recorded across any stage (tensor instrumentation may "
+                 "have been disabled, no stage completed, or all baseline verdicts are still provisional).")
+if n_provisional_overall:
+    lines.append(f"- provisional baseline verdicts (excluded above, waiting on VAE-direct evidence): {n_provisional_overall}")
+
+lines.append("")
+lines.append("## auxiliary evidence (serialized_raw_edge / awgn_edge_retransmit, never summed into the overall count)")
+lines.append("")
+auxiliary_counts = Counter(
+    entry["verdict"] for key, entry in combined.items() if key[2] in AUXILIARY_ABLATIONS
+)
+if auxiliary_counts:
+    for label, count in sorted(auxiliary_counts.items(), key=lambda kv: -kv[1]):
+        lines.append(f"- `{label}`: {count}")
+else:
+    lines.append("- none recorded (no stage ran serialized_raw_edge/awgn_edge_retransmit).")
+
+lines.append("")
+lines.append("## conflicts")
+lines.append("")
+if conflicts:
+    lines.append(
+        f"**{len(conflicts)} conflicting verdict(s) detected** -- the SAME (video, frame, ablation) "
+        "got DIFFERENT verdict labels at the same finality tier from different stages. This is a "
+        "reproducibility anomaly (non-determinism or a config mismatch between stages), not expected "
+        "behavior -- treated as a stage-7 failure below."
+    )
+    for c in conflicts:
+        lines.append(
+            f"- `{c['key']}` ({c['status']}): `{c['verdict_a']}` (stage `{c['stage_a']}`) vs. "
+            f"`{c['verdict_b']}` (stage `{c['stage_b']}`)"
+        )
+else:
+    lines.append("- none detected.")
 
 lines.append("")
 lines.append("## per-stage artifact hashes (sha256)")
@@ -480,17 +562,19 @@ for stage_dir in stage_dirs:
 
 (output_root / "INTEGRATED_REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 print(f"wrote {output_root / 'INTEGRATED_REPORT.md'}")
+if conflicts:
+    print(f"CONFLICTS_DETECTED: {len(conflicts)}", file=sys.stderr)
+    sys.exit(3)
 PYEOF
-then
-  integrated_report_ok=1
-else
-  integrated_report_ok=0
-fi
+python_rc=$?
 
-if [ "$integrated_report_ok" -eq 1 ] && [ -s "$OUTPUT_ROOT/INTEGRATED_REPORT.md" ]; then
+if [ "$python_rc" -eq 0 ] && [ -s "$OUTPUT_ROOT/INTEGRATED_REPORT.md" ]; then
   log "wrote $OUTPUT_ROOT/INTEGRATED_REPORT.md"
+elif [ "$python_rc" -eq 3 ] && [ -s "$OUTPUT_ROOT/INTEGRATED_REPORT.md" ]; then
+  log "wrote $OUTPUT_ROOT/INTEGRATED_REPORT.md but detected verdict CONFLICTS across stages -- see its '## conflicts' section; treating as a failure."
+  STAGE_FAILURES=$((STAGE_FAILURES + 1))
 else
-  log "stage '7_validate_and_report' FAILED -- INTEGRATED_REPORT.md was not written (or is empty); per-stage REPORT.md/summary.json files under each stageN_*/ are still valid on their own."
+  log "stage '7_validate_and_report' FAILED (exit $python_rc) -- INTEGRATED_REPORT.md was not written (or is empty); per-stage REPORT.md/summary.json files under each stageN_*/ are still valid on their own."
   STAGE_FAILURES=$((STAGE_FAILURES + 1))
 fi
 

@@ -719,6 +719,93 @@ class TestCli:
             rows = list(csv.DictReader(fh))
         assert len(rows) == 3  # awgn + digital_inprocess + digital_wire, once each
 
+    def test_stale_baseline_verdict_upgraded_after_interrupted_vae_direct_arrives_on_resume(self, tmp_path):
+        # Regression test for the second reproduced bug: running
+        # `--ablations baseline,diffusion_bypass_vae_direct` and getting
+        # interrupted right after baseline finishes (before
+        # diffusion_bypass_vae_direct even starts) used to freeze the
+        # baseline verdict WITHOUT vae-direct evidence forever -- a later
+        # --resume would process diffusion_bypass_vae_direct and add its
+        # evidence to psnr_index, but the already-"final" baseline verdict
+        # was never recomputed, so it stayed stale. Simulates the exact
+        # interrupt point (in-process, so the module's own _STOP_REQUESTED
+        # global can be set deterministically right after baseline's CSV row
+        # is written) and asserts the baseline verdict is "provisional"
+        # immediately after the interrupted run, then gets recomputed to
+        # "final" (using the now-available vae-direct evidence) on --resume.
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("_f32dig_stale_verdict_test", _CLI)
+        cli_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cli_mod)
+
+        original_append_csv = cli_mod._append_csv_rows
+
+        def _interrupt_right_after_baseline_csv_write(path, rows, fieldnames):
+            original_append_csv(path, rows, fieldnames)
+            if path.name == "path_comparison.csv" and rows and rows[0].get("ablation") == "baseline":
+                cli_mod._STOP_REQUESTED = True
+
+        out_root = tmp_path / "run_stale_verdict"
+        args = [
+            "--output-root", str(out_root), "--video-ids", "01_person_walk", "--frames", "0",
+            "--no-models", "--device", "cpu", "--no-lpips",
+            "--ablations", "baseline,diffusion_bypass_vae_direct",
+        ]
+
+        cli_mod._append_csv_rows = _interrupt_right_after_baseline_csv_write
+        try:
+            rc1 = cli_mod.run(args)
+        finally:
+            cli_mod._append_csv_rows = original_append_csv
+            cli_mod._STOP_REQUESTED = False  # module-global reset for any later use
+        assert rc1 == 130  # interrupted
+
+        # Only baseline's group reached disk; verdict is provisional (vae
+        # direct evidence not yet available), not silently frozen as final.
+        with (out_root / "path_comparison.csv").open() as fh:
+            rows_after_interrupt = list(csv.DictReader(fh))
+        assert {r["ablation"] for r in rows_after_interrupt} == {"baseline"}
+
+        verdict_lines_before = (out_root / "verdicts.jsonl").read_text().strip().splitlines()
+        assert len(verdict_lines_before) == 1
+        provisional_row = json.loads(verdict_lines_before[0])
+        assert provisional_row["status"] == "provisional"
+
+        # Resume (fresh module import, no monkeypatching this time) --
+        # completes diffusion_bypass_vae_direct and must recompute (not skip)
+        # the baseline verdict now that its evidence exists.
+        spec2 = importlib.util.spec_from_file_location("_f32dig_stale_verdict_test_resume", _CLI)
+        cli_mod2 = importlib.util.module_from_spec(spec2)
+        spec2.loader.exec_module(cli_mod2)
+        rc2 = cli_mod2.run(args + ["--resume"])
+        assert rc2 == 0
+
+        with (out_root / "path_comparison.csv").open() as fh:
+            rows_after_resume = list(csv.DictReader(fh))
+        assert {r["ablation"] for r in rows_after_resume} == {"baseline", "diffusion_bypass_vae_direct"}
+        # No duplicated baseline rows from the recovery/recompute.
+        assert len([r for r in rows_after_resume if r["ablation"] == "baseline"]) == 3
+
+        verdict_lines_after = (out_root / "verdicts.jsonl").read_text().strip().splitlines()
+        # Exactly one verdict row per key is authoritative on reload (the
+        # loader keeps the LAST line per key); assert there is exactly one
+        # LOGICAL baseline verdict, not that the file has exactly one line
+        # (an upgrade legitimately appends a second line for the same key).
+        final_rows_by_key = {}
+        for line in verdict_lines_after:
+            row = json.loads(line)
+            final_rows_by_key[(row["video"], row["frame"], row["ablation"])] = row
+        assert len(final_rows_by_key) == 1
+        final_row = final_rows_by_key[("01_person_walk", 0, "baseline")]
+        assert final_row["status"] == "final"
+
+        summary = json.loads((out_root / "summary.json").read_text())
+        assert summary["verdict_summary"] is not None
+        assert summary["verdict_summary"]["n_verdicts"] == 1
+        assert summary["counts"]["n_baseline_verdicts_provisional"] == 0
+        assert summary["counts"]["n_baseline_verdicts_final"] == 1
+
     def test_ssim_and_lpips_delta_columns_are_populated(self, tmp_path):
         out_root = tmp_path / "run_deltas"
         result = _run_cli([
@@ -783,6 +870,14 @@ class TestCli:
         assert verdicts_by_ablation["baseline"]["edge_handling_equalized"] is False
         assert verdicts_by_ablation["serialized_raw_edge"]["edge_handling_equalized"] is True
         assert verdicts_by_ablation["awgn_edge_retransmit"]["edge_handling_equalized"] is True
+
+        # Regression test (over-aggregation): 3 verdict rows exist for this
+        # ONE frame, but only the "baseline" row is the primary per-frame
+        # judgment -- the summary tally must count 1, not 3, or a frame with
+        # auxiliary corroborating evidence would look like 3x the evidence.
+        summary = json.loads((out_root / "summary.json").read_text())
+        assert summary["verdict_summary"]["n_verdicts"] == 1
+        assert summary["counts"]["n_auxiliary_edge_equalized_verdicts"] == 2
 
     def test_dataset_content_hash_changes_when_video_bytes_change(self, tmp_path):
         # Regression test: hashing only manifest.csv cannot detect a video

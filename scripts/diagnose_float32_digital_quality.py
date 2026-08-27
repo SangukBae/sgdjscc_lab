@@ -493,6 +493,11 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             raise SystemExit(f"unknown ablation {name!r}; available: {sorted(all_ablations)}")
     if "baseline" not in ablation_names:
         ablation_names = ["baseline"] + ablation_names  # baseline always first (verdict anchor)
+    # Whether this run is expected to also produce diffusion_bypass_vae_direct
+    # evidence for the SAME frames -- if so, the baseline verdict must stay
+    # "provisional" until that evidence actually exists (possibly only after
+    # a later --resume), rather than freezing a verdict computed without it.
+    vae_direct_requested = "diffusion_bypass_vae_direct" in ablation_names
 
     output_root = Path(args.output_root)
     model_root = Path(args.model_root) if args.model_root else None
@@ -613,12 +618,25 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             print(f"[diagnose_float32_digital_quality] LPIPS unavailable ({exc}); recording None.", file=sys.stderr)
 
     def _persist_verdict(video: str, frame: int, kind: str, *, path_quality, comparisons,
-                          vae_direct_quality=None, edge_handling_equalized: bool = False) -> None:
-        """Computes + appends one verdict row, unless *kind* already has one
-        (idempotent — never recomputes/duplicates an existing verdict)."""
+                          vae_direct_quality=None, edge_handling_equalized: bool = False,
+                          provisional: bool = False) -> None:
+        """Computes + appends one verdict row.
+
+        A row with ``status: "final"`` is frozen — never recomputed or
+        overwritten once written. A row with ``status: "provisional"`` (used
+        for the "baseline" kind when ``diffusion_bypass_vae_direct`` was
+        requested for this run but its evidence has not arrived yet) stays
+        open to being recomputed on a later call — e.g. after a --resume
+        picks up the VAE-direct group's evidence — and is only re-appended
+        to verdicts.jsonl (never edited in place; the loader keeps the LAST
+        line per key) when the recomputed content actually differs, so an
+        unchanged provisional state is not re-written every invocation.
+        """
         key = (video, frame, kind)
-        if key in verdicts_index:
+        existing = verdicts_index.get(key)
+        if existing is not None and existing.get("status", "final") == "final":
             return
+
         verdict = classify(
             inprocess_vs_wire_comparisons=comparisons, path_quality=path_quality,
             vae_direct_quality=vae_direct_quality, edge_handling_equalized=edge_handling_equalized,
@@ -628,7 +646,17 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
             "verdict": verdict.verdict, "reason": verdict.reason,
             "first_divergent_stage": verdict.first_divergent_stage,
             "edge_handling_equalized": edge_handling_equalized,
+            "status": "provisional" if provisional else "final",
         }
+        if existing is not None and all(existing.get(k) == row[k] for k in row):
+            return  # nothing actually changed -- skip the redundant append
+
+        if existing is not None:
+            print(
+                f"[diagnose_float32_digital_quality] verdict for {key} updated: "
+                f"{existing.get('status')}/{existing.get('verdict')} -> {row['status']}/{row['verdict']}",
+                file=sys.stderr,
+            )
         verdicts_index[key] = row
         _append_jsonl_rows(verdicts_jsonl, [row])
 
@@ -792,12 +820,20 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                         }
                         if vae_direct_entry else None
                     )
+                    # "Evidence arrived" means the vae-direct group was
+                    # ATTEMPTED (its row exists in psnr_index), not that it
+                    # succeeded -- a genuinely failed vae-direct group must
+                    # still let the baseline verdict finalize (classify()
+                    # already tolerates None PSNR values inside
+                    # vae_direct_quality), not wait forever.
+                    baseline_provisional = vae_direct_requested and vae_direct_entry is None
                     _persist_verdict(
                         video_key, frame_idx, "baseline",
                         path_quality=_psnr_triplet(psnr_index, baseline_group),
                         comparisons=pair_index.get(baseline_group, []),
                         vae_direct_quality=vae_direct_quality,
                         edge_handling_equalized=False,
+                        provisional=baseline_provisional,
                     )
                 # Edge-equalizing ablations (serialized_raw_edge / awgn_edge_retransmit)
                 # get their OWN verdict, classified with edge_handling_equalized=True
@@ -827,12 +863,30 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     all_per_video_verdicts = [
         verdicts_index[k] for k in sorted(verdicts_index, key=lambda k: (k[0], k[1], k[2]))
     ]
+
+    # The run's ONE summary tally (verdict_summary / "종합 판정") reflects ONLY
+    # the primary per-frame classification: ablation == "baseline" AND
+    # status == "final". Folding in the serialized_raw_edge/
+    # awgn_edge_retransmit auxiliary ablations' verdicts here would count the
+    # SAME frame's evidence multiple times (baseline + N auxiliary rows all
+    # agreeing is not N independent confirmations), and a still-"provisional"
+    # baseline (waiting on diffusion_bypass_vae_direct evidence) has not yet
+    # committed to a final classification. Every row is still fully preserved
+    # in verdicts.jsonl / all_per_video_verdicts / REPORT.md's per-row table —
+    # this filtering only narrows what feeds the ONE aggregate count.
+    final_baseline_verdicts = [
+        r for r in all_per_video_verdicts
+        if r.get("ablation") == "baseline" and r.get("status", "final") == "final"
+    ]
+    n_provisional = sum(1 for r in all_per_video_verdicts if r.get("status") == "provisional")
+    n_auxiliary = sum(1 for r in all_per_video_verdicts if r.get("ablation") in EDGE_EQUALIZING_ABLATIONS)
+
     verdict_summary = None
-    if all_per_video_verdicts:
+    if final_baseline_verdicts:
         from sgdjscc_lab.diagnostics.verdict import VerdictResult
         verdict_objs = [
             VerdictResult(verdict=r["verdict"], reason=r["reason"], first_divergent_stage=r["first_divergent_stage"])
-            for r in all_per_video_verdicts
+            for r in final_baseline_verdicts
         ]
         verdict_summary = aggregate_verdicts(verdict_objs)
 
@@ -840,12 +894,18 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
     write_summary_json(
         output_root, run_kind="float32_digital_diagnostics", dry_run=False,
         args=vars(args), verdict_summary=verdict_summary,
-        counts={"n_frames_processed": n_frames_processed, "n_videos": len(entries), "interrupted": interrupted},
+        counts={
+            "n_frames_processed": n_frames_processed, "n_videos": len(entries), "interrupted": interrupted,
+            "n_baseline_verdicts_final": len(final_baseline_verdicts),
+            "n_baseline_verdicts_provisional": n_provisional,
+            "n_auxiliary_edge_equalized_verdicts": n_auxiliary,
+        },
     )
     write_report_md(
         output_root, run_kind="float32_digital_diagnostics", dry_run=args.no_models,
         n_videos=len(entries), n_frames=len(frames), n_ablations=len(ablation_names),
         verdict_summary=verdict_summary, per_video_verdicts=all_per_video_verdicts,
+        n_provisional=n_provisional, n_auxiliary=n_auxiliary,
         failed_count=failed_total,
         outputs={
             "path_comparison.csv": "path_comparison.csv", "tensor_stage_stats.jsonl": "tensor_stage_stats.jsonl",
