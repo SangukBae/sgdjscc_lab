@@ -232,6 +232,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
              "exact packet, read by the receiver from the packet's own metadata.",
     )
     p.add_argument(
+        "--fixed-reference-snr-db", type=float, default=10.0,
+        help="Decoder reference SNR used by digital-step-policy=fixed_reference. "
+             "Recorded in resolved config, per-video/aggregate rows, summary, manifest, and "
+             "resume signature so a 10 dB quantization run cannot be resumed at another step.",
+    )
+    p.add_argument(
         "--ablation-label", default=None,
         help="Free-form label recorded in per_video_metrics.csv/aggregate.csv/summary.json "
              "identifying this run as a decoder-step ablation (e.g. 'bitdepth_proxy_ablation') "
@@ -385,7 +391,14 @@ _CFG_FRAGMENTS = (
 )
 
 
-def _make_cfg(output_root: Path, model_root: Path, snr_db: float, config_path=None):
+def _make_cfg(
+    output_root: Path,
+    model_root: Path,
+    snr_db: float,
+    config_path=None,
+    *,
+    fixed_reference_snr_db: float = 10.0,
+):
     """Compose a real config via the project's own fragment set (config.py's
     _defaults_ mechanism) rather than hand-rolling a minimal dict — guarantees
     every key run_single_image()/_jscc_forward() expects is present with its
@@ -411,6 +424,7 @@ def _make_cfg(output_root: Path, model_root: Path, snr_db: float, config_path=No
     cfg = OmegaConf.merge(cfg, OmegaConf.create({
         "model_root": str(model_root),
         "snr_db": float(snr_db),
+        "digital_fixed_reference_snr_db": float(fixed_reference_snr_db),
         "use_phase4": True,
     }))
     return cfg
@@ -658,7 +672,13 @@ def run(argv=None) -> int:
     expected_video_keys = {e["key"] for e in entries}
 
     from sgdjscc_lab.paths import model_root as _model_root
-    cfg = _make_cfg(output_root, _model_root(), args.snr, config_path=args.config)
+    cfg = _make_cfg(
+        output_root,
+        _model_root(),
+        args.snr,
+        config_path=args.config,
+        fixed_reference_snr_db=args.fixed_reference_snr_db,
+    )
 
     # Run signature + resume-safety check FIRST (before any heavy model load):
     # a resume targeting the same --output-root under DIFFERENT conditions
@@ -756,7 +776,6 @@ def run(argv=None) -> int:
             # picked a different number of keyframes." See
             # video/keyframe_extractor.py::FixedCountKeyframeSelector.
             fixed_count_target = None
-            keyframe_count_matched_possible = True
             selector_results: Dict[str, Any] = {}
             selector_summaries: Dict[str, KeyframeSelection] = {}
             requested_selectors = {name.split("_", 1)[0] for name in pending_configs}
@@ -778,7 +797,6 @@ def run(argv=None) -> int:
                         f"keyframes over {len(frames)} frames -> fixed selector forced to exactly "
                         f"{fixed_count_target} keyframes (FixedCountKeyframeSelector)")
                 else:
-                    keyframe_count_matched_possible = False
                     log(f"  match_fixed_keyframes {video_key}: skem selected {ref_sel.n_keyframes} "
                         f"keyframes, which FixedCountKeyframeSelector cannot represent over "
                         f"{len(frames)} frames -- falling back to --fixed-max-gop "
@@ -796,7 +814,8 @@ def run(argv=None) -> int:
                     args.psss_max_segment_length, len(frames), selector_results["fixed"],
                 )
 
-            if not args.skip_keyframe_sweep and video_key not in done_sweep_videos:
+            run_keyframe_sweep = "skem" in requested_selectors and not args.skip_keyframe_sweep
+            if run_keyframe_sweep and video_key not in done_sweep_videos:
                 for th in DEFAULT_PSSS_THRESHOLDS:
                     for max_len in DEFAULT_MAX_SEGMENT_LENGTHS:
                         sel = _select_keyframes(video_key, frames, captions, "skem", th, max_len, args)
@@ -809,7 +828,7 @@ def run(argv=None) -> int:
                         log(f"  keyframe_sweep {video_key} th={th} max_len={max_len} -> "
                             f"{sel.n_keyframes} keyframes ({sel.psss_backend_kind})")
                 _write_csv(output_root / "keyframe_sweep.csv", keyframe_sweep_rows)
-            elif not args.skip_keyframe_sweep:
+            elif run_keyframe_sweep:
                 log(f"resume: keyframe_sweep already recorded for {video_key}, skipping recompute")
 
             for config_name in configs:
@@ -1021,7 +1040,7 @@ def run(argv=None) -> int:
                         keyframe_count_matched = (n_kf_in_gop == fixed_count_target)
                     else:
                         fixed_selector_kind = "fixed_max_gop"
-                        keyframe_count_matched = False  # keyframe_count_matched_possible was False
+                        keyframe_count_matched = False  # invalid SKEM count forced fixed-max-GOP fallback
                 elif sel_name == "fixed":
                     fixed_selector_kind = "fixed_max_gop"
                     keyframe_count_matched = ""  # matching not requested -- not applicable
@@ -1033,6 +1052,11 @@ def run(argv=None) -> int:
                     "channel": ch_name, "bit_depth": bit_depth if bit_depth is not None else "",
                     "psss_backend_kind": sel.psss_backend_kind,
                     "digital_step_policy": (args.digital_step_policy if channel_kind == "digital_packet" else ""),
+                    "fixed_reference_snr_db": (
+                        args.fixed_reference_snr_db
+                        if channel_kind == "digital_packet" and args.digital_step_policy == "fixed_reference"
+                        else ""
+                    ),
                     "ablation_label": (
                         args.ablation_label if channel_kind == "digital_packet" else ""
                     ),
@@ -1193,6 +1217,7 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
         "device": args.device,
         "physical_cuda_device": os.environ.get("SGDJSCC_PHYSICAL_CUDA_DEVICE", args.device),
         "digital_step_policy": args.digital_step_policy,
+        "fixed_reference_snr_db": args.fixed_reference_snr_db,
         "ablation_label": args.ablation_label,
         "match_fixed_keyframes": bool(args.match_fixed_keyframes),
         "fixed_max_gop": args.fixed_max_gop,
@@ -1354,7 +1379,10 @@ _PER_VIDEO_FLOAT_FIELDS = (
     "valid_frame_ratio", "mean_psnr", "mean_ssim", "total_elapsed_s",
     "total_bundle_bytes_per_frame",
 )
-_PER_VIDEO_OPTIONAL_FLOAT_FIELDS = ("mean_lpips", "analog_channel_symbols_total", "digital_side_information_bytes_total")
+_PER_VIDEO_OPTIONAL_FLOAT_FIELDS = (
+    "mean_lpips", "analog_channel_symbols_total", "digital_side_information_bytes_total",
+    "fixed_reference_snr_db",
+)
 _PER_VIDEO_BOOL_FIELDS = ("analog_no_wire_bytes", "visual_transport_complete")
 _PER_VIDEO_OPTIONAL_BOOL_FIELDS = ("keyframe_count_matched",)  # "" means "not applicable", never coerced to False
 
@@ -1475,6 +1503,7 @@ def _aggregate(
             "bit_depth": rows[0]["bit_depth"],
             "psss_backend_kind": rows[0]["psss_backend_kind"],
             "digital_step_policy": rows[0].get("digital_step_policy", ""),
+            "fixed_reference_snr_db": rows[0].get("fixed_reference_snr_db", ""),
             "ablation_label": rows[0].get("ablation_label", ""),
             "n_videos": n,
             "video_keys": ",".join(sorted(video_keys)),
@@ -1674,6 +1703,7 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
         "bits_per_symbol": args.bits_per_symbol,
         "code_rate": args.code_rate,
         "digital_step_policy": args.digital_step_policy,
+        "fixed_reference_snr_db": args.fixed_reference_snr_db,
         "ablation_label": args.ablation_label,
         "match_fixed_keyframes": bool(args.match_fixed_keyframes),
         "seed": args.seed,
@@ -1689,8 +1719,8 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
         f"- **ablation 실행**: `--digital-step-policy {args.digital_step_policy}` "
         f"(label: `{args.ablation_label}`) — `quantization_effect_ablation.csv`로 분리 기록"
         if args.digital_step_policy != "fixed_reference" else
-        "- 양자화 비교 policy: `fixed_reference` (모든 bit_depth를 동일 step으로 디코딩 — "
-        "decoder step 변화가 섞이지 않은 순수 양자화 효과)"
+        f"- 양자화 비교 policy: `fixed_reference` ({args.fixed_reference_snr_db:g}dB; "
+        "모든 bit_depth를 동일 step으로 디코딩 — decoder step 변화가 섞이지 않은 순수 양자화 효과)"
     )
     baseline_note = (
         "- Pareto baseline: **unavailable** — `fixed_float32`/`fixed_int16`/`skem_float32`/"
@@ -1714,6 +1744,7 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
   - 실패 (video, config) 쌍: {len(failed_pairs)}개 (`failed_pairs.csv`) — 첫 non-finite 발생 즉시
     해당 pair 중단, 다음 pair로 진행. 재개 시 기본 skip, `--retry-failed`일 때만 재시도
   - digital step 정책: `{args.digital_step_policy}`
+  - fixed-reference SNR: `{args.fixed_reference_snr_db:g}dB`
 {ablation_note}
   - keyframe 수 정합: `{"ON — FixedCountKeyframeSelector로 fixed를 SKEM과 정확히 동일 개수로 강제" if args.match_fixed_keyframes else "OFF"}`
 {baseline_note}

@@ -72,7 +72,9 @@ bitwise identical인지 별도로 검사한다(`roundtrip_bitexact` 컬럼).
      설계상 정상 동작(`transmission/receiver_runtime.py`)이라 이 두 경로가 여기서 다른 것은 그 자체로
      packet 오류의 증거가 아니다. `serialized_raw_edge`/`awgn_edge_retransmit` ablation으로
      `edge_already_received`를 양쪽에서 동일하게 강제한 뒤(`classify(..., edge_handling_equalized=True)`)에만
-     이 stage들의 불일치도 증거로 쓴다 — CLI가 이 두 ablation을 실행할 때마다 자동으로
+     이 stage들의 불일치도 보조 증거로 쓴다. auxiliary decoder 값에는 전용 MAE tolerance
+     `1e-3`를 적용하고, 이를 넘는 차이는 packet fault가 아닌 중립적
+     **`transport_delta_detected`**로 기록한다 — CLI가 이 두 ablation을 실행할 때마다 자동으로
      `edge_handling_equalized=True`로 별도 판정을 만들어 `verdicts.jsonl`에
      `ablation: "serialized_raw_edge"`/`"awgn_edge_retransmit"` 행으로 baseline 판정과 구분해 기록한다
      (`EDGE_EQUALIZING_ABLATIONS`, `diagnose_float32_digital_quality.py`).
@@ -81,7 +83,8 @@ bitwise identical인지 별도로 검사한다(`roundtrip_bitexact` 컬럼).
 3. `diffusion_bypass_vae_direct` ablation(Canny 재전송·ControlNet edge latent encode·diffusion을 **전부**
    생략하고 받은 latent를 VAE로 바로 복원 — diffusion 호출만 건너뛰는 것이 아니라 edge 처리 자체가 아예
    실행되지 않음)부터 이미 AWGN보다 낮음 → **`latent_normalization_issue`**
-4. 위 어느 것도 근거가 부족하면 → **`inconclusive`**
+4. 필수 경로·품질 증거가 있고 위 문제 기준을 넘지 않으면 → **`no_issue_detected`**
+5. 필수 증거가 누락돼 판단할 수 없으면 → **`inconclusive`**
 
 ## Ablation (one-factor-at-a-time)
 
@@ -306,8 +309,11 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 digital wire는 AWGN 대비 PSNR `+0.721dB`, SSIM `+0.00552`, LPIPS `-0.00223`이었고,
 `-1dB` 이하 PSNR 저하는 0/300이었다. in-process/wire 최대 PSNR 차이는 `0.000752dB`,
 wire round-trip은 300/300 bit-exact였다. 따라서 품질 저하 원인은 float32 transport가 아니라
-60dB decoder-step 정책이었으며 10dB 정책으로 해소됐다. 남은 작업은 핵심 artifact의
-`results/` registry 고정, 통합 verdict 의미·metric-only 집계 보완, 양자화 operating point 재평가다.
+60dB decoder-step 정책이었으며 10dB 정책으로 해소됐다. instrumented baseline 20/20과
+stage 6 metric-only 300/300을 `no_issue_detected`로 분리 집계하고, auxiliary 중립 label·tolerance를
+반영했다. 핵심 artifact 50개·원본/보정 report·checksum도
+[`results/` registry](../../results/float32_digital_normalization_full_20260827/README.md)에 고정했다.
+남은 작업은 10dB 양자화 operating point 재평가다.
 
 ## 관련 문서
 
@@ -316,4 +322,5 @@ wire round-trip은 300/300 bit-exact였다. 따라서 품질 저하 원인은 fl
 - [docs/experiments/2026-08-28_float32_digital_step_normalization_full.md](../experiments/2026-08-28_float32_digital_step_normalization_full.md) — 10dB step 정상화 3-GPU full 실측
 - [docs/protocols/transmission_normalization.md](./transmission_normalization.md) — 전송 정상화 실행 절차(이 harness가 재사용하는 run manifest/seed/resume 패턴의 출처)
 - [docs/architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md) — Tx/Rx 계약
-- [docs/current/roadmap.md](../current/roadmap.md) §1, [docs/current/open_issues.md](../current/open_issues.md) — 이 진단의 남은 결과 보존·리포트 계약 항목
+- [results/float32_digital_normalization_full_20260827/](../../results/float32_digital_normalization_full_20260827/README.md) — full 핵심 결과와 checksum 보존본
+- [docs/current/roadmap.md](../current/roadmap.md) §1 — 다음 10dB 양자화 재평가

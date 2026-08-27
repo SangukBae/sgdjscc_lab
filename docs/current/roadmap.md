@@ -29,13 +29,12 @@ supersedes:
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
-| 1 | float32 full 결과 보존·리포트 계약 마감 | 3-GPU `full` 자체는 완료([full 실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md)). 핵심 CSV·JSON·manifest·checksum을 `results/` registry에 고정하고, `inconclusive`/`no_issue_detected` 분리·stage 6 metric-only 집계·auxiliary edge tolerance를 반영 |
-| 2 | 양자화 성능 재평가 | 수정된 10dB baseline에서 int16·int8·int6·int4 품질·byte Pareto를 재계산하고, 기존 `fixed_int6`/`fixed_int4` 후보를 재확정 |
-| 3 | fixed–SKEM matched-rate 재평가 | 실제 transmitting frame 또는 byte가 허용 오차 안에서 일치 |
-| 4 | edge·uncertainty 전송량 절감 | int4 packet의 주요 91% 구성요소 ablation |
-| 5 | 통합 평가 harness·복원 정책 비교 | Rate·품질·SRS·할루시네이션·시간축·전체 지연을 paired row로 기록하고 VAE-direct/few-step/full diffusion operating point를 비교 |
-| 6 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
-| 7 | 동적 예산 controller·최종 검증 | 정책 ablation 후 별도 held-out 영상 재검증 |
+| 1 | 양자화 성능 재평가 | 준비된 `scripts/run_quantization_reevaluation_10db.sh`로 10dB fixed float32/int16/int8/int6/int4 품질·byte Pareto를 재계산하고 기존 후보를 재확정 |
+| 2 | fixed–SKEM matched-rate 재평가 | 실제 transmitting frame 또는 byte가 허용 오차 안에서 일치 |
+| 3 | edge·uncertainty 전송량 절감 | int4 packet의 주요 91% 구성요소 ablation |
+| 4 | 통합 평가 harness·복원 정책 비교 | Rate·품질·SRS·할루시네이션·시간축·전체 지연을 paired row로 기록하고 VAE-direct/few-step/full diffusion operating point를 비교 |
+| 5 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
+| 6 | 동적 예산 controller·최종 검증 | 정책 ablation 후 별도 held-out 영상 재검증 |
 
 - 역할 분리
   - 평가 harness: hyperparameter 조합 반복 실행

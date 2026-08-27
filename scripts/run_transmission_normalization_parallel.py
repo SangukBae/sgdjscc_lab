@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import importlib.util
 import json
 import os
@@ -77,6 +76,7 @@ def _parse_args(argv=None) -> argparse.Namespace:
         "--digital-step-policy", default="fixed_reference",
         choices=("fixed_reference", "bitdepth_proxy", "quant_nmse"),
     )
+    parser.add_argument("--fixed-reference-snr-db", type=float, default=10.0)
     parser.add_argument("--ablation-label", default=None)
     parser.add_argument("--psss-backend", default="proxy", choices=("mock", "proxy", "real"))
     parser.add_argument("--psss-model-id", default=None)
@@ -160,6 +160,7 @@ def _plan(args: argparse.Namespace, devices: Sequence[str], videos: Sequence[Dic
             "max_frames": args.max_frames,
             "seed": args.seed,
             "digital_step_policy": args.digital_step_policy,
+            "fixed_reference_snr_db": args.fixed_reference_snr_db,
             "ablation_label": args.ablation_label,
             "psss_backend": args.psss_backend,
             "psss_model_id": args.psss_model_id,
@@ -204,6 +205,7 @@ def _worker_command(
         "--configs", args.configs,
         "--seed", str(args.seed),
         "--digital-step-policy", args.digital_step_policy,
+        "--fixed-reference-snr-db", str(args.fixed_reference_snr_db),
         "--psss-backend", args.psss_backend,
         "--psss-device", args.psss_device,
         "--psss-dtype", args.psss_dtype,

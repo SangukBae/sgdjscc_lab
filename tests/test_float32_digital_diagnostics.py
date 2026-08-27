@@ -516,7 +516,7 @@ class TestVerdict:
         )
         assert v.verdict == "latent_normalization_issue"
 
-    def test_inconclusive_when_quality_is_similar(self):
+    def test_no_issue_detected_when_quality_is_similar(self):
         comparisons = [
             {"stage": "final_reconstruction", "comparable": True, "both_finite": True,
              "exact_equal": True, "mean_abs_err": 0.0, "cosine_similarity": 1.0},
@@ -525,7 +525,7 @@ class TestVerdict:
             inprocess_vs_wire_comparisons=comparisons,
             path_quality={"awgn_psnr": 23.0, "digital_inprocess_psnr": 22.8, "digital_wire_psnr": 22.8},
         )
-        assert v.verdict == "inconclusive"
+        assert v.verdict == "no_issue_detected"
 
     def test_inconclusive_when_missing_data(self):
         v = classify(inprocess_vs_wire_comparisons=[], path_quality={"awgn_psnr": None})
@@ -581,8 +581,22 @@ class TestVerdict:
             path_quality={"awgn_psnr": 23.0, "digital_inprocess_psnr": 22.8, "digital_wire_psnr": 22.5},
             edge_handling_equalized=True,
         )
-        assert v.verdict == "packet_tx_rx_issue"
+        assert v.verdict == "transport_delta_detected"
         assert v.first_divergent_stage == "controlnet_input_latent"
+
+    def test_tiny_equalized_edge_delta_is_below_auxiliary_tolerance(self):
+        comparisons = [
+            {"stage": "edge_mean", "comparable": True, "both_finite": True,
+             "exact_equal": False, "mean_abs_err": 0.0005328,
+             "cosine_similarity": 0.9999906},
+        ]
+        v = classify(
+            inprocess_vs_wire_comparisons=comparisons,
+            path_quality={"awgn_psnr": 34.0, "digital_inprocess_psnr": 34.7,
+                          "digital_wire_psnr": 34.7},
+            edge_handling_equalized=True,
+        )
+        assert v.verdict == "no_issue_detected"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -632,7 +646,7 @@ def test_cli_rejects_minimal_denoise_steps_below_sampler_minimum(tmp_path):
     assert "must be at least 2" in result.stderr
 
 
-def _run_integrated_report(tmp_path, stages, *, parallel_devices=""):
+def _run_integrated_report(tmp_path, stages, *, parallel_devices="", path_rows_by_stage=None):
     """Execute the server script's real stage-7 Python payload on fixtures."""
     output_root = tmp_path / "integrated"
     output_root.mkdir()
@@ -647,6 +661,12 @@ def _run_integrated_report(tmp_path, stages, *, parallel_devices=""):
         (stage_dir / "verdicts.jsonl").write_text(
             "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8",
         )
+        path_rows = (path_rows_by_stage or {}).get(stage_name, [])
+        if path_rows:
+            with (stage_dir / "path_comparison.csv").open("w", newline="", encoding="utf-8") as fh:
+                writer = csv.DictWriter(fh, fieldnames=list(path_rows[0]))
+                writer.writeheader()
+                writer.writerows(path_rows)
 
     server_script = (_REPO_ROOT / "scripts" / "run_float32_digital_diagnostics.sh").read_text(
         encoding="utf-8",
@@ -663,11 +683,48 @@ def _run_integrated_report(tmp_path, stages, *, parallel_devices=""):
     result = subprocess.run(
         [sys.executable, "-c", payload], capture_output=True, text=True, env=env, timeout=30,
     )
-    report = (output_root / "INTEGRATED_REPORT.md").read_text(encoding="utf-8")
+    report_path = output_root / "INTEGRATED_REPORT.md"
+    assert report_path.exists(), result.stderr
+    report = report_path.read_text(encoding="utf-8")
     return result, report
 
 
 class TestIntegratedReportEvidenceLevels:
+    def test_legacy_no_problem_inconclusive_is_rendered_as_no_issue_detected(self, tmp_path):
+        result, report = _run_integrated_report(tmp_path, {
+            "stage5_paired_frames": [{
+                "video": "v1", "frame": 0, "ablation": "baseline", "status": "final",
+                "evidence_level": "baseline_with_vae_direct", "verdict": "inconclusive",
+                "reason": "digital paths agree — no quality problem evidenced in this run.",
+            }],
+        })
+        assert result.returncode == 0, result.stderr
+        assert "`no_issue_detected`: 1" in report
+
+    def test_metric_only_stage_is_included_without_claiming_root_cause(self, tmp_path):
+        rows = []
+        for frame in (0, 1):
+            for path, psnr, bitexact in (
+                ("awgn", 34.0, ""),
+                ("digital_inprocess", 34.7004, ""),
+                ("digital_wire", 34.7, "True"),
+            ):
+                rows.append({
+                    "video": "v1", "frame": frame, "ablation": "baseline", "path": path,
+                    "psnr": psnr, "failed": "False", "roundtrip_bitexact": bitexact,
+                })
+        result, report = _run_integrated_report(
+            tmp_path,
+            {"stage6_core_conditions/worker_00_normal_motion": []},
+            path_rows_by_stage={"stage6_core_conditions/worker_00_normal_motion": rows},
+        )
+        assert result.returncode == 0, result.stderr
+        metric_section = report.split("## metric-only baseline quality assessment", 1)[1]
+        assert "`no_issue_detected`: 2" in metric_section
+        assert "bit-exact wire rows: 2/2" in metric_section
+        stage_row = next(line for line in report.splitlines() if line.startswith("| stage6_"))
+        assert "no_issue_detected=2" in stage_row
+
     def test_richer_vae_evidence_upgrades_without_conflict_and_stage_counts_latest_only(self, tmp_path):
         key = {"video": "01_person_walk", "frame": 0, "ablation": "baseline"}
         result, report = _run_integrated_report(tmp_path, {

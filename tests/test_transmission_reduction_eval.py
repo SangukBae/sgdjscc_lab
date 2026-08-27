@@ -7,7 +7,6 @@ test_video_rate_benchmark.py.
 
 from __future__ import annotations
 
-import argparse
 import csv
 import importlib.util
 import json
@@ -73,6 +72,36 @@ class TestArgParsing:
         assert mod._parse_args(["--output-root", "/tmp/x"]).retry_failed is False
         assert mod._parse_args(["--output-root", "/tmp/x", "--retry-failed"]).retry_failed is True
 
+    def test_fixed_reference_snr_is_explicit_and_overridable(self):
+        assert mod._parse_args(["--output-root", "/tmp/x"]).fixed_reference_snr_db == 10.0
+        args = mod._parse_args([
+            "--output-root", "/tmp/x", "--fixed-reference-snr-db", "7.5",
+        ])
+        assert args.fixed_reference_snr_db == 7.5
+
+    def test_make_cfg_records_fixed_reference_snr(self, tmp_path):
+        from omegaconf import OmegaConf
+
+        cfg = mod._make_cfg(
+            tmp_path, tmp_path, 10.0, fixed_reference_snr_db=7.5,
+        )
+        assert OmegaConf.select(cfg, "digital_fixed_reference_snr_db") == 7.5
+
+    def test_resume_signature_changes_with_fixed_reference_snr(self, tmp_path, monkeypatch):
+        from omegaconf import OmegaConf
+
+        monkeypatch.setattr(
+            mod.rm, "get_git_state",
+            lambda _root: {"commit": "a" * 40, "dirty": False, "branch": "main"},
+        )
+        args = _default_args(dataset_root=str(tmp_path), fixed_reference_snr_db=10.0)
+        sig10 = mod._build_run_signature(args, OmegaConf.create({}), [], tmp_path)
+        args.fixed_reference_snr_db = 7.5
+        sig75 = mod._build_run_signature(args, OmegaConf.create({}), [], tmp_path)
+        assert sig10["fixed_reference_snr_db"] == 10.0
+        assert sig75["fixed_reference_snr_db"] == 7.5
+        assert sig10 != sig75
+
 
 def _pv_row(**overrides):
     """A complete, valid per_video_metrics.csv-shaped row (all fields
@@ -81,6 +110,7 @@ def _pv_row(**overrides):
     row = {
         "video": "v1", "config": "fixed_int16", "selector": "fixed", "channel": "int16",
         "bit_depth": 16, "psss_backend_kind": None, "digital_step_policy": "fixed_reference",
+        "fixed_reference_snr_db": 10.0,
         "n_frames_total": 12, "n_transmitting_frames": 3, "n_keyframes_selected": 3,
         "n_nan_or_inf_frames": 0, "nonfinite_stages": "",
         "fixed_selector_kind": "", "fixed_count_target": "", "fixed_max_gop_used": "",

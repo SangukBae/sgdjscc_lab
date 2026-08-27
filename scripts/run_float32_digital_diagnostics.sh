@@ -619,7 +619,9 @@ fi
 F32DIG_PROFILE="$PROFILE" F32DIG_OUTPUT_ROOT="$OUTPUT_ROOT" F32DIG_STAGE_FAILURES="$STAGE_FAILURES" \
 F32DIG_STAGE_DIRS="$STAGE7_DIRS" F32DIG_PARALLEL_DEVICES="$PARALLEL_DEVICES_ARG" \
 "$PYTHON_BIN" - <<'PYEOF'
+import csv
 import json
+import math
 import os
 import sys
 import hashlib
@@ -641,6 +643,67 @@ EVIDENCE_RANK = {
     "auxiliary_edge_equalized": 1,
     "legacy_unspecified": 1,
 }
+QUALITY_GAP_PSNR_DB = 1.0
+PATH_PARITY_PSNR_DB = 0.01
+
+
+def logical_key(row):
+    frame = row["frame"]
+    try:
+        frame = int(frame)
+    except (TypeError, ValueError):
+        pass
+    return (row["video"], frame, row["ablation"])
+
+
+def canonical_verdict(row):
+    """Migrate the old overloaded label without changing raw evidence.
+
+    Runs produced before ``no_issue_detected`` existed called both missing
+    evidence and an observed sub-threshold quality gap ``inconclusive``.
+    The reason string unambiguously distinguishes the latter.
+    """
+    verdict = row["verdict"]
+    reason = str(row.get("reason", ""))
+    if row.get("ablation") in AUXILIARY_ABLATIONS and verdict == "packet_tx_rx_issue":
+        return "transport_delta_detected"
+    if verdict == "inconclusive" and "no quality problem evidenced" in reason:
+        return "no_issue_detected"
+    return verdict
+
+
+def metric_only_assessment(rows):
+    """Assess a baseline group that intentionally has no tensor verdict."""
+    by_path = {row.get("path"): row for row in rows if row.get("failed", "False").lower() != "true"}
+    required = ("awgn", "digital_inprocess", "digital_wire")
+    if any(path not in by_path for path in required):
+        return {"status": "insufficient_evidence", "reason": "one or more required paths are missing"}
+    try:
+        awgn = float(by_path["awgn"]["psnr"])
+        inprocess = float(by_path["digital_inprocess"]["psnr"])
+        wire = float(by_path["digital_wire"]["psnr"])
+    except (KeyError, TypeError, ValueError):
+        return {"status": "insufficient_evidence", "reason": "PSNR is missing or non-numeric"}
+    if not all(math.isfinite(value) for value in (awgn, inprocess, wire)):
+        return {"status": "insufficient_evidence", "reason": "PSNR is non-finite"}
+    gap = awgn - wire
+    parity_delta = abs(inprocess - wire)
+    bitexact = str(by_path["digital_wire"].get("roundtrip_bitexact", "")).lower() == "true"
+    if not bitexact or parity_delta > PATH_PARITY_PSNR_DB:
+        status = "path_metric_divergence_detected"
+    elif gap >= QUALITY_GAP_PSNR_DB:
+        status = "quality_regression_detected"
+    else:
+        status = "no_issue_detected"
+    return {
+        "status": status,
+        "awgn_psnr": awgn,
+        "digital_inprocess_psnr": inprocess,
+        "digital_wire_psnr": wire,
+        "wire_minus_awgn_psnr": wire - awgn,
+        "inprocess_wire_abs_psnr": parity_delta,
+        "roundtrip_bitexact": bitexact,
+    }
 
 
 def evidence_level(row):
@@ -666,14 +729,17 @@ lines.append(f"- execution_mode: {'three_gpu_parallel' if parallel_devices else 
 if parallel_devices:
     lines.append(f"- physical_devices: {parallel_devices}")
 lines.append("")
-lines.append("**This section consolidates each stage's own verdict (see docs/protocols/"
+lines.append("**The root-cause section consolidates each instrumented stage's own verdict (see docs/protocols/"
              "float32_digital_diagnostics.md for the classification criteria); it is NOT itself "
              "a new judgment, only a rollup of what each stage's own summary.json/verdicts.jsonl "
              "already recorded. Only `ablation == \"baseline\"` AND `status == \"final\"` rows feed "
              "any dominant-verdict tally below -- auxiliary edge-equalizing ablations and "
              "still-provisional baseline rows are listed separately, never summed into it. When stages "
              "overlap, the richest evidence wins (`baseline_with_vae_direct` > `baseline_only` > "
-             "provisional); only disagreements at the same evidence level are conflicts.**")
+             "provisional); only disagreements at the same evidence level are conflicts. "
+             "Stages run with `--no-instrument-tensors` have no root-cause verdict; their baseline "
+             "CSV rows are instead included in a separate metric-only quality assessment using the "
+             "documented 1 dB quality and 0.01 dB path-parity thresholds.**")
 lines.append("")
 
 # combined[key] = {"verdict", "status", "stage", "evidence_level"} -- ONE canonical entry per
@@ -686,6 +752,7 @@ lines.append("")
 # a reproducibility conflict. Only DIFFERENT verdict labels at the SAME
 # evidence level for the same key are flagged as conflicts.
 combined = {}
+combined_metric_only = {}
 conflicts = []
 per_stage_rows = []
 
@@ -707,27 +774,27 @@ for stage_dir in stage_dirs:
     stage_n_provisional = 0
     stage_n_auxiliary = 0
     stage_evidence_counts = Counter()
+    stage_latest = {}
     if verdicts_path.exists():
         # verdicts.jsonl is append-only: provisional -> final upgrades append a
         # new line for the same logical key. Reduce to the LAST line per key
         # before either per-stage counting or cross-stage merging; otherwise a
         # successfully upgraded verdict would still be reported as one stale
         # provisional row in the per-stage table.
-        stage_latest = {}
         with verdicts_path.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if not line:
                     continue
                 row = json.loads(line)
-                key = (row["video"], row["frame"], row["ablation"])
+                key = logical_key(row)
                 stage_latest[key] = row
 
         for key, row in stage_latest.items():
             status = row.get("status", "final")
             level = evidence_level(row)
             entry = {
-                "verdict": row["verdict"], "status": status, "stage": stage_label,
+                "verdict": canonical_verdict(row), "status": status, "stage": stage_label,
                 "evidence_level": level,
             }
             existing = combined.get(key)
@@ -752,11 +819,44 @@ for stage_dir in stage_dirs:
             if row["ablation"] == "baseline":
                 stage_evidence_counts[level] += 1
                 if status == "final":
-                    stage_baseline_final_counts[row["verdict"]] += 1
+                    stage_baseline_final_counts[canonical_verdict(row)] += 1
                 else:
                     stage_n_provisional += 1
             elif row["ablation"] in AUXILIARY_ABLATIONS:
                 stage_n_auxiliary += 1
+
+    stage_metric_counts = Counter()
+    path_csv = stage_dir / "path_comparison.csv"
+    if path_csv.exists():
+        metric_groups = {}
+        with path_csv.open(newline="", encoding="utf-8") as fh:
+            for row in csv.DictReader(fh):
+                if row.get("ablation") != "baseline":
+                    continue
+                key = logical_key(row)
+                metric_groups.setdefault(key, []).append(row)
+        for key, rows in metric_groups.items():
+            # Instrumented groups already have a richer tensor/root-cause
+            # verdict. Metric-only assessment exists specifically to include
+            # stage 6 and equivalent --no-instrument-tensors runs.
+            if key in stage_latest:
+                continue
+            assessment = metric_only_assessment(rows)
+            assessment["stage"] = stage_label
+            existing = combined_metric_only.get(key)
+            if existing is None:
+                combined_metric_only[key] = assessment
+            elif (
+                {k: v for k, v in existing.items() if k != "stage"}
+                != {k: v for k, v in assessment.items() if k != "stage"}
+            ):
+                conflicts.append({
+                    "key": key,
+                    "verdict_a": existing["status"], "stage_a": existing["stage"],
+                    "verdict_b": assessment["status"], "stage_b": stage_label,
+                    "status": "metric_only", "evidence_level": "path_metrics",
+                })
+            stage_metric_counts[assessment["status"]] += 1
 
     failed_csv = stage_dir / "failed_cases.csv"
     n_failed = max(0, sum(1 for _ in failed_csv.open(encoding="utf-8")) - 1) if failed_csv.exists() else 0
@@ -766,15 +866,16 @@ for stage_dir in stage_dirs:
     )
     counts_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_baseline_final_counts.items())) or "(none)"
     evidence_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_evidence_counts.items())) or "(none)"
+    metric_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_metric_counts.items())) or "(none)"
     per_stage_rows.append(
-        f"| {stage_label} | {n_frames} | {stage_dominant or 'inconclusive'} | {counts_str} "
-        f"| {evidence_str} | {stage_n_provisional} | {stage_n_auxiliary} | {n_failed} |"
+        f"| {stage_label} | {n_frames} | {stage_dominant or '(none)'} | {counts_str} "
+        f"| {metric_str} | {evidence_str} | {stage_n_provisional} | {stage_n_auxiliary} | {n_failed} |"
     )
 
 lines.append("## per-stage verdict summary (baseline, final only)")
 lines.append("")
-lines.append("| stage | n_frames_processed | dominant_verdict | baseline verdict counts | evidence levels | provisional | auxiliary | failed_cases |")
-lines.append("|---|---:|---|---|---|---:|---:|---:|")
+lines.append("| stage | n_frames_processed | dominant_verdict | baseline verdict counts | metric-only quality | evidence levels | provisional | auxiliary | failed_cases |")
+lines.append("|---|---:|---|---|---|---|---:|---:|---:|")
 lines.extend(per_stage_rows)
 
 lines.append("")
@@ -798,6 +899,26 @@ else:
                  "have been disabled, no stage completed, or all baseline verdicts are still provisional).")
 if n_provisional_overall:
     lines.append(f"- provisional baseline verdicts (excluded above, waiting on VAE-direct evidence): {n_provisional_overall}")
+
+lines.append("")
+lines.append("## metric-only baseline quality assessment (no tensor/root-cause verdict)")
+lines.append("")
+lines.append(f"- thresholds: AWGN − digital wire PSNR < {QUALITY_GAP_PSNR_DB} dB; "
+             f"|digital in-process − wire PSNR| <= {PATH_PARITY_PSNR_DB} dB; wire round-trip bit-exact")
+metric_only_counts = Counter(item["status"] for item in combined_metric_only.values())
+if metric_only_counts:
+    for label, count in sorted(metric_only_counts.items(), key=lambda kv: -kv[1]):
+        lines.append(f"- `{label}`: {count}")
+    numeric = [item for item in combined_metric_only.values() if "wire_minus_awgn_psnr" in item]
+    if numeric:
+        deltas = [item["wire_minus_awgn_psnr"] for item in numeric]
+        parity = [item["inprocess_wire_abs_psnr"] for item in numeric]
+        lines.append(f"- digital wire − AWGN PSNR: mean={sum(deltas)/len(deltas):.6f} dB, "
+                     f"min={min(deltas):.6f} dB, max={max(deltas):.6f} dB")
+        lines.append(f"- max |digital in-process − wire PSNR|: {max(parity):.9f} dB")
+        lines.append(f"- bit-exact wire rows: {sum(item['roundtrip_bitexact'] for item in numeric)}/{len(numeric)}")
+else:
+    lines.append("- none recorded; all completed baseline groups had instrumented root-cause verdicts.")
 
 lines.append("")
 lines.append("## auxiliary evidence (serialized_raw_edge / awgn_edge_retransmit, never summed into the overall count)")

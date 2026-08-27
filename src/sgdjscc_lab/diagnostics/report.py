@@ -104,7 +104,7 @@ def write_report_md(
                 "아래 표에 `ablation` 열로 구분되어 그대로 보존됨.\n"
             )
         if verdict_summary is None or not verdict_summary.get("counts"):
-            lines.append("증거 부족 — `inconclusive`.\n")
+            lines.append("필수 증거가 없어 판정 불가 — `inconclusive`.\n")
         else:
             dominant = verdict_summary.get("dominant_verdict")
             lines.append(f"- 종합 판정(최다, baseline·final 기준): `{dominant or 'inconclusive'}`")
@@ -142,7 +142,8 @@ def write_report_md(
         "- 두 digital 경로는 같지만 AWGN보다 낮음 → edge·ControlNet·diffusion 문제\n"
         "- `diffusion_bypass_vae_direct` ablation부터 이미 낮음 → "
         "latent scaling/normalization 문제\n"
-        "- 증거가 부족하면 `inconclusive`\n"
+        "- 필수 증거가 있고 문제 기준을 넘지 않으면 `no_issue_detected`\n"
+        "- 필수 증거가 없으면 `inconclusive`\n"
     )
 
     out_path = output_root / "REPORT.md"

@@ -1,0 +1,40 @@
+{
+  "args": {
+    "ablations": "baseline",
+    "bit_depth": 32,
+    "config": null,
+    "dataset_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+    "device": "cuda:0",
+    "digital_step_policy": "fixed_reference",
+    "dry_run": false,
+    "fixed_reference_snr_db": 10.0,
+    "fixed_step_value": 0.5,
+    "frames": "0-99",
+    "granularity": "per_tensor",
+    "minimal_denoise_steps": 2,
+    "model_root": null,
+    "no_instrument_tensors": true,
+    "no_lpips": false,
+    "no_models": false,
+    "output_root": "outputs/f32dig_20260827_164017/stage6_core_conditions/worker_02_scene_cut",
+    "paths": "awgn,digital_inprocess,digital_wire",
+    "record_patch_index": 0,
+    "resume": false,
+    "save_tensors": false,
+    "seed": 2025,
+    "video_ids": "09_scene_cut_chair_car"
+  },
+  "counts": {
+    "interrupted": false,
+    "n_auxiliary_edge_equalized_verdicts": 0,
+    "n_baseline_verdicts_final": 0,
+    "n_baseline_verdicts_provisional": 0,
+    "n_baseline_verdicts_with_vae_direct": 0,
+    "n_baseline_verdicts_without_vae_direct": 0,
+    "n_frames_processed": 100,
+    "n_videos": 1
+  },
+  "dry_run": false,
+  "run_kind": "float32_digital_diagnostics",
+  "verdict_summary": null
+}

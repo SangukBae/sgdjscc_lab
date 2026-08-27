@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "run_id": "float32_digital_normalization_full_20260827",
+  "status": "frozen",
+  "run_date": "2026-08-27",
+  "original_output_root": "outputs/f32dig_20260827_164017/",
+  "execution_git": {
+    "commit": "c5721cb6f3501af53555137fb0aaf131b5c2d71b",
+    "dirty": "unknown",
+    "branch": "main"
+  },
+  "seed": 2025,
+  "profile": "full",
+  "digital_step_policy": "fixed_reference",
+  "fixed_reference_snr_db": 10.0,
+  "dataset_content_sha256": "c1995a7b6e03a2a11299f25ce46d317a1cc37fc10cb1c19b3cc73e71eb3c34c4",
+  "raw_tree_sha256": "1acebe14e825a96a8d11f446fd34625ea736ecf8a32fbaa0283a59047c0519e7",
+  "execution_plan_sha256": "075fcbf589317fe199276bbdaca82fe191f3f7d707e3de89455e4fcae13fe86a",
+  "preservation": {
+    "byte_identical_source_artifacts": 50,
+    "derived_reports": 1,
+    "checksums": "checksums.sha256",
+    "excluded": ["frames_cache", "stage_logs", "temporary caches"]
+  },
+  "report_contract": {
+    "instrumented_baseline_no_issue_detected": 20,
+    "metric_only_stage6_no_issue_detected": 300,
+    "auxiliary_transport_delta_detected": 2,
+    "conflicts": 0
+  }
+}

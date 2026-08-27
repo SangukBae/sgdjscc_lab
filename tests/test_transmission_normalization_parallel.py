@@ -5,6 +5,8 @@ from __future__ import annotations
 import csv
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -44,6 +46,7 @@ def _per_video(video: str, config: str, channel: str, byte_count: int, psnr: flo
         "video": video, "config": config, "selector": selector, "channel": channel,
         "bit_depth": 16 if channel == "int16" else 8,
         "psss_backend_kind": "", "digital_step_policy": "fixed_reference",
+        "fixed_reference_snr_db": 10.0,
         "ablation_label": "", "n_frames_total": 10, "n_transmitting_frames": 2,
         "n_keyframes_selected": 2, "n_nan_or_inf_frames": 0,
         "fixed_selector_kind": "fixed_count", "fixed_count_target": 2,
@@ -80,7 +83,9 @@ def test_devices_must_be_unique_cuda_devices():
 
 
 def test_worker_commands_have_independent_output_roots(tmp_path):
-    args = mod._parse_args(["--output-root", str(tmp_path)])
+    args = mod._parse_args([
+        "--output-root", str(tmp_path), "--fixed-reference-snr-db", "7.5",
+    ])
     workers = [
         {"worker_id": "worker_00", "device": "cuda:0", "videos": ["a"]},
         {"worker_id": "worker_01", "device": "cuda:1", "videos": ["b"]},
@@ -91,6 +96,7 @@ def test_worker_commands_have_independent_output_roots(tmp_path):
     assert str(tmp_path / "workers" / "worker_01") in commands[1]
     assert commands[0][commands[0].index("--device") + 1] == "cuda:0"
     assert commands[1][commands[1].index("--device") + 1] == "cuda:0"
+    assert commands[0][commands[0].index("--fixed-reference-snr-db") + 1] == "7.5"
     assert mod._worker_environment(workers[0])["CUDA_VISIBLE_DEVICES"] == "0"
     assert mod._worker_environment(workers[1])["CUDA_VISIBLE_DEVICES"] == "1"
 
@@ -101,6 +107,48 @@ def test_resume_plan_mismatch_is_rejected(tmp_path):
     mod._check_or_write_plan(tmp_path, dict(plan))
     with pytest.raises(RuntimeError, match="plan mismatch"):
         mod._check_or_write_plan(tmp_path, {"commit": "b", "assignments": []})
+
+
+def test_parallel_plan_records_fixed_reference_snr(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        mod.rm, "get_git_state",
+        lambda _root: {"commit": "a" * 40, "dirty": False, "branch": "main"},
+    )
+    args = mod._parse_args([
+        "--dataset-root", str(tmp_path), "--fixed-reference-snr-db", "10",
+    ])
+    plan = mod._plan(args, ["cuda:0"], [{"key": "v1", "n_frames": 10}])
+    assert plan["settings"]["fixed_reference_snr_db"] == 10.0
+
+
+def test_quantization_10db_wrapper_locks_scientific_scope(tmp_path):
+    env = os.environ.copy()
+    env.update({
+        "PYTHON_BIN": sys.executable,
+        "SGDJSCC_GIT_COMMIT": "a" * 40,
+        "SGDJSCC_GIT_DIRTY": "false",
+        "SGDJSCC_GIT_BRANCH": "main",
+    })
+    result = subprocess.run(
+        [
+            "bash", "scripts/run_quantization_reevaluation_10db.sh",
+            "--dry-run", "--max-frames", "2", "--output-root", str(tmp_path / "out"),
+            # Attempts to override the scientific scope must lose to the
+            # locked options appended by the wrapper.
+            "--fixed-reference-snr-db", "60", "--configs", "fixed_int4",
+        ],
+        cwd=str(_ROOT), env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    settings = payload["plan"]["settings"]
+    assert settings["configs"] == (
+        "fixed_awgn,fixed_float32,fixed_int16,fixed_int8,fixed_int6,fixed_int4"
+    )
+    assert settings["fixed_reference_snr_db"] == 10.0
+    assert settings["digital_step_policy"] == "fixed_reference"
+    assert settings["match_fixed_keyframes"] is False
+    assert payload["plan"]["devices"] == ["cuda:0", "cuda:1", "cuda:2"]
 
 
 def test_merge_builds_global_aggregate_effects_and_manifest(tmp_path):

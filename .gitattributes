@@ -2,3 +2,7 @@
 # their original CRLF endings). Treat them as binary so Git does not normalize
 # or report the carriage return as trailing whitespace.
 results/**/*.csv -text
+
+# Frozen diagnostic artifacts also retain source Markdown/CSV line endings and
+# EOF layout byte-for-byte; suppress whitespace rewriting/checks for this tree.
+results/float32_digital_normalization_full_20260827/** -whitespace

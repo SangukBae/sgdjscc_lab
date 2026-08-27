@@ -1,0 +1,29 @@
+{
+  "dataset_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+  "fixed_reference_snr_db": 10.0,
+  "git": {
+    "branch": "main",
+    "commit": "c5721cb6f3501af53555137fb0aaf131b5c2d71b",
+    "dirty": "unknown"
+  },
+  "logical_worker_device": "cuda:0",
+  "mode": "three_gpu_stage_and_video_parallel",
+  "phase_a": {
+    "stage3_single_frame_paths": "0",
+    "stage4_single_frame_ablations": "1",
+    "stage5_paired_frames": "2"
+  },
+  "phase_b": {
+    "01_person_walk": "0",
+    "07_person_enter": "1",
+    "09_scene_cut_chair_car": "2"
+  },
+  "physical_devices": [
+    "0",
+    "1",
+    "2"
+  ],
+  "profile": "full",
+  "schema_version": 2,
+  "seed": 2025
+}

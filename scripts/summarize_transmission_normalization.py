@@ -160,6 +160,7 @@ def build_quantization_effect(aggregate_rows: List[Dict[str, Any]]) -> List[Dict
                 "channel": channel,
                 "bit_depth": row.get("bit_depth", ""),
                 "digital_step_policy": row.get("digital_step_policy", ""),
+                "fixed_reference_snr_db": row.get("fixed_reference_snr_db", ""),
                 "ablation_label": row.get("ablation_label", ""),
                 "psss_backend_kind": row.get("psss_backend_kind", ""),
                 "reference_channel": reference_channel or "",
@@ -225,6 +226,7 @@ def build_selector_effect(aggregate_rows: List[Dict[str, Any]]) -> List[Dict[str
             # PSSS backend at all (not_applicable) so only skem's is reported.
             "skem_psss_backend_kind": skem_row.get("psss_backend_kind", ""),
             "digital_step_policy": skem_row.get("digital_step_policy", ""),
+            "fixed_reference_snr_db": skem_row.get("fixed_reference_snr_db", ""),
             "ablation_label": skem_row.get("ablation_label", ""),
             "fixed_mean_psnr": fixed_row.get("mean_psnr", ""),
             "skem_mean_psnr": skem_row.get("mean_psnr", ""),

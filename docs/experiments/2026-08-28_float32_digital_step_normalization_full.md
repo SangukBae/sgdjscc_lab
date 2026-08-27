@@ -106,30 +106,32 @@ harness가 계측하는 path 구간이며 sender·bundle 전체 지연이 아니
 pixel 지표만 비교했으므로 semantic fidelity·할루시네이션·시간축 지표를 포함한
 후속 ablation 전에 float32 최종 운영 정책으로 확정하지 않는다.
 
-## 리포트 해석 제한
+## 리포트 계약 보정·결과 보존
 
-- `INTEGRATED_REPORT.md`의 overall verdict는 `inconclusive` 20건이다. 이 라벨은 이 실험에서
-  품질 문제 발견 실패가 아니라 **현재 fault 분류에서 문제가 감지되지 않음**을 뜻한다.
-- stage 6은 `--no-instrument-tensors`로 실행되어 300프레임의 metric row는 보존하지만
-  verdict row를 만들지 않는다. 따라서 overall 20건은 stage 5만 집계한 것이며,
-  위 300프레임 결론은 stage 6 CSV를 별도 paired 집계한 결과이다.
-- stage 4 auxiliary edge 판정 2건은 미세 `edge_mean` 차이를 `packet_tx_rx_issue`로
-  표시한다. 최종 품질·bit-exact latent 계약에 영향을 주지 않지만 후속으로
-  auxiliary tolerance·중립 label을 보완해야 한다.
+- 실행 당시 원본 리포트와 verdict JSONL은 불변 원자료로 보존했다.
+- 보정 리포트는 실제 증거가 있고 품질 기준을 넘지 않은 경우를 `inconclusive`가 아닌
+  `no_issue_detected`로 분리했다: instrumented baseline 20/20.
+- stage 6의 `--no-instrument-tensors` 300프레임은 root-cause verdict 대신 별도
+  metric-only 계약(품질 gap 1dB, in-process/wire 0.01dB, bit-exact)을 적용했고
+  300/300 `no_issue_detected`였다.
+- auxiliary edge evidence는 overall에 합산하지 않으며, 과거의 과도한
+  `packet_tx_rx_issue` 표기를 중립적 `transport_delta_detected`로 표시한다. 새 실행은
+  auxiliary 전용 MAE tolerance `1e-3`도 적용한다.
+- 핵심 원본 50개와 보정 리포트를
+  [results/float32_digital_normalization_full_20260827/](../../results/float32_digital_normalization_full_20260827/README.md)에
+  고정하고 registry·SHA-256 검증을 완료했다.
 
 ## 결론
 
 - **float32 digital 품질 저하 원인 수정·baseline full 정상화: 완료.**
 - **float32 raw output 로컬 복사·원격 대조: 완료.**
-- **재현성 고정: 미완료.** 핵심 CSV·JSON·manifest·checksum을 `results/` registry에
-  보존하고 문서 commit을 연결해야 한다.
+- **재현성 고정·리포트 계약 보정: 완료.** 핵심 CSV·JSON·JSONL·manifest·checksum과
+  원본/보정 통합 리포트를 `results/` registry에 보존했다.
 - full 범위는 3개 core condition 영상이며 ETRI 10영상 전체·별도 held-out은 아니다.
 - 60dB 정책으로 얻은 기존 int16/int8/int6/int4 운영 후보는 10dB에서 재평가해야 한다.
 
 ## 다음 작업
 
-1. full 핵심 결과를 `results/` + `results/registry.csv`에 고정.
-2. `inconclusive`과 `no_issue_detected`를 분리하고 stage 6 metric-only 판정을 통합 리포트에 포함.
-3. auxiliary edge 미세 차이의 tolerance·label 보완.
-4. 10dB baseline에서 int16/int8/int6/int4 양자화 품질·Pareto 재평가.
-5. VAE-direct/few-step/full diffusion을 semantic·할루시네이션·시간축 지표로 비교.
+1. 준비된 전용 3-GPU 명령으로 10dB int16/int8/int6/int4 양자화 품질·Pareto 재평가.
+2. fixed–SKEM exact matched-rate 재평가.
+3. VAE-direct/few-step/full diffusion을 semantic·할루시네이션·시간축 지표로 비교.

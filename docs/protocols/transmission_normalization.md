@@ -206,6 +206,29 @@ bash scripts/run_transmission_normalization_parallel.sh \
   --devices cuda:0,cuda:1,cuda:2 --retry-failed
 ```
 
+### 10dB 양자화 재평가 전용 명령
+
+float32 정상화 이후의 양자화 operating point는 다음 전용 wrapper로 재평가한다.
+
+```bash
+# 전체 10영상×100프레임, RTX 4090 3장
+bash scripts/run_quantization_reevaluation_10db.sh
+
+# 실행 계획만 확인
+bash scripts/run_quantization_reevaluation_10db.sh --dry-run
+
+# 중단된 동일 실행 재개
+bash scripts/run_quantization_reevaluation_10db.sh \
+  --resume outputs/transmission_quantization_10db_<timestamp>
+```
+
+- 범위는 `fixed_awgn,fixed_float32,fixed_int16,fixed_int8,fixed_int6,fixed_int4`로 고정한다.
+- SKEM과 matched-rate 변수를 섞지 않아 bit-depth 효과만 분리한다.
+- `fixed_reference=10dB`는 resolved config뿐 아니라 per-video/aggregate CSV, summary,
+  parallel plan, manifest, resume signature에 기록된다. 다른 SNR로 같은 output을 resume하면 거부한다.
+- 결과 판단은 `quantization_effect.csv`와 `pareto_frontier.csv`를 사용하고,
+  실제 GPU 실행 전에는 operating point를 확정하지 않는다.
+
 - 작업 분배
   - `manifest.csv`의 프레임 수를 기준으로 영상을 longest-first 방식으로 균등 배분
   - GPU별 단일 프로세스·단일 `--device` 사용

@@ -71,30 +71,21 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - **severity의 인과적 feedback 경로 없음**
   - 현재 프레임의 severity는 복원 후에 계산되므로 다음 프레임/GOP 제어나 재전송 feedback에 연결해야 한다.
   - 관련 byte와 왕복 지연 accounting도 미구현이다.
-- **float32 digital 정상화 full은 성공, 산출물 registry·리포트 계약 보완은 미완료**
+- **float32 full은 3개 core condition 범위이며 별도 held-out 검증이 아니다**
   - 기존 10영상 60dB 결과(PSNR `11.32 vs 23.34`, SSIM `0.081 vs 0.731`, LPIPS `0.739 vs 0.254`)는
     decoder step 계약이 잘못된 legacy 결과로 판정했다.
   - 10dB 3-GPU full 300프레임에서 digital wire `34.725/0.9351/0.1242`,
     AWGN `34.004/0.9296/0.1264`로 품질 격차가 해소됐고, in-process/wire 최대 PSNR 차이는
     `0.000752dB`, wire round-trip은 300/300 bit-exact였다.
-  - 남은 조건: 핵심 artifact의 `results/` registry 보존, 수정된 정책으로
-    int16/int8/int6/int4 재평가.
+  - 핵심 artifact registry와 리포트 계약 보정은 완료했지만, 이 300프레임은 원인 진단용
+    core condition 표본이다. 최종 정책의 일반화 주장은 별도 held-out 검증 후에만 가능하다.
+  - 수정된 10dB 정책의 int16/int8/int6/int4 재평가는 아직 GPU 실행 전이다.
   - [full 실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md),
     [진단 프로토콜](../protocols/float32_digital_diagnostics.md).
-- **full 통합 리포트가 stage 6의 300프레임을 overall verdict로 집계하지 않는다**
-  - stage 6은 tensor 계측을 끈 metric-only 실행이라 verdict row가 없고, 현재 overall `inconclusive`
-    20건은 stage 5만 반영한다.
-  - `inconclusive`는 품질 문제 발견이 아니라 fault taxonomy상 문제 증거가 없다는 뜻이므로,
-    `no_issue_detected`와 분리하고 metric-only paired 판정을 리포트에 포함해야 한다.
 - **VAE-direct의 semantic·시간축 operating point 검증이 없다**
   - 20프레임에서 pixel fidelity와 receiver decode latency는 50-step diffusion보다 우수했지만,
     sender·bundle 전체 지연, semantic fidelity, 할루시네이션, 시간축 지표는 비교하지 않았다.
   - 따라서 VAE-direct/few-step/full diffusion 중 최종 정책은 아직 확정할 수 없다.
-- **auxiliary edge 판정이 미세 차이도 `packet_tx_rx_issue`로 표시**
-  - `serialized_raw_edge`/`awgn_edge_retransmit`에서 `edge_mean` MAE `0.0005328`, cosine `0.9999906`을
-    packet 문제로 분류했지만, 최종 in-process/wire PSNR 차이는 `0.001dB` 미만이었다.
-  - baseline 판정·full 실행을 막는 문제는 아니며, auxiliary 전용 tolerance 또는
-    `transport_delta_detected` 계열의 중립 label로 보완할 필요가 있다.
 - **fixed–SKEM 비교가 실제 rate-matched가 아님**
   - keyframe 수는 맞았지만 `recompute_semantic`으로 실제 transmitting frame 수가 달라졌다.
   - `rate_matching.csv` 통과: 35/50; selector 절감 효과는 잠정 결과로만 사용한다.

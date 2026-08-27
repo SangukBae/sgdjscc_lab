@@ -35,6 +35,7 @@ DRY_RUN=0
 MIN_FREE_DISK_GIB=20
 SEED="${SEED:-2025}"
 DIGITAL_STEP_POLICY="${DIGITAL_STEP_POLICY:-fixed_reference}"
+FIXED_REFERENCE_SNR_DB="${FIXED_REFERENCE_SNR_DB:-10}"
 ABLATION_LABEL="${ABLATION_LABEL:-}"
 PSSS_BACKEND="${PSSS_BACKEND:-proxy}"
 PSSS_MODEL_ID="${PSSS_MODEL_ID:-}"
@@ -72,6 +73,7 @@ Usage: run_transmission_normalization.sh [options]
   --seed N                     Base seed for Python/NumPy/PyTorch/CUDA (default: 2025).
   --digital-step-policy NAME   fixed_reference (default) | bitdepth_proxy | quant_nmse.
                                Anything but fixed_reference REQUIRES --ablation-label.
+  --fixed-reference-snr-db DB  Decoder reference SNR for fixed_reference (default: 10).
   --ablation-label LABEL       Required when --digital-step-policy != fixed_reference.
   --psss-backend NAME           mock | proxy (default) | real -- see --psss-model-id.
   --psss-model-id ID            HF causal-LM/VLM id, required for --psss-backend real.
@@ -99,6 +101,7 @@ while [ $# -gt 0 ]; do
     --no-match-fixed-keyframes) MATCH_FIXED_KEYFRAMES=0; shift ;;
     --seed) SEED="$2"; shift 2 ;;
     --digital-step-policy) DIGITAL_STEP_POLICY="$2"; shift 2 ;;
+    --fixed-reference-snr-db) FIXED_REFERENCE_SNR_DB="$2"; shift 2 ;;
     --ablation-label) ABLATION_LABEL="$2"; shift 2 ;;
     --psss-backend) PSSS_BACKEND="$2"; shift 2 ;;
     --psss-model-id) PSSS_MODEL_ID="$2"; shift 2 ;;
@@ -116,17 +119,33 @@ done
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 fail() { printf '[%s] FAILED: %s\n' "$(date +%H:%M:%S)" "$*" >&2; exit 1; }
 
-# ── locate a usable python (conda env "ptest" if available and not already active) ──
-PYTHON_BIN="python"
-if command -v conda >/dev/null 2>&1; then
+# ── locate a usable python (explicit override, ptest env, Docker fallback) ──
+_try_python() { command -v "$1" >/dev/null 2>&1 && "$1" -c "import torch" >/dev/null 2>&1; }
+
+PYTHON_BIN="${PYTHON_BIN:-}"
+if [ -z "$PYTHON_BIN" ] && command -v conda >/dev/null 2>&1; then
   if [ "${CONDA_DEFAULT_ENV:-}" != "ptest" ] && conda env list 2>/dev/null | grep -qE '(^|[[:space:]])ptest([[:space:]]|$)'; then
     log "activating conda env 'ptest'"
     # shellcheck disable=SC1091
     source "$(conda info --base)/etc/profile.d/conda.sh"
     conda activate ptest
   fi
+  PYTHON_BIN="python"
 fi
-command -v "$PYTHON_BIN" >/dev/null 2>&1 || fail "no python interpreter on PATH (expected conda env 'ptest' or an equivalent environment with torch installed)"
+if [ -z "$PYTHON_BIN" ] || ! _try_python "$PYTHON_BIN"; then
+  for candidate in \
+    python /opt/ptest/bin/python /opt/conda/envs/ptest/bin/python \
+    "$HOME/anaconda3/envs/ptest/bin/python" "$HOME/miniconda3/envs/ptest/bin/python" \
+    "$HOME/miniforge3/envs/ptest/bin/python"; do
+    if _try_python "$candidate"; then
+      PYTHON_BIN="$candidate"
+      break
+    fi
+  done
+fi
+[ -n "$PYTHON_BIN" ] && _try_python "$PYTHON_BIN" || \
+  fail "no Python interpreter that can import torch; set PYTHON_BIN=/path/to/python"
+export PYTHON_BIN
 
 # ── preflight: data / checkpoint / disk / GPU / CUDA / NVML ────────────────
 run_preflight() {
@@ -252,6 +271,7 @@ SWEEP_CMD=("$PYTHON_BIN" scripts/run_transmission_reduction_eval.py
   --device "$DEVICE"
   --seed "$SEED"
   --digital-step-policy "$DIGITAL_STEP_POLICY"
+  --fixed-reference-snr-db "$FIXED_REFERENCE_SNR_DB"
   --psss-backend "$PSSS_BACKEND"
   --psss-device "$PSSS_DEVICE"
   --psss-dtype "$PSSS_DTYPE"
