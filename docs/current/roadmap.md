@@ -30,7 +30,7 @@ supersedes:
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
 | ~~1~~ | ~~정상화 결과 registry 고정~~ | 완료 — [`results/transmission_normalization_20260826/`](../../results/transmission_normalization_20260826/README.md), `results/registry.csv` 등록 |
-| 2 | digital 복원 품질 정상화 | float32 digital의 AWGN 대비 품질 저하 원인 분리·수정 — 진단 harness 구현 완료([protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md)), 서버 실측 대기 |
+| 2 | digital 복원 품질 정상화 | float32 digital의 AWGN 대비 품질 저하 원인 분리·수정 — 진단 harness와 3-GPU 병렬 실행기 구현 완료([protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md)); 서버 컨테이너 NVML 복구 후 실측 대기 |
 | 3 | fixed–SKEM matched-rate 재평가 | 실제 transmitting frame 또는 byte가 허용 오차 안에서 일치 |
 | 4 | edge·uncertainty 전송량 절감 | int4 packet의 주요 91% 구성요소 ablation |
 | 5 | 통합 평가 harness 확장 | Rate·품질·SRS·할루시네이션·지연을 paired row로 기록 |

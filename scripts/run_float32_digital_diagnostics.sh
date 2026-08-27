@@ -16,6 +16,7 @@
 #   bash scripts/run_float32_digital_diagnostics.sh --profile full
 #   bash scripts/run_float32_digital_diagnostics.sh --resume outputs/f32dig_20260827_120000
 #   bash scripts/run_float32_digital_diagnostics.sh --cuda-visible-devices 0
+#   bash scripts/run_float32_digital_diagnostics.sh --parallel-devices 0,1,2
 #
 # Exit codes: 0 = every stage completed clean. 130 = interrupted (SIGINT/
 # SIGTERM) — safe to re-run with --resume against the SAME output dir it
@@ -39,6 +40,8 @@ OUTPUT_ROOT=""
 PROFILE="full"
 DRY_RUN=0
 CUDA_VISIBLE_DEVICES_ARG=""
+PARALLEL_DEVICES_ARG=""
+PARALLEL_MODE=0
 MIN_FREE_DISK_GIB=10
 SEED="${SEED:-2025}"
 
@@ -64,6 +67,10 @@ Usage: run_float32_digital_diagnostics.sh [options]
   --output-root PATH            Default: outputs/f32dig_<timestamp>.
   --cuda-visible-devices LIST   Sets CUDA_VISIBLE_DEVICES before every stage;
                                 --device is still cuda:0 internally (isolated).
+  --parallel-devices LIST       Run the diagnostic on exactly three physical
+                                GPUs (for example 0,1,2). Stages 3/4/5 run in
+                                parallel, then the three stage-6 videos run
+                                one per GPU in independent worker directories.
   --seed N                      Base seed (default: 2025).
   -h, --help                    Show this message.
 EOF
@@ -79,6 +86,7 @@ while [ $# -gt 0 ]; do
     --dataset-root) DATASET_ROOT="$2"; shift 2 ;;
     --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
     --cuda-visible-devices) CUDA_VISIBLE_DEVICES_ARG="$2"; shift 2 ;;
+    --parallel-devices) PARALLEL_DEVICES_ARG="$2"; shift 2 ;;
     --seed) SEED="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -90,6 +98,33 @@ case "$PROFILE" in
   *) echo "ERROR: --profile must be smoke|short|full, got: $PROFILE" >&2; exit 2 ;;
 esac
 
+PARALLEL_GPU_IDS=()
+if [ -n "$PARALLEL_DEVICES_ARG" ]; then
+  [ -z "$CUDA_VISIBLE_DEVICES_ARG" ] || {
+    echo "ERROR: pass only one of --cuda-visible-devices / --parallel-devices" >&2
+    exit 2
+  }
+  IFS=',' read -r -a PARALLEL_GPU_IDS <<< "$PARALLEL_DEVICES_ARG"
+  if [ "${#PARALLEL_GPU_IDS[@]}" -ne 3 ]; then
+    echo "ERROR: --parallel-devices requires exactly three physical GPU indices" >&2
+    exit 2
+  fi
+  declare -A _SEEN_PARALLEL_GPUS=()
+  for _gpu in "${PARALLEL_GPU_IDS[@]}"; do
+    if ! [[ "$_gpu" =~ ^[0-9]+$ ]] || [ -n "${_SEEN_PARALLEL_GPUS[$_gpu]:-}" ]; then
+      echo "ERROR: --parallel-devices must contain three unique integer indices, got: $PARALLEL_DEVICES_ARG" >&2
+      exit 2
+    fi
+    _SEEN_PARALLEL_GPUS[$_gpu]=1
+  done
+  unset _SEEN_PARALLEL_GPUS _gpu
+  if [ "$DEVICE" != "cuda:0" ] && ! { [ "$DRY_RUN" -eq 1 ] && [ "$DEVICE" = "cpu" ]; }; then
+    echo "ERROR: parallel mode uses isolated logical --device cuda:0 (only --dry-run may use --device cpu)" >&2
+    exit 2
+  fi
+  PARALLEL_MODE=1
+fi
+
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
 fail() { printf '[%s] FAILED: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2; exit 1; }
 
@@ -99,7 +134,22 @@ if [ -n "$CUDA_VISIBLE_DEVICES_ARG" ]; then
 fi
 
 STOPPED_EARLY=0
-trap 'STOPPED_EARLY=1; log "received interrupt signal; current stage handles SIGINT/SIGTERM gracefully and will exit; re-run with --resume \"$OUTPUT_ROOT\" to continue."' INT TERM
+ACTIVE_PIDS=()
+handle_interrupt() {
+  STOPPED_EARLY=1
+  log "received interrupt signal; forwarding TERM to active workers; re-run with --resume \"$OUTPUT_ROOT\" to continue."
+  local pid child
+  for pid in "${ACTIVE_PIDS[@]}"; do
+    # A background run_stage shell may be waiting on python/tee children.
+    # Signal the children first so the diagnostic CLI can flush its current
+    # group and return 130, then signal the wrapper itself.
+    while read -r child; do
+      [ -n "$child" ] && kill -TERM "$child" 2>/dev/null || true
+    done < <(pgrep -P "$pid" 2>/dev/null || true)
+    kill -TERM "$pid" 2>/dev/null || true
+  done
+}
+trap handle_interrupt INT TERM
 
 # ── locate a usable python (torch import must succeed) ─────────────────────
 # Non-interactive shells (cron, CI runners, some SSH invocations) often do
@@ -210,19 +260,36 @@ PYEOF
 
   log "preflight: torch CUDA / NVML via python"
   local cuda_check
-  if ! cuda_check="$(F32DIG_DEVICE="$DEVICE" "$PYTHON_BIN" - <<'PYEOF' 2>&1
+  local preflight_visible_devices="${CUDA_VISIBLE_DEVICES:-}"
+  local expected_device_count=""
+  local cuda_visibility_env=()
+  if [ "$PARALLEL_MODE" -eq 1 ]; then
+    preflight_visible_devices="$PARALLEL_DEVICES_ARG"
+    expected_device_count="${#PARALLEL_GPU_IDS[@]}"
+  fi
+  if [ -n "$preflight_visible_devices" ]; then
+    cuda_visibility_env=(env "CUDA_VISIBLE_DEVICES=$preflight_visible_devices")
+  fi
+  if ! cuda_check="$("${cuda_visibility_env[@]}" env \
+      F32DIG_DEVICE="$DEVICE" F32DIG_EXPECTED_DEVICE_COUNT="$expected_device_count" \
+      "$PYTHON_BIN" - <<'PYEOF' 2>&1
 import os
 import torch
 available = torch.cuda.is_available()
 print(f"cuda_available={available}")
 if not available:
     raise SystemExit(1)
-print(f"device_count={torch.cuda.device_count()}")
+count = torch.cuda.device_count()
+print(f"device_count={count}")
+expected = os.environ.get("F32DIG_EXPECTED_DEVICE_COUNT")
+if expected and count != int(expected):
+    raise SystemExit(f"expected {expected} visible GPUs, got {count}")
 device = os.environ["F32DIG_DEVICE"]
 index = int(device.split(":", 1)[1]) if ":" in device else 0
-if index < 0 or index >= torch.cuda.device_count():
+if index < 0 or index >= count:
     raise SystemExit(f"invalid CUDA device ordinal: {device}")
 print(f"selected_device={device} device_name={torch.cuda.get_device_name(index)}")
+print("visible_device_names=" + ",".join(torch.cuda.get_device_name(i) for i in range(count)))
 PYEOF
 )"; then
     echo "$cuda_check" >&2
@@ -256,6 +323,70 @@ mkdir -p "$OUTPUT_ROOT"
 RESUME_FLAG=""
 [ "$RESUME_REQUESTED" -eq 1 ] && RESUME_FLAG="--resume"
 
+if [ "$PARALLEL_MODE" -eq 1 ]; then
+  log "3-GPU parallel mode: physical GPUs $PARALLEL_DEVICES_ARG (each worker sees logical cuda:0)"
+  log "parallel phase A: stage3->GPU${PARALLEL_GPU_IDS[0]}, stage4->GPU${PARALLEL_GPU_IDS[1]}, stage5->GPU${PARALLEL_GPU_IDS[2]}"
+  log "parallel phase B: three core-condition videos run one per GPU"
+fi
+if [ "$DRY_RUN" -eq 0 ]; then
+  F32DIG_OUTPUT_ROOT="$OUTPUT_ROOT" F32DIG_PROFILE="$PROFILE" \
+  F32DIG_PARALLEL_DEVICES="$PARALLEL_DEVICES_ARG" F32DIG_SEQUENTIAL_VISIBLE_DEVICES="$CUDA_VISIBLE_DEVICES_ARG" \
+  F32DIG_DEVICE="$DEVICE" F32DIG_SEED="$SEED" F32DIG_DATASET_ROOT="$DATASET_ROOT" \
+  F32DIG_RESUME="$RESUME_REQUESTED" \
+  "$PYTHON_BIN" - <<'PYEOF' || \
+    fail "execution_plan.json is missing or differs from this invocation; keep the original mode/profile/devices/seed/dataset or use a fresh output root"
+import json
+import os
+import tempfile
+from pathlib import Path
+import sys
+
+sys.path.insert(0, "src")
+from sgdjscc_lab.utils.run_manifest import get_git_state
+
+root = Path(os.environ["F32DIG_OUTPUT_ROOT"])
+parallel_text = os.environ.get("F32DIG_PARALLEL_DEVICES", "")
+devices = parallel_text.split(",") if parallel_text else []
+parallel = bool(devices)
+plan = {
+    "schema_version": 1,
+    "mode": "three_gpu_stage_and_video_parallel" if parallel else "sequential",
+    "git": get_git_state(Path.cwd()),
+    "profile": os.environ["F32DIG_PROFILE"],
+    "physical_devices": devices if parallel else os.environ.get("F32DIG_SEQUENTIAL_VISIBLE_DEVICES") or "inherited",
+    "logical_worker_device": "cuda:0" if parallel else os.environ["F32DIG_DEVICE"],
+    "seed": int(os.environ["F32DIG_SEED"]),
+    "dataset_root": str(Path(os.environ["F32DIG_DATASET_ROOT"]).resolve()),
+    "phase_a": ({
+        "stage3_single_frame_paths": devices[0],
+        "stage4_single_frame_ablations": devices[1],
+        "stage5_paired_frames": devices[2],
+    } if parallel else "sequential"),
+    "phase_b": ({
+        "01_person_walk": devices[0],
+        "07_person_enter": devices[1],
+        "09_scene_cut_chair_car": devices[2],
+    } if parallel else "sequential"),
+}
+path = root / "execution_plan.json"
+if path.exists():
+    if json.loads(path.read_text(encoding="utf-8")) != plan:
+        raise SystemExit(1)
+else:
+    if os.environ["F32DIG_RESUME"] == "1":
+        raise SystemExit("resume requires the original execution_plan.json")
+    fd, temporary = tempfile.mkstemp(dir=str(root), prefix=".execution_plan.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(plan, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+PYEOF
+fi
+
 # ── profile-dependent scope ─────────────────────────────────────────────
 case "$PROFILE" in
   smoke)
@@ -284,8 +415,15 @@ run_stage() {
   start_ts=$(date +%s)
   log "==== stage: $name ===="
   if [ "$DRY_RUN" -eq 1 ]; then
-    "$@" --dry-run
-    return $?
+    local dry_rc
+    if "$@" --dry-run; then
+      return 0
+    else
+      dry_rc=$?
+      log "dry-run stage '$name' FAILED (exit $dry_rc)"
+      STAGE_FAILURES=$((STAGE_FAILURES + 1))
+      return "$dry_rc"
+    fi
   fi
   {
     echo "===== attempt at $(date -u +%Y-%m-%dT%H:%M:%SZ) ====="
@@ -314,6 +452,50 @@ run_stage() {
     log "stage '$name' OK (${duration_s}s). Log: $log_file"
   fi
   return "$rc"
+}
+
+PARALLEL_PIDS=()
+PARALLEL_NAMES=()
+launch_parallel_stage() {
+  local physical_gpu="$1" name="$2"; shift 2
+  log "launching parallel stage '$name' on physical GPU $physical_gpu (logical cuda:0)"
+  (
+    export CUDA_VISIBLE_DEVICES="$physical_gpu"
+    run_stage "$name" "$@"
+  ) &
+  PARALLEL_PIDS+=("$!")
+  PARALLEL_NAMES+=("$name")
+  ACTIVE_PIDS+=("$!")
+}
+
+wait_parallel_stages() {
+  local index pid name rc any_interrupted=0
+  for index in "${!PARALLEL_PIDS[@]}"; do
+    pid="${PARALLEL_PIDS[$index]}"
+    name="${PARALLEL_NAMES[$index]}"
+    if wait "$pid"; then
+      rc=0
+    else
+      rc=$?
+    fi
+    if [ "$rc" -eq 130 ] || [ "$rc" -eq 143 ]; then
+      log "parallel stage '$name' interrupted (exit $rc)"
+      any_interrupted=1
+    elif [ "$rc" -ne 0 ]; then
+      log "parallel stage '$name' failed (exit $rc)"
+      STAGE_FAILURES=$((STAGE_FAILURES + 1))
+    else
+      log "parallel stage '$name' completed"
+    fi
+  done
+  PARALLEL_PIDS=()
+  PARALLEL_NAMES=()
+  ACTIVE_PIDS=()
+  if [ "$any_interrupted" -eq 1 ] || [ "$STOPPED_EARLY" -eq 1 ]; then
+    STOPPED_EARLY=1
+    return 130
+  fi
+  return 0
 }
 
 # ── stage 2: related tests + dry-run ────────────────────────────────────
@@ -352,42 +534,81 @@ else
 fi
 [ "$STOPPED_EARLY" -eq 1 ] && { log "stopped after stage 2"; exit 130; }
 
-# ── stage 3: 1 video x 1 frame, all 3 paths + tensor contract check ────
-run_stage "3_single_frame_path_contract" \
-  "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage3_single_frame_paths" \
-  --video-ids "$VIDEO_NORMAL_MOTION" --frames 0 --ablations baseline $RESUME_FLAG
-[ "$STOPPED_EARLY" -eq 1 ] && { log "stopped after stage 3"; exit 130; }
+# ── stages 3/4/5: independent diagnostic scopes ─────────────────────────
+if [ "$PARALLEL_MODE" -eq 1 ]; then
+  launch_parallel_stage "${PARALLEL_GPU_IDS[0]}" "3_single_frame_path_contract" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage3_single_frame_paths" \
+    --video-ids "$VIDEO_NORMAL_MOTION" --frames 0 --ablations baseline $RESUME_FLAG
+  launch_parallel_stage "${PARALLEL_GPU_IDS[1]}" "4_single_frame_full_ablation" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage4_single_frame_ablations" \
+    --video-ids "$VIDEO_NORMAL_MOTION" --frames 0 --ablations all $RESUME_FLAG
+  launch_parallel_stage "${PARALLEL_GPU_IDS[2]}" "5_paired_multi_frame" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage5_paired_frames" \
+    --video-ids "$VIDEO_NORMAL_MOTION" --frames "$FRAMES_PAIRED" \
+    --ablations baseline,diffusion_bypass_vae_direct $RESUME_FLAG
+  wait_parallel_stages || true
+  [ "$STOPPED_EARLY" -eq 1 ] && { log "stopped during parallel stages 3/4/5"; exit 130; }
+else
+  run_stage "3_single_frame_path_contract" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage3_single_frame_paths" \
+    --video-ids "$VIDEO_NORMAL_MOTION" --frames 0 --ablations baseline $RESUME_FLAG
+  [ "$STOPPED_EARLY" -eq 1 ] && { log "stopped after stage 3"; exit 130; }
 
-# ── stage 4: 1 video x 1 frame, full ablation set ───────────────────────
-run_stage "4_single_frame_full_ablation" \
-  "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage4_single_frame_ablations" \
-  --video-ids "$VIDEO_NORMAL_MOTION" --frames 0 --ablations all $RESUME_FLAG
-[ "$STOPPED_EARLY" -eq 1 ] && { log "stopped after stage 4"; exit 130; }
+  run_stage "4_single_frame_full_ablation" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage4_single_frame_ablations" \
+    --video-ids "$VIDEO_NORMAL_MOTION" --frames 0 --ablations all $RESUME_FLAG
+  [ "$STOPPED_EARLY" -eq 1 ] && { log "stopped after stage 4"; exit 130; }
 
-# ── stage 5: 1 video x 20 frames, paired diagnostic ─────────────────────
-run_stage "5_paired_multi_frame" \
-  "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage5_paired_frames" \
-  --video-ids "$VIDEO_NORMAL_MOTION" --frames "$FRAMES_PAIRED" \
-  --ablations baseline,diffusion_bypass_vae_direct $RESUME_FLAG
-[ "$STOPPED_EARLY" -eq 1 ] && { log "stopped after stage 5"; exit 130; }
+  run_stage "5_paired_multi_frame" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage5_paired_frames" \
+    --video-ids "$VIDEO_NORMAL_MOTION" --frames "$FRAMES_PAIRED" \
+    --ablations baseline,diffusion_bypass_vae_direct $RESUME_FLAG
+  [ "$STOPPED_EARLY" -eq 1 ] && { log "stopped after stage 5"; exit 130; }
+fi
 
-# ── stage 6: 3 core-condition videos x 100 frames, baseline only ───────
-run_stage "6_core_conditions" \
-  "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage6_core_conditions" \
-  --video-ids "$VIDEO_NORMAL_MOTION,$VIDEO_SEMANTIC_CHANGE,$VIDEO_SCENE_CUT" \
-  --frames "$FRAMES_CORE" --ablations baseline --no-instrument-tensors $RESUME_FLAG
-[ "$STOPPED_EARLY" -eq 1 ] && { log "stopped after stage 6"; exit 130; }
+# ── stage 6: 3 independent core-condition videos, baseline only ────────
+if [ "$PARALLEL_MODE" -eq 1 ]; then
+  launch_parallel_stage "${PARALLEL_GPU_IDS[0]}" "6_core_normal_motion" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage6_core_conditions/worker_00_normal_motion" \
+    --video-ids "$VIDEO_NORMAL_MOTION" --frames "$FRAMES_CORE" \
+    --ablations baseline --no-instrument-tensors $RESUME_FLAG
+  launch_parallel_stage "${PARALLEL_GPU_IDS[1]}" "6_core_semantic_change" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage6_core_conditions/worker_01_semantic_change" \
+    --video-ids "$VIDEO_SEMANTIC_CHANGE" --frames "$FRAMES_CORE" \
+    --ablations baseline --no-instrument-tensors $RESUME_FLAG
+  launch_parallel_stage "${PARALLEL_GPU_IDS[2]}" "6_core_scene_cut" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage6_core_conditions/worker_02_scene_cut" \
+    --video-ids "$VIDEO_SCENE_CUT" --frames "$FRAMES_CORE" \
+    --ablations baseline --no-instrument-tensors $RESUME_FLAG
+  wait_parallel_stages || true
+  [ "$STOPPED_EARLY" -eq 1 ] && { log "stopped during parallel stage 6"; exit 130; }
+else
+  run_stage "6_core_conditions" \
+    "${DIAG_CMD[@]}" --output-root "$OUTPUT_ROOT/stage6_core_conditions" \
+    --video-ids "$VIDEO_NORMAL_MOTION,$VIDEO_SEMANTIC_CHANGE,$VIDEO_SCENE_CUT" \
+    --frames "$FRAMES_CORE" --ablations baseline --no-instrument-tensors $RESUME_FLAG
+  [ "$STOPPED_EARLY" -eq 1 ] && { log "stopped after stage 6"; exit 130; }
+fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
+  if [ "$STAGE_FAILURES" -gt 0 ]; then
+    log "dry-run completed with $STAGE_FAILURES failed stage plan(s)."
+    exit 3
+  fi
   log "dry-run complete for all stages."
   exit 0
 fi
 
 # ── stage 7: validate results, hash, integrated report ──────────────────
 log "==== stage: 7_validate_and_report ===="
-STAGE7_DIRS="$OUTPUT_ROOT/stage3_single_frame_paths $OUTPUT_ROOT/stage4_single_frame_ablations $OUTPUT_ROOT/stage5_paired_frames $OUTPUT_ROOT/stage6_core_conditions"
+if [ "$PARALLEL_MODE" -eq 1 ]; then
+  STAGE7_DIRS="$OUTPUT_ROOT/stage3_single_frame_paths $OUTPUT_ROOT/stage4_single_frame_ablations $OUTPUT_ROOT/stage5_paired_frames $OUTPUT_ROOT/stage6_core_conditions/worker_00_normal_motion $OUTPUT_ROOT/stage6_core_conditions/worker_01_semantic_change $OUTPUT_ROOT/stage6_core_conditions/worker_02_scene_cut"
+else
+  STAGE7_DIRS="$OUTPUT_ROOT/stage3_single_frame_paths $OUTPUT_ROOT/stage4_single_frame_ablations $OUTPUT_ROOT/stage5_paired_frames $OUTPUT_ROOT/stage6_core_conditions"
+fi
 F32DIG_PROFILE="$PROFILE" F32DIG_OUTPUT_ROOT="$OUTPUT_ROOT" F32DIG_STAGE_FAILURES="$STAGE_FAILURES" \
-F32DIG_STAGE_DIRS="$STAGE7_DIRS" "$PYTHON_BIN" - <<'PYEOF'
+F32DIG_STAGE_DIRS="$STAGE7_DIRS" F32DIG_PARALLEL_DEVICES="$PARALLEL_DEVICES_ARG" \
+"$PYTHON_BIN" - <<'PYEOF'
 import json
 import os
 import sys
@@ -400,6 +621,7 @@ output_root = Path(os.environ["F32DIG_OUTPUT_ROOT"])
 profile = os.environ["F32DIG_PROFILE"]
 stage_failures = os.environ["F32DIG_STAGE_FAILURES"]
 stage_dirs = [Path(p) for p in os.environ["F32DIG_STAGE_DIRS"].split() if p]
+parallel_devices = os.environ.get("F32DIG_PARALLEL_DEVICES") or None
 
 AUXILIARY_ABLATIONS = ("serialized_raw_edge", "awgn_edge_retransmit")
 EVIDENCE_RANK = {
@@ -430,6 +652,9 @@ lines.append("")
 lines.append(f"- generated: {datetime.now(timezone.utc).isoformat()}")
 lines.append(f"- output_root: {output_root}")
 lines.append(f"- stage_failures: {stage_failures}")
+lines.append(f"- execution_mode: {'three_gpu_parallel' if parallel_devices else 'sequential'}")
+if parallel_devices:
+    lines.append(f"- physical_devices: {parallel_devices}")
 lines.append("")
 lines.append("**This section consolidates each stage's own verdict (see docs/protocols/"
              "float32_digital_diagnostics.md for the classification criteria); it is NOT itself "
@@ -457,6 +682,10 @@ per_stage_rows = []
 for stage_dir in stage_dirs:
     if not stage_dir.is_dir():
         continue
+    try:
+        stage_label = str(stage_dir.relative_to(output_root))
+    except ValueError:
+        stage_label = stage_dir.name
     summary_path = stage_dir / "summary.json"
     n_frames = "?"
     if summary_path.exists():
@@ -488,7 +717,7 @@ for stage_dir in stage_dirs:
             status = row.get("status", "final")
             level = evidence_level(row)
             entry = {
-                "verdict": row["verdict"], "status": status, "stage": stage_dir.name,
+                "verdict": row["verdict"], "status": status, "stage": stage_label,
                 "evidence_level": level,
             }
             existing = combined.get(key)
@@ -528,7 +757,7 @@ for stage_dir in stage_dirs:
     counts_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_baseline_final_counts.items())) or "(none)"
     evidence_str = ", ".join(f"{k}={v}" for k, v in sorted(stage_evidence_counts.items())) or "(none)"
     per_stage_rows.append(
-        f"| {stage_dir.name} | {n_frames} | {stage_dominant or 'inconclusive'} | {counts_str} "
+        f"| {stage_label} | {n_frames} | {stage_dominant or 'inconclusive'} | {counts_str} "
         f"| {evidence_str} | {stage_n_provisional} | {stage_n_auxiliary} | {n_failed} |"
     )
 
@@ -592,12 +821,24 @@ else:
     lines.append("- none detected.")
 
 lines.append("")
+lines.append("## run-level artifact hashes (sha256)")
+lines.append("")
+for name in ("execution_plan.json",):
+    path = output_root / name
+    if path.exists():
+        lines.append(f"- `{name}`: `{hashlib.sha256(path.read_bytes()).hexdigest()}`")
+
+lines.append("")
 lines.append("## per-stage artifact hashes (sha256)")
 for stage_dir in stage_dirs:
     if not stage_dir.is_dir():
         continue
     lines.append("")
-    lines.append(f"### {stage_dir.name}")
+    try:
+        stage_label = str(stage_dir.relative_to(output_root))
+    except ValueError:
+        stage_label = stage_dir.name
+    lines.append(f"### {stage_label}")
     for f in ("run_manifest.json", "summary.json", "REPORT.md", "path_comparison.csv",
               "failed_cases.csv", "verdicts.jsonl"):
         fp = stage_dir / f
@@ -627,7 +868,12 @@ log "done. Results in $OUTPUT_ROOT:"
 log "  stage3_single_frame_paths/     -- 1 video x 1 frame, 3 paths, full tensor contract"
 log "  stage4_single_frame_ablations/ -- 1 video x 1 frame, full ablation set"
 log "  stage5_paired_frames/          -- 1 video x N frames, paired path comparison"
-log "  stage6_core_conditions/        -- 3 core-condition videos x N frames, metrics only"
+if [ "$PARALLEL_MODE" -eq 1 ]; then
+  log "  stage6_core_conditions/worker_* -- 3 core-condition videos, one independent GPU worker each"
+  log "  execution_plan.json            -- execution mode, physical GPU assignment, and resume contract"
+else
+  log "  stage6_core_conditions/        -- 3 core-condition videos x N frames, metrics only"
+fi
 log "  INTEGRATED_REPORT.md           -- per-stage artifact hashes"
 log "  each stageN_*/REPORT.md        -- per-stage verdict + evidence (see docs/protocols/float32_digital_diagnostics.md)"
 

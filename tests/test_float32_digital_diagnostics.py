@@ -566,14 +566,14 @@ def _run_cli(args, **kwargs):
     )
 
 
-def _run_integrated_report(tmp_path, stages):
+def _run_integrated_report(tmp_path, stages, *, parallel_devices=""):
     """Execute the server script's real stage-7 Python payload on fixtures."""
     output_root = tmp_path / "integrated"
     output_root.mkdir()
     stage_dirs = []
     for stage_name, rows in stages.items():
         stage_dir = output_root / stage_name
-        stage_dir.mkdir()
+        stage_dir.mkdir(parents=True)
         stage_dirs.append(stage_dir)
         (stage_dir / "summary.json").write_text(
             json.dumps({"counts": {"n_frames_processed": 1}}), encoding="utf-8",
@@ -592,6 +592,7 @@ def _run_integrated_report(tmp_path, stages):
         "F32DIG_OUTPUT_ROOT": str(output_root),
         "F32DIG_STAGE_FAILURES": "0",
         "F32DIG_STAGE_DIRS": " ".join(str(p) for p in stage_dirs),
+        "F32DIG_PARALLEL_DEVICES": parallel_devices,
     })
     result = subprocess.run(
         [sys.executable, "-c", payload], capture_output=True, text=True, env=env, timeout=30,
@@ -646,6 +647,105 @@ class TestIntegratedReportEvidenceLevels:
         assert "CONFLICTS_DETECTED: 1" in result.stderr
         assert "baseline_with_vae_direct" in report
         assert "1 conflicting verdict(s) detected" in report
+
+    def test_parallel_worker_paths_and_devices_are_preserved(self, tmp_path):
+        result, report = _run_integrated_report(tmp_path, {
+            "stage6_core_conditions/worker_00_normal_motion": [],
+            "stage6_core_conditions/worker_01_semantic_change": [],
+            "stage6_core_conditions/worker_02_scene_cut": [],
+        }, parallel_devices="0,1,2")
+
+        assert result.returncode == 0, result.stderr
+        assert "execution_mode: three_gpu_parallel" in report
+        assert "physical_devices: 0,1,2" in report
+        assert "stage6_core_conditions/worker_00_normal_motion" in report
+
+
+class TestThreeGpuServerDriver:
+    def test_parallel_dry_run_assigns_independent_stages_and_videos(self, tmp_path):
+        env = os.environ.copy()
+        env.update({
+            "SGDJSCC_GIT_COMMIT": "a" * 40,
+            "SGDJSCC_GIT_DIRTY": "false",
+            "SGDJSCC_GIT_BRANCH": "main",
+        })
+        result = subprocess.run([
+            "bash", str(_REPO_ROOT / "scripts" / "run_float32_digital_diagnostics.sh"),
+            "--dry-run", "--profile", "smoke", "--device", "cpu",
+            "--parallel-devices", "0,1,2", "--output-root", str(tmp_path / "parallel"),
+        ], cwd=str(_REPO_ROOT), capture_output=True, text=True, env=env, timeout=60)
+
+        assert result.returncode == 0, result.stderr
+        assert "stage3->GPU0, stage4->GPU1, stage5->GPU2" in result.stdout
+        assert "worker_00_normal_motion" in result.stdout
+        assert "worker_01_semantic_change" in result.stdout
+        assert "worker_02_scene_cut" in result.stdout
+        assert "dry-run complete for all stages" in result.stdout
+
+    def test_parallel_devices_must_be_three_unique_indices(self):
+        result = subprocess.run([
+            "bash", str(_REPO_ROOT / "scripts" / "run_float32_digital_diagnostics.sh"),
+            "--dry-run", "--device", "cpu", "--parallel-devices", "0,0,1",
+        ], cwd=str(_REPO_ROOT), capture_output=True, text=True, timeout=10)
+        assert result.returncode == 2
+        assert "three unique integer indices" in result.stderr
+
+    def test_execution_plan_rejects_mode_or_device_changes(self, tmp_path):
+        script = (_REPO_ROOT / "scripts" / "run_float32_digital_diagnostics.sh").read_text(
+            encoding="utf-8",
+        )
+        start = script.index("import json\nimport os\nimport tempfile")
+        payload = script[start:script.index("\nPYEOF", start)]
+        root = tmp_path / "plan"
+        root.mkdir()
+
+        def run_plan(devices, *, resume="0"):
+            env = os.environ.copy()
+            env.update({
+                "F32DIG_OUTPUT_ROOT": str(root), "F32DIG_PROFILE": "full",
+                "F32DIG_PARALLEL_DEVICES": devices,
+                "F32DIG_SEQUENTIAL_VISIBLE_DEVICES": "", "F32DIG_DEVICE": "cuda:0",
+                "F32DIG_SEED": "2025", "F32DIG_DATASET_ROOT": str(tmp_path),
+                "F32DIG_RESUME": resume,
+                "SGDJSCC_GIT_COMMIT": "a" * 40, "SGDJSCC_GIT_DIRTY": "false",
+                "SGDJSCC_GIT_BRANCH": "main",
+            })
+            return subprocess.run(
+                [sys.executable, "-c", payload], cwd=str(_REPO_ROOT), env=env,
+                capture_output=True, text=True, timeout=10,
+            )
+
+        assert run_plan("0,1,2").returncode == 0
+        assert run_plan("0,1,2", resume="1").returncode == 0
+        assert run_plan("2,1,0", resume="1").returncode != 0
+        assert run_plan("", resume="1").returncode != 0
+        plan = json.loads((root / "execution_plan.json").read_text(encoding="utf-8"))
+        assert plan["mode"] == "three_gpu_stage_and_video_parallel"
+        assert plan["phase_b"]["09_scene_cut_chair_car"] == "2"
+
+    def test_resume_requires_an_existing_execution_plan(self, tmp_path):
+        script = (_REPO_ROOT / "scripts" / "run_float32_digital_diagnostics.sh").read_text(
+            encoding="utf-8",
+        )
+        start = script.index("import json\nimport os\nimport tempfile")
+        payload = script[start:script.index("\nPYEOF", start)]
+        root = tmp_path / "missing_plan"
+        root.mkdir()
+        env = os.environ.copy()
+        env.update({
+            "F32DIG_OUTPUT_ROOT": str(root), "F32DIG_PROFILE": "smoke",
+            "F32DIG_PARALLEL_DEVICES": "0,1,2", "F32DIG_SEQUENTIAL_VISIBLE_DEVICES": "",
+            "F32DIG_DEVICE": "cuda:0", "F32DIG_SEED": "2025",
+            "F32DIG_DATASET_ROOT": str(tmp_path), "F32DIG_RESUME": "1",
+            "SGDJSCC_GIT_COMMIT": "a" * 40, "SGDJSCC_GIT_DIRTY": "false",
+            "SGDJSCC_GIT_BRANCH": "main",
+        })
+        result = subprocess.run(
+            [sys.executable, "-c", payload], cwd=str(_REPO_ROOT), env=env,
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode != 0
+        assert "resume requires the original execution_plan.json" in result.stderr
 
 
 @pytest.mark.skipif(

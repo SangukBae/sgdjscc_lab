@@ -158,7 +158,7 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 | Semantic-unit 절감 (키프레임+델타 재사용) | 완료 |
 | Channel-symbol/bit accounting PoC (`accounting/bit_accounting.py`) | 완료 — proxy 상수 기반, 실제 CBR/표준 bitstream 검증 아님 |
 | 실제 binary packet 전송 (`transmission/`, 4/6/8/16/32-bit 양자화) | **정상화·3-GPU 실측 완료** — 10영상×11설정 110/110 pair, 실패·NaN/Inf 0건. `fixed_int6`은 보수적 후보, `fixed_int4`는 최대 절감 후보. digital 절대 품질 저하와 SKEM rate matching 불완전은 미해결 — [2026-08-26 결과](../experiments/2026-08-26_transmission_normalization.md) |
-| float32 digital 품질 저하 진단 harness (`diagnostics/`, `scripts/diagnose_float32_digital_quality.py`) | **진단 환경 구현 완료, 서버 실측 대기** — awgn/digital_inprocess/digital_wire 3경로 stage 계측·ablation·판정 로직을 CPU/mock 테스트(31개)와 dry-run으로만 검증. 서버 GPU 실행 전까지 원인 결론 없음 — [protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md) |
+| float32 digital 품질 저하 진단 harness (`diagnostics/`, `scripts/diagnose_float32_digital_quality.py`) | **진단 환경·3-GPU 병렬 실행기 구현 완료, 서버 실측 대기** — awgn/digital_inprocess/digital_wire 3경로 stage 계측·ablation·판정, worker별 독립 output/resume, evidence-aware 통합 리포트를 CPU/mock 테스트와 dry-run으로 검증. 서버 컨테이너의 NVML/GPU passthrough 복구 후 실측 필요; 그전까지 원인 결론 없음 — [protocols/float32_digital_diagnostics.md](../protocols/float32_digital_diagnostics.md) |
 | Importance-aware / 채널 신호 연동 bit allocation | 미착수 — [roadmap.md](./roadmap.md) §3 |
 
 ### 학습 CLI

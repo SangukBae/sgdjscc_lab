@@ -209,11 +209,33 @@ bash scripts/run_float32_digital_diagnostics.sh --profile short
 bash scripts/run_float32_digital_diagnostics.sh --profile full
 bash scripts/run_float32_digital_diagnostics.sh --resume outputs/f32dig_<timestamp>
 bash scripts/run_float32_digital_diagnostics.sh --cuda-visible-devices 0
+bash scripts/run_float32_digital_diagnostics.sh --profile full --parallel-devices 0,1,2
 ```
 
 실제 GPU 서버의 `sgdjscc_lab:ptest` 컨테이너처럼 `/opt/ptest/bin/python`을 `python`으로 PATH에 노출하는 환경도
 자동 탐지한다. 탐색 순서는 명시적 `PYTHON_BIN` → conda `ptest` → Torch를 import할 수 있는 PATH의 `python` →
 `/opt/ptest/bin/python` 및 일반적인 conda 설치 경로이며, 모든 후보는 실제 `import torch` 성공 여부로 검증한다.
+
+### 3-GPU 병렬 실행
+
+`--parallel-devices 0,1,2`는 각 프로세스에 물리 GPU 하나만 `CUDA_VISIBLE_DEVICES`로 노출하고, 프로세스
+내부에서는 항상 논리 `cuda:0`을 사용한다. 같은 `(video, frame)`의 AWGN/in-process/wire 경로와 ablation 내부
+처리는 한 프로세스에서 순차 실행되므로 경로 비교의 seed·상태 공유·tensor 계측 순서는 바뀌지 않는다. 병렬화
+경계는 서로 독립적인 stage/영상으로만 한정한다.
+
+- phase A: stage 3 → GPU 0, stage 4 → GPU 1, stage 5 → GPU 2 동시 실행
+- phase B: stage 6의 일반 움직임/semantic 변화/scene cut 영상을 GPU 0/1/2에 하나씩 배치
+- stage 6 출력: `stage6_core_conditions/worker_00_normal_motion/`, `worker_01_semantic_change/`,
+  `worker_02_scene_cut/`
+- worker별 output root와 log가 분리되어 CSV/JSONL 동시 쓰기가 없고, 모든 worker 종료 후에만 stage 7 실행
+- `execution_plan.json`에 순차/병렬 모드, commit, profile, 물리 GPU 배치, seed, dataset 경로를 보존한다.
+  `--resume`은 계획이 완전히 동일할 때만 허용하므로 순차 결과와 병렬 결과를 섞지 않는다.
+- SIGINT/SIGTERM은 활성 worker에 전달되고, 완료된 `(video, frame, ablation)` group은 worker별 resume 규칙으로
+  건너뛴다.
+
+full profile에서는 stage 4의 12개 ablation, stage 5의 다중 프레임, stage 6의 3개 영상이 계산량의 대부분이므로
+3-GPU 병렬 실행이 유리하다. smoke profile은 병렬 초기화 비용의 비중이 상대적으로 크지만 GPU 가시성·worker
+분리·통합 동작을 먼저 검증하는 용도로 사용한다.
 
 stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 
@@ -226,7 +248,7 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
    (`baseline` + `diffusion_bypass_vae_direct`)
 6. `stage6_core_conditions/` — 3영상(`01_person_walk` 일반 움직임, `07_person_enter` semantic 변화,
    `09_scene_cut_chair_car` scene cut) x N프레임(`smoke`=3, `short`=10, `full`=100), `baseline`만,
-   tensor 계측 생략(`--no-instrument-tensors`, 규모상 metrics만)
+   tensor 계측 생략(`--no-instrument-tensors`, 규모상 metrics만). 병렬 모드에서는 영상별 worker 하위 디렉터리로 분리
 7. 결과 검증 + 산출물 SHA-256 해시 + `INTEGRATED_REPORT.md`(각 stage의 `summary.json`/`verdicts.jsonl`을
    실제로 읽어 stage별 dominant verdict·판정 개수·실패 건수 표와 전체 통합 판정을 만든다 — 파일 해시 목록만이
    아니다):
@@ -252,6 +274,7 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
   각 stage의 `diagnose_float32_digital_quality.py` 자신이 이를 거부한다(위 "Resume 안전성" 참고) — 셸이
   암묵적으로 모든 실행을 "resume"으로 취급하지 않는다.
 - python 인터프리터 탐색: `PYTHON_BIN` 환경변수 명시 > conda `ptest` env 활성화(conda가 PATH에 있을 때) >
+  Torch를 import할 수 있는 PATH의 `python` > `/opt/ptest/bin/python` >
   `~/anaconda3`/`~/miniconda3`/`~/miniforge3`/`/opt/conda`/`/usr/local/anaconda3`의 `envs/ptest/bin/python`
   순으로 시도 — 매 후보는 실제로 `import torch`가 성공하는지 검증한 뒤에만 채택한다(비대화형 셸에서 conda가
   PATH에 없어 시스템 python으로 조용히 넘어가는 문제의 수정). 전부 실패하면 `PYTHON_BIN`을 직접 지정하라는
@@ -265,20 +288,21 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
   쓰였을 때만 출력된다 — python 실행이 실패했는데도 다음 줄에서 "성공"이라고 보고하지 않는다.
 - preflight 실패 → 즉시 종료(아무 stage도 실행되지 않음)
 - 독립 stage(3~7) 실패 → 기록 후 계속 진행, 최종 exit code는 non-zero(3)
-- SIGINT/SIGTERM → 현재 실행 중인 Python 단계가 자체적으로 manifest/summary/report를 저장한 뒤 종료 코드
-  130으로 끝나고, 셸 드라이버는 즉시 나머지 stage를 건너뛰며 exit 130 — 동일 `--output-root`로 `--resume` 재실행
+- SIGINT/SIGTERM → 현재 실행 중인 모든 병렬 worker에 TERM을 전달하고, Python 단계가 자체적으로
+  manifest/summary/report를 저장한 뒤 종료 코드 130으로 끝나면 셸 드라이버는 나머지 phase를 건너뛰고 exit 130 —
+  동일 `--output-root`와 실행 모드·GPU 배치로 `--resume` 재실행
 - OOM 무한 재시도 없음 — 매 stage는 정확히 한 번만 실행되고, 재시도는 항상 사용자가 명시적으로 재실행(선택적
   `--resume`)해야 함
 
 ## 상태
 
 **진단 환경 구현 완료, 서버 실측 대기.** 이 문서와 harness 자체는 CPU/mock 테스트와 dry-run으로만 검증되었다
-(`tests/test_float32_digital_diagnostics.py`, 46개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
+(`tests/test_float32_digital_diagnostics.py`, 53개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
 효과(VAE-direct bypass가 Canny/ControlNet을 실제로 호출하지 않는지 포함)·NaN 전파·decode parity·verdict 분류
 (edge 비대칭 오탐 방지 및 edge_handling_equalized 실제 연동 포함)·resume 안전성(중복 방지·판정 보존·중단
 직후 판정 복구·provisional→final 재분류·dataset content hash)·baseline-only 집계(보조 증거 과대 집계 방지)·
-REPORT.md 링크 깊이·CLI end-to-end; stage 7의 conflict 검출·auxiliary 분리는 합성 다중-stage 데이터로 별도
-검증). 실제 GPU 추론 기반 판정
+REPORT.md 링크 깊이·CLI end-to-end; stage 7의 conflict 검출·auxiliary 분리·3-GPU nested worker 통합과 병렬
+dry-run GPU/영상 배치는 합성 데이터·CPU 실행으로 검증). 실제 GPU 추론 기반 판정
 (`packet_tx_rx_issue`/`decoder_pipeline_issue`/`latent_normalization_issue`)은 `scripts/
 run_float32_digital_diagnostics.sh`를 서버에서 실행한 뒤에만 유효하다 — 이 문서는 원인 해결이나 품질 정상화를
 주장하지 않는다.
