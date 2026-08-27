@@ -394,7 +394,7 @@ case "$PROFILE" in
     FRAMES_CORE="0-2"          # stage 6: 3 videos x 3 frames
     ;;
   short)
-    FRAMES_PAIRED="0-4"        # stage 5: 1 video x 5 frames
+    FRAMES_PAIRED="0-19"       # stage 5: 1 video x 20 frames (same depth as full)
     FRAMES_CORE="0-9"          # stage 6: 3 videos x 10 frames
     ;;
   full)

@@ -245,7 +245,7 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 2. 관련 테스트(`tests/test_float32_digital_diagnostics.py` 등) + dry-run
 3. `stage3_single_frame_paths/` — 1영상(`01_person_walk`) x 1프레임, 3경로 + tensor 계약 검사
 4. `stage4_single_frame_ablations/` — 동일 (영상, 프레임), 전체 ablation
-5. `stage5_paired_frames/` — 1영상 x N프레임(`smoke`=2, `short`=5, `full`=20) paired 진단
+5. `stage5_paired_frames/` — 1영상 x N프레임(`smoke`=2, `short`=20, `full`=20) paired 진단
    (`baseline` + `diffusion_bypass_vae_direct`)
 6. `stage6_core_conditions/` — 3영상(`01_person_walk` 일반 움직임, `07_person_enter` semantic 변화,
    `09_scene_cut_chair_car` scene cut) x N프레임(`smoke`=3, `short`=10, `full`=100), `baseline`만,

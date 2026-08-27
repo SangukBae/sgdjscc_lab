@@ -710,7 +710,7 @@ class TestThreeGpuServerDriver:
         })
         result = subprocess.run([
             "bash", str(_REPO_ROOT / "scripts" / "run_float32_digital_diagnostics.sh"),
-            "--dry-run", "--profile", "smoke", "--device", "cpu",
+            "--dry-run", "--profile", "short", "--device", "cpu",
             "--parallel-devices", "0,1,2", "--output-root", str(tmp_path / "parallel"),
         ], cwd=str(_REPO_ROOT), capture_output=True, text=True, env=env, timeout=60)
 
@@ -719,6 +719,8 @@ class TestThreeGpuServerDriver:
         assert "worker_00_normal_motion" in result.stdout
         assert "worker_01_semantic_change" in result.stdout
         assert "worker_02_scene_cut" in result.stdout
+        assert "frames           : [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]" in result.stdout
+        assert "total (video,frame,ablation) groups: 40 x up to 3 paths each" in result.stdout
         assert "dry-run complete for all stages" in result.stdout
 
     def test_parallel_devices_must_be_three_unique_indices(self):
