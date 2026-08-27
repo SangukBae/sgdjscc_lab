@@ -98,7 +98,7 @@ bitwise identical인지 별도로 검사한다(`roundtrip_bitexact` 컬럼).
 | `reuse_awgn_step` | digital 경로가 같은 프레임의 AWGN `(cur_step, cur_snr)`를 재사용 |
 | `fixed_step` | 모든 경로의 `cur_step`을 리터럴 상수로 고정(`--fixed-step-value`) |
 | `diffusion_bypass_vae_direct` | Canny 재전송/ControlNet/diffusion 전체 생략, 수신 latent를 VAE로 직접 복원 |
-| `minimal_denoise` | diffusion step 수를 최소화(`--minimal-denoise-steps`) |
+| `minimal_denoise` | diffusion noise level을 최소 2개로 제한해 denoising transition 1회만 실행(`--minimal-denoise-steps`, 최솟값·기본값 2) |
 
 ## CLI
 
@@ -124,7 +124,8 @@ python scripts/diagnose_float32_digital_quality.py --output-root outputs/f32dig_
 주요 옵션: `--video-ids`(comma), `--frames`(`"0"`/`"0,5,9"`/`"0-19"`/`"0-4,10,20-24"`), `--seed`,
 `--paths`(subset of `awgn,digital_inprocess,digital_wire`), `--ablations`(`baseline`|`all`|comma list),
 `--bit-depth`(기본 32), `--granularity`, `--digital-step-policy`, `--fixed-step-value`,
-`--minimal-denoise-steps`, `--no-instrument-tensors`(대규모 다중 프레임 실행에서 tensor 계측 생략),
+`--minimal-denoise-steps`(최솟값·기본값 2; production sampler의 noise level 2개 = denoising transition 1회),
+`--no-instrument-tensors`(대규모 다중 프레임 실행에서 tensor 계측 생략),
 `--save-tensors`(선택적 `.pt` 저장), `--no-models`(CPU/mock), `--resume`.
 
 ### Resume 안전성
@@ -297,7 +298,7 @@ stage 순서(항목별 `--output-root` 하위 디렉터리로 분리):
 ## 상태
 
 **진단 환경 구현 완료, 서버 실측 대기.** 이 문서와 harness 자체는 CPU/mock 테스트와 dry-run으로만 검증되었다
-(`tests/test_float32_digital_diagnostics.py`, 53개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
+(`tests/test_float32_digital_diagnostics.py`, 54개 테스트 통과 — routing·float32 round-trip·tensor 비교·ablation
 효과(VAE-direct bypass가 Canny/ControlNet을 실제로 호출하지 않는지 포함)·NaN 전파·decode parity·verdict 분류
 (edge 비대칭 오탐 방지 및 edge_handling_equalized 실제 연동 포함)·resume 안전성(중복 방지·판정 보존·중단
 직후 판정 복구·provisional→final 재분류·dataset content hash)·baseline-only 집계(보조 증거 과대 집계 방지)·

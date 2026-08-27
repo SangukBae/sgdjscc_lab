@@ -33,7 +33,7 @@ class AblationSpec:
 
 
 def build_default_ablations(
-    *, fixed_step_value: float = 0.5, minimal_denoise_steps: int = 1,
+    *, fixed_step_value: float = 0.5, minimal_denoise_steps: int = 2,
 ) -> Dict[str, AblationSpec]:
     """The full one-factor-at-a-time ablation set the task requires.
 
@@ -42,6 +42,12 @@ def build_default_ablations(
     ``--minimal-denoise-steps``) rather than hardcoded, since the "sensible"
     value depends on the model's step_style/schedule.
     """
+    if minimal_denoise_steps < 2:
+        raise ValueError(
+            "minimal_denoise_steps must be at least 2: the production sampler "
+            "needs two noise levels for one denoising transition"
+        )
+
     specs = [
         AblationSpec("baseline", "No ablation — run's normal per-path behavior."),
         AblationSpec("controlnet_off", "Disable ControlNet conditioning.", use_controlnet=False),

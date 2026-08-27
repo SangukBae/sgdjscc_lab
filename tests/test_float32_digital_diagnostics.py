@@ -279,6 +279,10 @@ class TestAblations:
 
     def test_minimal_denoise_uses_configured_step_count(self):
         models, cfg = _mock_env()
+        assert build_default_ablations()["minimal_denoise"].diffusion_step_override == 2
+        with pytest.raises(ValueError, match="at least 2"):
+            build_default_ablations(minimal_denoise_steps=1)
+
         ablations = build_default_ablations(minimal_denoise_steps=3)
         rec = TensorRecorder(enabled=False)
         out = run_frame_awgn(
@@ -590,6 +594,15 @@ def _run_cli(args, **kwargs):
         [sys.executable, _CLI, *args], cwd=str(_REPO_ROOT),
         capture_output=True, text=True, timeout=180, **kwargs,
     )
+
+
+def test_cli_rejects_minimal_denoise_steps_below_sampler_minimum(tmp_path):
+    result = _run_cli([
+        "--output-root", str(tmp_path / "invalid_minimal_steps"),
+        "--minimal-denoise-steps", "1", "--dry-run",
+    ])
+    assert result.returncode != 0
+    assert "must be at least 2" in result.stderr
 
 
 def _run_integrated_report(tmp_path, stages, *, parallel_devices=""):

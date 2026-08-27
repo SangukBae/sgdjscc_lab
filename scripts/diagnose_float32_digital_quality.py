@@ -111,6 +111,16 @@ def _parse_frame_spec(spec: str) -> List[int]:
     return sorted(out)
 
 
+def _at_least_two_int(value: str) -> int:
+    steps = int(value)
+    if steps < 2:
+        raise argparse.ArgumentTypeError(
+            "must be at least 2 (the production sampler needs two noise levels "
+            "for one denoising transition)"
+        )
+    return steps
+
+
 def _parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="float32 digital Tx/Rx quality diagnostic harness (awgn vs digital_inprocess vs digital_wire).",
@@ -129,7 +139,10 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--digital-step-policy", default="fixed_reference",
                     choices=["fixed_reference", "bitdepth_proxy", "quant_nmse"])
     p.add_argument("--fixed-step-value", type=float, default=0.5)
-    p.add_argument("--minimal-denoise-steps", type=int, default=1)
+    p.add_argument(
+        "--minimal-denoise-steps", type=_at_least_two_int, default=2,
+        help="Noise-level count for minimal_denoise; 2 is one denoising transition.",
+    )
     p.add_argument("--record-patch-index", type=int, default=0,
                     help="Which patch index gets tensor-stage instrumentation (representative patch).")
     p.add_argument("--no-instrument-tensors", action="store_true",
