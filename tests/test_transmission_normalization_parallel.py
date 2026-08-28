@@ -151,6 +151,40 @@ def test_quantization_10db_wrapper_locks_scientific_scope(tmp_path):
     assert payload["plan"]["devices"] == ["cuda:0", "cuda:1", "cuda:2"]
 
 
+def test_fixed_skem_wrapper_locks_exact_matched_rate_scope(tmp_path):
+    env = os.environ.copy()
+    env.update({
+        "PYTHON_BIN": sys.executable,
+        "SGDJSCC_GIT_COMMIT": "a" * 40,
+        "SGDJSCC_GIT_DIRTY": "false",
+        "SGDJSCC_GIT_BRANCH": "main",
+    })
+    result = subprocess.run(
+        [
+            "bash", "scripts/run_fixed_skem_matched_rate_10db.sh",
+            "--dry-run", "--max-frames", "2", "--output-root", str(tmp_path / "out"),
+            "--fixed-reference-snr-db", "60", "--configs", "fixed_int4",
+        ],
+        cwd=str(_ROOT), env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    settings = payload["plan"]["settings"]
+    assert settings["configs"] == (
+        "fixed_float32,fixed_int16,fixed_int8,fixed_int6,fixed_int4,"
+        "skem_float32,skem_int16,skem_int8,skem_int6,skem_int4"
+    )
+    assert settings["fixed_reference_snr_db"] == 10.0
+    assert settings["match_fixed_keyframes"] is False
+    assert settings["match_actual_transmissions"] is True
+    assert settings["skip_keyframe_sweep"] is True
+    assert settings["skip_source_size_report"] is True
+    assert payload["plan"]["devices"] == ["cuda:0", "cuda:1", "cuda:2"]
+    for command in payload["commands"]:
+        assert "--match-actual-transmissions" in command
+        assert "--match-fixed-keyframes" not in command
+
+
 def test_merge_builds_global_aggregate_effects_and_manifest(tmp_path):
     plan = {
         "schema_version": 1,

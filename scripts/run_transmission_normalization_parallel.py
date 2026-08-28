@@ -39,10 +39,12 @@ MERGED_CSV_KEYS = {
     "failed_pairs.csv": ("video", "config"),
     "source_size_report.csv": ("video",),
     "quantization_diagnostics.csv": ("video", "config", "frame_index", "patch_index"),
+    "matched_rate_plan.csv": ("video",),
 }
 PARENT_ARTIFACTS = (
     "parallel_plan.json", "parallel_worker_status.json", "per_video_metrics.csv",
-    "aggregate.csv", "pareto_frontier.csv", "rate_matching.csv",
+    "aggregate.csv", "pareto_frontier.csv", "rate_matching.csv", "matched_rate_plan.csv",
+    "matched_rate_quality_effect.csv", "matched_rate_validation.json", "MATCHED_RATE_REPORT.md",
     "keyframe_selection.csv", "packet_components.csv", "keyframe_sweep.csv",
     "failed_pairs.csv", "source_size_report.csv", "quantization_diagnostics.csv",
     "quantization_effect.csv", "selector_effect.csv",
@@ -86,6 +88,19 @@ def _parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--psss-max-segment-length", type=int, default=None)
     parser.add_argument("--use-scene-detector", action="store_true")
     parser.add_argument("--no-match-fixed-keyframes", action="store_true")
+    parser.add_argument("--match-actual-transmissions", action="store_true")
+    parser.add_argument(
+        "--matched-rate-thresholds",
+        default=",".join(str(value) for value in (
+            tuple(round(-0.95 + 0.05 * index, 10) for index in range(39)) + (0.999999,)
+        )),
+    )
+    parser.add_argument(
+        "--matched-rate-max-segment-lengths",
+        default="8,10,12,14,16,20,24,32,48,64,100",
+    )
+    parser.add_argument("--skip-keyframe-sweep", action="store_true")
+    parser.add_argument("--skip-source-size-report", action="store_true")
     parser.add_argument("--retry-failed", action="store_true")
     parser.add_argument("--preflight-only", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -169,7 +184,14 @@ def _plan(args: argparse.Namespace, devices: Sequence[str], videos: Sequence[Dic
             "psss_threshold": args.psss_threshold,
             "psss_max_segment_length": args.psss_max_segment_length,
             "use_scene_detector": args.use_scene_detector,
-            "match_fixed_keyframes": not args.no_match_fixed_keyframes,
+            "match_fixed_keyframes": (
+                not args.no_match_fixed_keyframes and not args.match_actual_transmissions
+            ),
+            "match_actual_transmissions": args.match_actual_transmissions,
+            "matched_rate_thresholds": args.matched_rate_thresholds,
+            "matched_rate_max_segment_lengths": args.matched_rate_max_segment_lengths,
+            "skip_keyframe_sweep": args.skip_keyframe_sweep,
+            "skip_source_size_report": args.skip_source_size_report,
         },
     }
 
@@ -222,8 +244,18 @@ def _worker_command(
         command.extend(["--psss-max-segment-length", str(args.psss_max_segment_length)])
     if args.use_scene_detector:
         command.append("--use-scene-detector")
-    if args.no_match_fixed_keyframes:
+    if args.match_actual_transmissions:
+        command.extend([
+            "--no-match-fixed-keyframes", "--match-actual-transmissions",
+            "--matched-rate-thresholds", args.matched_rate_thresholds,
+            "--matched-rate-max-segment-lengths", args.matched_rate_max_segment_lengths,
+        ])
+    elif args.no_match_fixed_keyframes:
         command.append("--no-match-fixed-keyframes")
+    if args.skip_keyframe_sweep:
+        command.append("--skip-keyframe-sweep")
+    if args.skip_source_size_report:
+        command.append("--skip-source-size-report")
     if args.retry_failed:
         command.append("--retry-failed")
     return command
@@ -275,7 +307,20 @@ def merge_worker_outputs(
     summarizer.run(["--run-root", str(output_root)])
 
     failed_pairs = merged["failed_pairs.csv"]
-    run_status = "completed_with_failures" if failed_pairs else "completed"
+    matched_rate_validation = None
+    if plan.get("settings", {}).get("match_actual_transmissions"):
+        validator = _load_script(
+            "_fixed_skem_matched_rate_validator", "validate_fixed_skem_matched_rate.py"
+        )
+        matched_rate_validation = validator.validate(output_root)
+        validator.write_outputs(output_root, matched_rate_validation)
+    run_status = (
+        "completed_with_failures" if failed_pairs else
+        "completed_validation_failed"
+        if matched_rate_validation is not None
+        and not matched_rate_validation["validation_passed"] else
+        "completed"
+    )
     summary = {
         "run_status": run_status,
         "parallel": True,
@@ -289,6 +334,7 @@ def merge_worker_outputs(
             (row for row in pareto_rows if row.get("selected_as_smallest_in_budget")), None
         ),
         "worker_statuses": list(worker_statuses),
+        "matched_rate_validation": matched_rate_validation,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     _atomic_json(output_root / "summary.json", summary)
@@ -299,6 +345,7 @@ def merge_worker_outputs(
   - GPU worker: {len(plan['assignments'])}개 (`{', '.join(plan['devices'])}`)
   - 완료 pair: {len(per_video_rows)}개
   - 실패 pair: {len(failed_pairs)}개
+  - exact matched-rate 검증: {"해당 없음" if matched_rate_validation is None else ("PASS" if matched_rate_validation["validation_passed"] else "FAIL — matched_rate_validation.json 확인")}
 - 안전성
   - worker별 독립 디렉터리: `workers/worker_NN/`
   - 공용 CSV 동시 쓰기 없음
@@ -426,7 +473,11 @@ def run(argv=None) -> int:
         return 1
     summary = merge_worker_outputs(output_root, plan, statuses, sys.argv if argv is None else [sys.argv[0], *argv])
     print(json.dumps(summary, indent=2))
-    return 3 if summary["run_status"] == "completed_with_failures" else 0
+    if summary["run_status"] == "completed_with_failures":
+        return 3
+    if summary["run_status"] == "completed_validation_failed":
+        return 4
+    return 0
 
 
 if __name__ == "__main__":

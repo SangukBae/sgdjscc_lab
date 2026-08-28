@@ -136,6 +136,33 @@ supersedes:
     `selector_effect_ablation.csv`
   - `ablation_label`은 per-video·aggregate·effect 표·run signature에 보존
 
+## fixed/SKEM 실제 전송량 정합 (`--match-actual-transmissions`)
+
+- 권장 실행기는 `scripts/run_fixed_skem_matched_rate_10db.sh`이다. 3개 GPU,
+  10dB fixed-reference decoder step, fixed/SKEM × float32/int16/int8/int6/int4,
+  seed 2025, proxy PSSS를 고정한다. AWGN은 이 paired digital 비교에서 제외한다.
+- fixed selector는 `fixed_max_gop` 기준을 바꾸지 않는다. 대신 각 영상에서 SKEM의
+  PSSS threshold/max-segment를 결정론적 grid로 보정해 `keyframe` +
+  `recompute_semantic` + `recompute_motion`의 **실제 visual 전송 프레임 수**를 fixed와
+  정확히 맞춘다. exact 후보가 없으면 전체 복원을 시작하기 전에 실패한다.
+- planning은 실제 sender와 같은 `SemanticPacketExtractor`와 canonical JSON Rx 경계를
+  사용한다. full pipeline 종료 후 계획 index와 실제 `FrameRecord.decision` index가
+  하나라도 다르면 해당 실행을 즉시 실패시킨다.
+- `matched_rate_plan.csv`는 영상별 선택 parameter, keyframe/전송 index, 후보 수를 남긴다.
+  `rate_matching.csv`는 실제 전송 수 일치와 raw bundle byte 차이 1% 이내를 모두 요구한다.
+  작은 쪽에는 차이만큼 padding byte를 명시적으로 계상해 fixed/SKEM effective bytes를
+  완전히 동일하게 만든다. raw와 padding/effective byte는 모두 별도 컬럼으로 보존한다.
+- 병합 후 `validate_fixed_skem_matched_rate.py`가 100개 video-config pair, 50개
+  video-channel rate row, 실패/non-finite 0, 모든 행의 10dB, 3-worker provenance,
+  계획/실제 전송 수, 1% raw gate, padding 후 exact byte를 fail-closed로 검증한다.
+  결과는 `matched_rate_validation.json`, `matched_rate_quality_effect.csv`,
+  `MATCHED_RATE_REPORT.md`이며 실패 시 상위 실행은 종료 코드 4를 반환한다.
+
+```bash
+bash scripts/run_fixed_skem_matched_rate_10db.sh \
+  --output-root outputs/fixed_skem_matched_rate_10db_$(date +%Y%m%d_%H%M%S)
+```
+
 ## bytes/video vs bytes/frame — 단위 혼동 금지
 
 - `per_video_metrics.csv`/`aggregate.csv`: `total_bundle_bytes`(**bytes/video**)와

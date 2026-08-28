@@ -72,6 +72,21 @@ class TestArgParsing:
         assert mod._parse_args(["--output-root", "/tmp/x"]).retry_failed is False
         assert mod._parse_args(["--output-root", "/tmp/x", "--retry-failed"]).retry_failed is True
 
+    def test_actual_transmission_matching_is_explicit_and_exclusive(self, tmp_path):
+        import pytest
+
+        args = mod._parse_args([
+            "--output-root", "/tmp/x", "--match-actual-transmissions",
+        ])
+        assert args.match_actual_transmissions is True
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            mod.run([
+                "--output-root", str(tmp_path / "out"),
+                "--dataset-root", str(tmp_path),
+                "--configs", "fixed_int8,skem_int8",
+                "--match-fixed-keyframes", "--match-actual-transmissions",
+            ])
+
     def test_fixed_reference_snr_is_explicit_and_overridable(self):
         assert mod._parse_args(["--output-root", "/tmp/x"]).fixed_reference_snr_db == 10.0
         args = mod._parse_args([
@@ -712,3 +727,67 @@ class TestRateMatching:
     def test_missing_counterpart_selector_skipped(self):
         rows = [_pv_row(video="v1", config="fixed_int8", selector="fixed", channel="int8")]
         assert mod._compute_rate_matching(rows) == []
+
+    def test_actual_transmission_mode_uses_one_percent_and_exact_padding(self):
+        rows = [
+            _pv_row(
+                video="v1", config="fixed_int8", selector="fixed", channel="int8",
+                total_bundle_bytes=10000, total_bundle_bytes_per_frame=1000,
+                n_transmitting_frames=4, n_keyframes_selected=3,
+                matched_rate_mode="actual_transmissions",
+            ),
+            _pv_row(
+                video="v1", config="skem_int8", selector="skem", channel="int8",
+                total_bundle_bytes=10050, total_bundle_bytes_per_frame=1005,
+                n_transmitting_frames=4, n_keyframes_selected=5,
+                matched_rate_mode="actual_transmissions",
+            ),
+        ]
+        row = mod._compute_rate_matching(rows)[0]
+        assert row["keyframe_count_matched"] is False
+        assert row["transmitting_frame_count_matched"] is True
+        assert row["byte_diff_ratio_tolerance"] == mod.ACTUAL_TRANSMISSION_BYTE_TOLERANCE
+        assert row["fixed_padding_bytes"] == 50
+        assert row["skem_padding_bytes"] == 0
+        assert row["fixed_effective_total_bytes"] == row["skem_effective_total_bytes"]
+        assert row["effective_bytes_exact"] is True
+        assert row["rate_matched"] is True
+
+    def test_actual_transmission_mode_rejects_count_or_one_percent_violation(self):
+        base = _pv_row(
+            config="fixed_int8", selector="fixed", channel="int8",
+            total_bundle_bytes=10000, n_transmitting_frames=4,
+            matched_rate_mode="actual_transmissions",
+        )
+        count_mismatch = _pv_row(
+            config="skem_int8", selector="skem", channel="int8",
+            total_bundle_bytes=10000, n_transmitting_frames=5,
+            matched_rate_mode="actual_transmissions",
+        )
+        assert mod._compute_rate_matching([base, count_mismatch])[0]["rate_matched"] is False
+        byte_mismatch = dict(count_mismatch, n_transmitting_frames=4, total_bundle_bytes=10200)
+        assert mod._compute_rate_matching([base, byte_mismatch])[0]["rate_matched"] is False
+
+
+class TestActualTransmissionPlanning:
+    def test_planner_mirrors_keyframe_anchored_semantic_recompute_schedule(self):
+        packets = [
+            {"objects": ["person"], "relations": [], "attributes": {}, "scene": "road"},
+            {"objects": ["person"], "relations": [], "attributes": {}, "scene": "road"},
+            {"objects": ["car"], "relations": [], "attributes": {}, "scene": "road"},
+            {"objects": ["car"], "relations": [], "attributes": {}, "scene": "road"},
+        ]
+        result = {"keyframes": [0, 3]}
+        assert mod._planned_transmitting_indices(
+            result, packets, reuse_threshold=0.2,
+        ) == [0, 2, 3]
+
+    def test_calibration_grids_are_sorted_unique_and_validated(self):
+        import pytest
+
+        assert mod._parse_float_grid("0.5,0.1,0.5", name="grid") == [0.1, 0.5]
+        assert mod._parse_positive_int_grid("16,8,16", name="grid") == [8, 16]
+        with pytest.raises(ValueError):
+            mod._parse_float_grid("nan", name="grid")
+        with pytest.raises(ValueError):
+            mod._parse_positive_int_grid("0,8", name="grid")

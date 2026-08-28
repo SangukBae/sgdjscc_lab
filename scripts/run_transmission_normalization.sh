@@ -30,6 +30,11 @@ MAX_FRAMES="${MAX_FRAMES:-}"
 DATASET_ROOT="${DATASET_ROOT:-$ROOT_DIR/data/etri_video_eval}"
 OUTPUT_ROOT=""
 MATCH_FIXED_KEYFRAMES=1
+MATCH_ACTUAL_TRANSMISSIONS=0
+MATCHED_RATE_THRESHOLDS="${MATCHED_RATE_THRESHOLDS:--0.95,-0.9,-0.85,-0.8,-0.75,-0.7,-0.65,-0.6,-0.55,-0.5,-0.45,-0.4,-0.35,-0.3,-0.25,-0.2,-0.15,-0.1,-0.05,0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,0.999999}"
+MATCHED_RATE_MAX_SEGMENT_LENGTHS="${MATCHED_RATE_MAX_SEGMENT_LENGTHS:-8,10,12,14,16,20,24,32,48,64,100}"
+SKIP_KEYFRAME_SWEEP=0
+SKIP_SOURCE_SIZE_REPORT=0
 PREFLIGHT_ONLY=0
 DRY_RUN=0
 MIN_FREE_DISK_GIB=20
@@ -70,6 +75,14 @@ Usage: run_transmission_normalization.sh [options]
   --no-match-fixed-keyframes   Disable exact keyframe-count matching between fixed and SKEM
                                (ON by default -- FixedCountKeyframeSelector, see
                                run_transmission_reduction_eval.py's --match-fixed-keyframes).
+  --match-actual-transmissions Keep fixed max-GOP unchanged and calibrate SKEM per video so
+                               actual visual-transmitting frame counts match exactly.
+  --matched-rate-thresholds CSV
+                               PSSS threshold calibration grid for the exact mode.
+  --matched-rate-max-segment-lengths CSV
+                               Max-segment calibration grid for the exact mode.
+  --skip-keyframe-sweep        Skip the unrelated diagnostic PSSS sweep.
+  --skip-source-size-report    Skip the unrelated source MP4 size table.
   --seed N                     Base seed for Python/NumPy/PyTorch/CUDA (default: 2025).
   --digital-step-policy NAME   fixed_reference (default) | bitdepth_proxy | quant_nmse.
                                Anything but fixed_reference REQUIRES --ablation-label.
@@ -99,6 +112,11 @@ while [ $# -gt 0 ]; do
     --dataset-root) DATASET_ROOT="$2"; shift 2 ;;
     --output-root) OUTPUT_ROOT="$2"; shift 2 ;;
     --no-match-fixed-keyframes) MATCH_FIXED_KEYFRAMES=0; shift ;;
+    --match-actual-transmissions) MATCH_ACTUAL_TRANSMISSIONS=1; MATCH_FIXED_KEYFRAMES=0; shift ;;
+    --matched-rate-thresholds) MATCHED_RATE_THRESHOLDS="$2"; shift 2 ;;
+    --matched-rate-max-segment-lengths) MATCHED_RATE_MAX_SEGMENT_LENGTHS="$2"; shift 2 ;;
+    --skip-keyframe-sweep) SKIP_KEYFRAME_SWEEP=1; shift ;;
+    --skip-source-size-report) SKIP_SOURCE_SIZE_REPORT=1; shift ;;
     --seed) SEED="$2"; shift 2 ;;
     --digital-step-policy) DIGITAL_STEP_POLICY="$2"; shift 2 ;;
     --fixed-reference-snr-db) FIXED_REFERENCE_SNR_DB="$2"; shift 2 ;;
@@ -279,6 +297,13 @@ SWEEP_CMD=("$PYTHON_BIN" scripts/run_transmission_reduction_eval.py
 [ -n "$VIDEO_IDS" ] && SWEEP_CMD+=(--video-ids "$VIDEO_IDS")
 [ -n "$MAX_FRAMES" ] && SWEEP_CMD+=(--max-frames "$MAX_FRAMES")
 [ "$MATCH_FIXED_KEYFRAMES" -eq 1 ] && SWEEP_CMD+=(--match-fixed-keyframes)
+[ "$MATCH_ACTUAL_TRANSMISSIONS" -eq 1 ] && SWEEP_CMD+=(
+  --match-actual-transmissions
+  --matched-rate-thresholds "$MATCHED_RATE_THRESHOLDS"
+  --matched-rate-max-segment-lengths "$MATCHED_RATE_MAX_SEGMENT_LENGTHS"
+)
+[ "$SKIP_KEYFRAME_SWEEP" -eq 1 ] && SWEEP_CMD+=(--skip-keyframe-sweep)
+[ "$SKIP_SOURCE_SIZE_REPORT" -eq 1 ] && SWEEP_CMD+=(--skip-source-size-report)
 [ -n "$ABLATION_LABEL" ] && SWEEP_CMD+=(--ablation-label "$ABLATION_LABEL")
 [ -n "$PSSS_MODEL_ID" ] && SWEEP_CMD+=(--psss-model-id "$PSSS_MODEL_ID")
 [ -n "$PSSS_THRESHOLD" ] && SWEEP_CMD+=(--psss-threshold "$PSSS_THRESHOLD")
@@ -318,7 +343,7 @@ else
   log "  quantization_effect_ablation.csv             -- decoder-step ablation table"
   log "  selector_effect_ablation.csv                 -- decoder-step ablation selector table"
 fi
-log "  rate_matching.csv                            -- fixed vs SKEM byte closeness at matched keyframe count"
+log "  rate_matching.csv                            -- fixed vs SKEM actual transmission/byte matching"
 log "  pareto_frontier.csv / summary.json            -- Pareto candidate under the quality gate"
 log "  run_manifest_initial.json / run_manifest.json -- commit/dirty, argv, resolved config, hashes, env"
 log "  run_signature.json                           -- resume safety signature (refuses a mismatched resume)"

@@ -117,6 +117,14 @@ TRANSMITTING_DECISIONS = ("keyframe", "recompute_semantic", "recompute_motion")
 
 DEFAULT_PSSS_THRESHOLDS = (0.25, 0.35, 0.45, 0.55)
 DEFAULT_MAX_SEGMENT_LENGTHS = (12, 16, 24, 32)
+# Per-video calibration grid used only by --match-actual-transmissions.  PSSS
+# S_rel lives in (-1, 1); the endpoints make "almost every semantic change"
+# and "almost no semantic change" representable while keeping the search
+# deterministic and small enough to run before the expensive reconstructions.
+DEFAULT_MATCHED_RATE_THRESHOLDS = tuple(
+    round(-0.95 + 0.05 * index, 10) for index in range(39)
+) + (0.999999,)
+DEFAULT_MATCHED_RATE_MAX_SEGMENT_LENGTHS = (8, 10, 12, 14, 16, 20, 24, 32, 48, 64, 100)
 
 # Quality-degradation gate (task spec): a candidate config is "in budget" when
 # it does not lose more than this much quality vs the reliable-digital baseline.
@@ -194,6 +202,25 @@ def _parse_args(argv=None) -> argparse.Namespace:
              "keyframe count exactly matches this run's SKEM selection for the same video. "
              "Rate matching additionally requires the measured bundle-byte tolerance, instead of comparing "
              "fixed's fixed --fixed-max-gop against whatever count SKEM happens to pick.",
+    )
+    p.add_argument(
+        "--match-actual-transmissions", action="store_true",
+        help="Keep the fixed max-GOP selector unchanged and calibrate SKEM per video so the "
+             "actual number of visual-transmitting decisions (keyframe + recompute_semantic/"
+             "recompute_motion) exactly matches fixed. This is the fair matched-rate mode; "
+             "it is mutually exclusive with legacy --match-fixed-keyframes.",
+    )
+    p.add_argument(
+        "--matched-rate-thresholds",
+        default=",".join(str(value) for value in DEFAULT_MATCHED_RATE_THRESHOLDS),
+        help="Comma-separated deterministic PSSS threshold search grid used by "
+             "--match-actual-transmissions.",
+    )
+    p.add_argument(
+        "--matched-rate-max-segment-lengths",
+        default=",".join(str(value) for value in DEFAULT_MATCHED_RATE_MAX_SEGMENT_LENGTHS),
+        help="Comma-separated positive max-segment search grid used by "
+             "--match-actual-transmissions.",
     )
     p.add_argument("--skip-keyframe-sweep", action="store_true",
                     help="Skip the threshold x max_segment_length PSSS sweep (keyframe_sweep.csv).")
@@ -379,6 +406,208 @@ def _selection_from_result(
         psss_scores=list(result.get("psss_scores", [])),
         psss_backend_kind=result.get("psss_backend_kind"),
     )
+
+
+def _parse_float_grid(text: str, *, name: str) -> List[float]:
+    values = [float(item.strip()) for item in str(text).split(",") if item.strip()]
+    if not values or any(not math.isfinite(value) for value in values):
+        raise ValueError(f"{name} must contain one or more finite comma-separated floats")
+    return sorted(set(values))
+
+
+def _parse_positive_int_grid(text: str, *, name: str) -> List[int]:
+    values = [int(item.strip()) for item in str(text).split(",") if item.strip()]
+    if not values or any(value < 1 for value in values):
+        raise ValueError(f"{name} must contain one or more positive comma-separated integers")
+    return sorted(set(values))
+
+
+class _CachingPsssBackend:
+    """Memoise PSSS results across the matched-rate threshold/grid search.
+
+    The selector is autoregressive, so different thresholds revisit many of
+    the same caption pairs.  Real/proxy backends can be expensive; caching the
+    immutable score preserves the exact decision while avoiding repeated
+    model calls.  Provenance attributes are delegated to the wrapped backend.
+    """
+
+    def __init__(self, backend) -> None:
+        self.backend = backend
+        self.cache: Dict[tuple, Any] = {}
+
+    def score(self, info_a, info_b, semantic_focus):
+        key = (str(info_a or ""), str(info_b or ""), str(semantic_focus))
+        if key not in self.cache:
+            self.cache[key] = self.backend.score(info_a, info_b, semantic_focus)
+        return self.cache[key]
+
+    def __getattr__(self, name):
+        return getattr(self.backend, name)
+
+
+def _extract_rate_planning_packets(frames, captions, models) -> List[Dict[str, Any]]:
+    """Extract the exact sender-side semantic packets once for rate planning.
+
+    The canonical JSON round-trip mirrors ``_run_temporal_pipeline``'s actual
+    sender/receiver boundary.  Temporal reuse/recompute decisions depend only
+    on these original-frame packets and the selected keyframe anchors, not on
+    the reconstructed pixels or digital bit depth.
+    """
+    from sgdjscc_lab.guidance.semantic_packet_extractor import SemanticPacketExtractor
+
+    extractor = SemanticPacketExtractor(
+        text_extractor=getattr(models, "text_extractor", None),
+        clip_evaluator=None,
+        device=models.device,
+    )
+    packets: List[Dict[str, Any]] = []
+    for index, frame in enumerate(frames):
+        caption = captions[index] if captions and index < len(captions) else None
+        packet = extractor.extract(frame, frame_id=f"frame_{index:05d}", caption=caption)
+        payload = json.dumps(
+            packet, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        packets.append(json.loads(payload.decode("utf-8")))
+    return packets
+
+
+def _planned_transmitting_indices(
+    selection_result: Dict[str, Any], semantic_packets: List[Dict[str, Any]],
+    *, reuse_threshold: float,
+) -> List[int]:
+    """Mirror the default TemporalPipeline visual-transmission decisions.
+
+    This planner deliberately supports the matched-rate wrapper's locked
+    default contract only: semantic gate enabled, motion gate disabled and
+    video-generation branch disabled.  Under that contract an inter frame
+    transmits iff its semantic delta from the current keyframe anchor is not
+    below ``reuse_threshold``.  The full run verifies the planned count
+    against the actual ``FrameRecord.decision`` values and fails closed on a
+    mismatch.
+    """
+    from sgdjscc_lab.video.semantic_delta import SemanticDelta
+
+    keyframes = {int(index) for index in selection_result.get("keyframes", [])}
+    if semantic_packets and 0 not in keyframes:
+        raise ValueError("matched-rate selector must include frame 0 as a keyframe")
+    delta = SemanticDelta()
+    anchor = None
+    transmitting: List[int] = []
+    for index, packet in enumerate(semantic_packets):
+        if index in keyframes:
+            anchor = packet
+            transmitting.append(index)
+            continue
+        if anchor is None:
+            raise ValueError(f"no keyframe anchor available for frame {index}")
+        if delta.compute(anchor, packet)["magnitude"] >= float(reuse_threshold):
+            transmitting.append(index)
+    return transmitting
+
+
+def _build_actual_transmission_plan(
+    video_key: str, frames, captions, models, cfg, args,
+) -> tuple:
+    """Choose a per-video SKEM operating point matching fixed transmissions.
+
+    Returns ``(plan_row, fixed_result, skem_result)``.  Candidate selection is
+    lexicographic: actual transmitting-frame count error first, then keyframe
+    count distance (a useful byte-proximity proxy once visual transmission
+    counts are equal), then distance from the documented default SKEM knobs.
+    An exact transmission-count candidate is mandatory; the expensive full
+    reconstructions never start for a video whose rate cannot be calibrated.
+    """
+    from omegaconf import OmegaConf
+
+    motion_threshold = OmegaConf.select(cfg, "temporal.motion_threshold", default=None)
+    generate_enabled = bool(OmegaConf.select(cfg, "video_generator.enabled", default=False))
+    if motion_threshold is not None or generate_enabled:
+        raise ValueError(
+            "--match-actual-transmissions requires temporal.motion_threshold=null and "
+            "video_generator.enabled=false so the precomputed semantic schedule exactly "
+            "matches TemporalPipeline decisions"
+        )
+    reuse_threshold = float(OmegaConf.select(cfg, "temporal.reuse_threshold", default=0.2))
+    semantic_threshold = OmegaConf.select(cfg, "temporal.semantic_delta_threshold", default=None)
+    if semantic_threshold is not None:
+        reuse_threshold = float(semantic_threshold)
+
+    semantic_packets = _extract_rate_planning_packets(frames, captions, models)
+    fixed_extractor = _build_selector(
+        "fixed", captions, args.psss_threshold, args.psss_max_segment_length, args,
+    )
+    fixed_result = fixed_extractor.extract(frames)
+    fixed_tx = _planned_transmitting_indices(
+        fixed_result, semantic_packets, reuse_threshold=reuse_threshold,
+    )
+    fixed_keyframes = list(fixed_result.get("keyframes", []))
+
+    thresholds = _parse_float_grid(
+        args.matched_rate_thresholds, name="--matched-rate-thresholds",
+    )
+    max_lengths = _parse_positive_int_grid(
+        args.matched_rate_max_segment_lengths,
+        name="--matched-rate-max-segment-lengths",
+    )
+    candidates = []
+    caching_backend = None
+    for threshold in thresholds:
+        for max_length in max_lengths:
+            extractor = _build_selector(
+                "skem", captions, threshold, max_length, args,
+            )
+            if caching_backend is None:
+                caching_backend = _CachingPsssBackend(extractor.psss_backend)
+            extractor.psss_backend = caching_backend
+            result = extractor.extract(frames)
+            transmitting = _planned_transmitting_indices(
+                result, semantic_packets, reuse_threshold=reuse_threshold,
+            )
+            keyframes = list(result.get("keyframes", []))
+            score = (
+                abs(len(transmitting) - len(fixed_tx)),
+                abs(len(keyframes) - len(fixed_keyframes)),
+                abs(float(threshold) - float(args.psss_threshold)),
+                abs(int(max_length) - int(args.psss_max_segment_length)),
+                float(threshold), int(max_length),
+            )
+            candidates.append((score, threshold, max_length, result, transmitting))
+
+    candidates.sort(key=lambda item: item[0])
+    _, threshold, max_length, skem_result, skem_tx = candidates[0]
+    exact_candidates = sum(
+        len(item[4]) == len(fixed_tx) for item in candidates
+    )
+    exact = len(skem_tx) == len(fixed_tx)
+    if not exact:
+        raise RuntimeError(
+            f"[{video_key}] no SKEM candidate matched fixed's actual visual-transmission "
+            f"count={len(fixed_tx)} across {len(candidates)} candidates; closest selected "
+            f"{len(skem_tx)}. Expand --matched-rate-thresholds/"
+            "--matched-rate-max-segment-lengths before running full reconstruction."
+        )
+
+    plan_row = {
+        "video": video_key,
+        "mode": "actual_transmissions",
+        "fixed_max_gop": int(args.fixed_max_gop),
+        "reuse_threshold": reuse_threshold,
+        "psss_backend_kind": skem_result.get("psss_backend_kind", ""),
+        "selected_psss_threshold": float(threshold),
+        "selected_psss_max_segment_length": int(max_length),
+        "fixed_n_keyframes": len(fixed_keyframes),
+        "skem_n_keyframes": len(skem_result.get("keyframes", [])),
+        "target_n_transmitting_frames": len(fixed_tx),
+        "skem_planned_n_transmitting_frames": len(skem_tx),
+        "transmitting_frame_count_exact": exact,
+        "fixed_keyframe_indices": json.dumps(fixed_keyframes),
+        "skem_keyframe_indices": json.dumps(list(skem_result.get("keyframes", []))),
+        "fixed_transmitting_indices": json.dumps(fixed_tx),
+        "skem_transmitting_indices": json.dumps(skem_tx),
+        "n_candidates_evaluated": len(candidates),
+        "n_exact_transmission_count_candidates": exact_candidates,
+    }
+    return plan_row, fixed_result, skem_result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -660,6 +889,29 @@ def run(argv=None) -> int:
             "not the quantization comparison ('fixed_reference' is) -- pass --ablation-label "
             "so this run can never be silently mixed into quantization_effect.csv."
         )
+    if args.match_fixed_keyframes and args.match_actual_transmissions:
+        raise ValueError(
+            "--match-fixed-keyframes and --match-actual-transmissions are mutually exclusive"
+        )
+    if args.match_actual_transmissions:
+        fixed_channels = {
+            name.split("_", 1)[1] for name in configs if name.startswith("fixed_")
+        }
+        skem_channels = {
+            name.split("_", 1)[1] for name in configs if name.startswith("skem_")
+        }
+        if fixed_channels != skem_channels or not fixed_channels or "awgn" in fixed_channels:
+            raise ValueError(
+                "--match-actual-transmissions requires paired fixed/skem digital configs "
+                "with identical channel sets and no AWGN row"
+            )
+        _parse_float_grid(
+            args.matched_rate_thresholds, name="--matched-rate-thresholds",
+        )
+        _parse_positive_int_grid(
+            args.matched_rate_max_segment_lengths,
+            name="--matched-rate-max-segment-lengths",
+        )
 
     for sub in ("packets", "recon_videos", "configs", "logs"):
         (output_root / sub).mkdir(parents=True, exist_ok=True)
@@ -730,6 +982,12 @@ def run(argv=None) -> int:
     quantization_diagnostic_rows: List[Dict[str, Any]] = _read_csv_dicts(
         output_root / "quantization_diagnostics.csv"
     )
+    matched_rate_plan_rows: List[Dict[str, Any]] = _read_csv_dicts(
+        output_root / "matched_rate_plan.csv"
+    )
+    matched_rate_plan_by_video = {
+        row["video"]: row for row in matched_rate_plan_rows
+    }
     per_video_rows: List[Dict[str, Any]] = per_video_rows_initial
     done_pairs = {(r["video"], r["config"]) for r in per_video_rows}
     failed_pair_keys = {(r["video"], r["config"]) for r in failed_pairs}
@@ -769,17 +1027,62 @@ def run(argv=None) -> int:
                 frames = frames[: args.max_frames]
             captions = _load_captions(entry["captions"], len(frames))
 
-            # Keyframe-count matching: build the fixed selector as a
-            # FixedCountKeyframeSelector with EXACTLY this video's SKEM
-            # keyframe count (never a max_gop approximation) so fixed_* vs
-            # skem_* isolates the channel/quantization effect from "SKEM just
-            # picked a different number of keyframes." See
-            # video/keyframe_extractor.py::FixedCountKeyframeSelector.
             fixed_count_target = None
+            matched_plan_row = None
             selector_results: Dict[str, Any] = {}
             selector_summaries: Dict[str, KeyframeSelection] = {}
-            requested_selectors = {name.split("_", 1)[0] for name in pending_configs}
-            if "skem" in requested_selectors or args.match_fixed_keyframes:
+            # Derive this from the full run config, not only pending pairs: a
+            # partial resume may have just fixed or just SKEM left, while its
+            # selector plan must remain the same paired plan as the original.
+            requested_selectors = {name.split("_", 1)[0] for name in configs}
+            if args.match_actual_transmissions:
+                matched_plan_row, fixed_result, skem_result = _build_actual_transmission_plan(
+                    video_key, frames, captions, models, cfg, args,
+                )
+                existing_plan = matched_rate_plan_by_video.get(video_key)
+                if existing_plan is not None:
+                    stable_fields = (
+                        "mode", "fixed_max_gop", "reuse_threshold", "psss_backend_kind",
+                        "selected_psss_threshold", "selected_psss_max_segment_length",
+                        "fixed_n_keyframes", "skem_n_keyframes",
+                        "target_n_transmitting_frames", "skem_planned_n_transmitting_frames",
+                        "transmitting_frame_count_exact", "fixed_keyframe_indices",
+                        "skem_keyframe_indices", "fixed_transmitting_indices",
+                        "skem_transmitting_indices", "n_candidates_evaluated",
+                        "n_exact_transmission_count_candidates",
+                    )
+                    mismatches = [
+                        field for field in stable_fields
+                        if str(existing_plan.get(field, "")) != str(matched_plan_row.get(field, ""))
+                    ]
+                    if mismatches:
+                        raise RuntimeError(
+                            f"[{video_key}] matched-rate plan changed on resume for fields "
+                            f"{mismatches}; refusing to mix selector schedules"
+                        )
+                else:
+                    matched_rate_plan_rows.append(matched_plan_row)
+                    matched_rate_plan_by_video[video_key] = matched_plan_row
+                    _write_csv(output_root / "matched_rate_plan.csv", matched_rate_plan_rows)
+
+                selector_results["fixed"] = fixed_result
+                selector_results["skem"] = skem_result
+                selector_summaries["fixed"] = _selection_from_result(
+                    video_key, "fixed", args.psss_threshold,
+                    args.psss_max_segment_length, len(frames), fixed_result,
+                )
+                selector_summaries["skem"] = _selection_from_result(
+                    video_key, "skem", matched_plan_row["selected_psss_threshold"],
+                    matched_plan_row["selected_psss_max_segment_length"], len(frames), skem_result,
+                )
+                log(
+                    f"  match_actual_transmissions {video_key}: fixed max_gop={args.fixed_max_gop} "
+                    f"and calibrated SKEM threshold={matched_plan_row['selected_psss_threshold']} "
+                    f"max_segment={matched_plan_row['selected_psss_max_segment_length']} both plan "
+                    f"{matched_plan_row['target_n_transmitting_frames']} visual transmissions "
+                    f"({matched_plan_row['n_exact_transmission_count_candidates']} exact candidates)"
+                )
+            elif "skem" in requested_selectors or args.match_fixed_keyframes:
                 skem_extractor = _build_selector(
                     "skem", captions, args.psss_threshold,
                     args.psss_max_segment_length, args,
@@ -789,7 +1092,7 @@ def run(argv=None) -> int:
                     video_key, "skem", args.psss_threshold,
                     args.psss_max_segment_length, len(frames), selector_results["skem"],
                 )
-            if args.match_fixed_keyframes:
+            if args.match_fixed_keyframes and not args.match_actual_transmissions:
                 ref_sel = selector_summaries["skem"]
                 if 1 <= ref_sel.n_keyframes <= len(frames):
                     fixed_count_target = ref_sel.n_keyframes
@@ -802,7 +1105,7 @@ def run(argv=None) -> int:
                         f"{len(frames)} frames -- falling back to --fixed-max-gop "
                         f"({args.fixed_max_gop}); keyframe_count_matched=False for this video")
 
-            if "fixed" in requested_selectors:
+            if "fixed" in requested_selectors and not args.match_actual_transmissions:
                 fixed_extractor = _build_selector(
                     "fixed", captions, args.psss_threshold,
                     args.psss_max_segment_length, args,
@@ -942,6 +1245,16 @@ def run(argv=None) -> int:
                 video_symbols_analog = 0
                 video_symbols_latent = 0
                 transmitting = [r for r in records if r.decision in TRANSMITTING_DECISIONS]
+                if args.match_actual_transmissions:
+                    actual_indices = [record.index for record in transmitting]
+                    expected_indices = json.loads(
+                        matched_plan_row[f"{sel_name}_transmitting_indices"]
+                    )
+                    if actual_indices != expected_indices:
+                        raise RuntimeError(
+                            f"[{video_key}][{config_name}] planned vs actual visual-transmission "
+                            f"schedule mismatch: planned={expected_indices}, actual={actual_indices}"
+                        )
                 for rec in records:
                     visual_transmitted = rec.decision in TRANSMITTING_DECISIONS
                     semantic_packet = transmitted_semantic_packets.get(rec.index)
@@ -1066,6 +1379,25 @@ def run(argv=None) -> int:
                     "fixed_count_target": (fixed_count_target if fixed_count_target is not None else ""),
                     "fixed_max_gop_used": (args.fixed_max_gop if fixed_selector_kind == "fixed_max_gop" else ""),
                     "keyframe_count_matched": keyframe_count_matched,
+                    "matched_rate_mode": (
+                        "actual_transmissions" if args.match_actual_transmissions else ""
+                    ),
+                    "matched_rate_plan_exact": (
+                        bool(matched_plan_row["transmitting_frame_count_exact"])
+                        if args.match_actual_transmissions else ""
+                    ),
+                    "matched_rate_target_n_transmitting_frames": (
+                        int(matched_plan_row["target_n_transmitting_frames"])
+                        if args.match_actual_transmissions else ""
+                    ),
+                    "selected_psss_threshold": (
+                        float(matched_plan_row["selected_psss_threshold"])
+                        if args.match_actual_transmissions and sel_name == "skem" else ""
+                    ),
+                    "selected_psss_max_segment_length": (
+                        int(matched_plan_row["selected_psss_max_segment_length"])
+                        if args.match_actual_transmissions and sel_name == "skem" else ""
+                    ),
                     "nonfinite_stages": "",
                     "n_quality_frames": len(video_psnr),
                     # Denominator is ALL frames, not just transmitting ones:
@@ -1110,13 +1442,14 @@ def run(argv=None) -> int:
     _write_csv(output_root / "packet_components.csv", packet_rows)
     _write_csv(output_root / "quantization_diagnostics.csv", quantization_diagnostic_rows)
     _write_csv(output_root / "keyframe_sweep.csv", keyframe_sweep_rows)
+    _write_csv(output_root / "matched_rate_plan.csv", matched_rate_plan_rows)
     _write_csv(output_root / "failed_pairs.csv", failed_pairs)
     aggregate_rows = _aggregate(per_video_rows, expected_video_keys=expected_video_keys)
     _write_csv(output_root / "aggregate.csv", aggregate_rows)
     pareto_rows, baseline_info = _pareto_frontier(aggregate_rows)
     _write_csv(output_root / "pareto_frontier.csv", pareto_rows)
 
-    if args.match_fixed_keyframes:
+    if args.match_fixed_keyframes or args.match_actual_transmissions:
         rate_matching_rows = _compute_rate_matching(per_video_rows)
         _write_csv(output_root / "rate_matching.csv", rate_matching_rows)
 
@@ -1220,6 +1553,19 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
         "fixed_reference_snr_db": args.fixed_reference_snr_db,
         "ablation_label": args.ablation_label,
         "match_fixed_keyframes": bool(args.match_fixed_keyframes),
+        "match_actual_transmissions": bool(args.match_actual_transmissions),
+        "matched_rate_byte_tolerance": (
+            ACTUAL_TRANSMISSION_BYTE_TOLERANCE
+            if args.match_actual_transmissions else RATE_MATCH_BYTE_TOLERANCE
+        ),
+        "match_actual_transmissions": bool(args.match_actual_transmissions),
+        "matched_rate_thresholds": _parse_float_grid(
+            args.matched_rate_thresholds, name="--matched-rate-thresholds",
+        ),
+        "matched_rate_max_segment_lengths": _parse_positive_int_grid(
+            args.matched_rate_max_segment_lengths,
+            name="--matched-rate-max-segment-lengths",
+        ),
         "fixed_max_gop": args.fixed_max_gop,
     }
 
@@ -1345,7 +1691,9 @@ def _write_manifest(
 _ARTIFACT_HASH_FILES = (
     "aggregate.csv", "per_video_metrics.csv", "pareto_frontier.csv",
     "keyframe_selection.csv", "packet_components.csv", "keyframe_sweep.csv",
-    "rate_matching.csv", "failed_pairs.csv", "source_size_report.csv",
+    "rate_matching.csv", "matched_rate_plan.csv", "matched_rate_quality_effect.csv",
+    "matched_rate_validation.json",
+    "MATCHED_RATE_REPORT.md", "failed_pairs.csv", "source_size_report.csv",
     "quantization_diagnostics.csv", "quantization_effect.csv",
     "selector_effect.csv", "quantization_effect_ablation.csv",
     "selector_effect_ablation.csv", "normalization_effect_summary.json",
@@ -1374,6 +1722,7 @@ _PER_VIDEO_INT_FIELDS = (
     "n_frames_total", "n_transmitting_frames", "n_keyframes_selected",
     "n_nan_or_inf_frames", "n_quality_frames", "latent_elements_total",
     "source_packet_bits_total", "total_bundle_bytes",
+    "matched_rate_target_n_transmitting_frames", "selected_psss_max_segment_length",
 )
 _PER_VIDEO_FLOAT_FIELDS = (
     "valid_frame_ratio", "mean_psnr", "mean_ssim", "total_elapsed_s",
@@ -1381,10 +1730,12 @@ _PER_VIDEO_FLOAT_FIELDS = (
 )
 _PER_VIDEO_OPTIONAL_FLOAT_FIELDS = (
     "mean_lpips", "analog_channel_symbols_total", "digital_side_information_bytes_total",
-    "fixed_reference_snr_db",
+    "fixed_reference_snr_db", "selected_psss_threshold",
 )
 _PER_VIDEO_BOOL_FIELDS = ("analog_no_wire_bytes", "visual_transport_complete")
-_PER_VIDEO_OPTIONAL_BOOL_FIELDS = ("keyframe_count_matched",)  # "" means "not applicable", never coerced to False
+_PER_VIDEO_OPTIONAL_BOOL_FIELDS = (
+    "keyframe_count_matched", "matched_rate_plan_exact",
+)  # "" means "not applicable", never coerced to False
 
 
 def _read_csv_dicts(path: Path) -> List[Dict[str, Any]]:
@@ -1626,13 +1977,18 @@ def _pareto_frontier(aggregate_rows: List[Dict[str, Any]]):
 # use that label just because keyframe counts matched -- bytes must also be
 # close in practice).
 RATE_MATCH_BYTE_TOLERANCE = 0.10
+ACTUAL_TRANSMISSION_BYTE_TOLERANCE = 0.01
 
 
 def _compute_rate_matching(per_video_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Per (video, channel), compare fixed_<channel> vs skem_<channel>: exact
-    keyframe counts, exact bytes/video and bytes/frame, and whether they are
-    close enough (``RATE_MATCH_BYTE_TOLERANCE``) to call "rate-matched" —
-    never inferred from keyframe_count_matched alone."""
+    """Compare fixed vs SKEM rates using the requested matching contract.
+
+    Legacy ``--match-fixed-keyframes`` retains its 10% raw-byte rule.  The
+    exact mode requires equal *actual visual-transmission* counts and at most
+    1% raw bundle-byte mismatch.  It then explicitly accounts padding on the
+    smaller side, so the effective bytes used for the paired quality
+    comparison are exactly equal rather than merely described as close.
+    """
     by_video_channel: Dict[tuple, Dict[str, Dict[str, Any]]] = {}
     for r in per_video_rows:
         if r["channel"] == "awgn":
@@ -1653,18 +2009,48 @@ def _compute_rate_matching(per_video_rows: List[Dict[str, Any]]) -> List[Dict[st
             int(fixed_row["n_keyframes_selected"])
             == int(skem_row["n_keyframes_selected"])
         )
+        transmission_count_matched = (
+            int(fixed_row["n_transmitting_frames"])
+            == int(skem_row["n_transmitting_frames"])
+        )
+        mode = str(
+            fixed_row.get("matched_rate_mode")
+            or skem_row.get("matched_rate_mode")
+            or "legacy_keyframes"
+        )
+        if mode == "actual_transmissions":
+            tolerance = ACTUAL_TRANSMISSION_BYTE_TOLERANCE
+            raw_rate_matched = transmission_count_matched and byte_diff_ratio <= tolerance
+        else:
+            tolerance = RATE_MATCH_BYTE_TOLERANCE
+            raw_rate_matched = keyframe_count_matched and byte_diff_ratio <= tolerance
+        fixed_padding = (larger - fixed_bytes) if raw_rate_matched else 0
+        skem_padding = (larger - skem_bytes) if raw_rate_matched else 0
         rows.append({
             "video": video, "channel": channel,
+            "matched_rate_mode": mode,
             "fixed_n_keyframes": fixed_row["n_keyframes_selected"],
             "skem_n_keyframes": skem_row["n_keyframes_selected"],
             "keyframe_count_matched": keyframe_count_matched,
+            "fixed_n_transmitting_frames": fixed_row["n_transmitting_frames"],
+            "skem_n_transmitting_frames": skem_row["n_transmitting_frames"],
+            "transmitting_frame_count_matched": transmission_count_matched,
             "fixed_total_bundle_bytes": fixed_bytes,
             "skem_total_bundle_bytes": skem_bytes,
             "fixed_total_bundle_bytes_per_frame": fixed_row["total_bundle_bytes_per_frame"],
             "skem_total_bundle_bytes_per_frame": skem_row["total_bundle_bytes_per_frame"],
             "byte_diff_ratio": byte_diff_ratio,
-            "byte_diff_ratio_tolerance": RATE_MATCH_BYTE_TOLERANCE,
-            "rate_matched": keyframe_count_matched and byte_diff_ratio <= RATE_MATCH_BYTE_TOLERANCE,
+            "byte_diff_ratio_tolerance": tolerance,
+            "raw_rate_matched": raw_rate_matched,
+            "fixed_padding_bytes": fixed_padding,
+            "skem_padding_bytes": skem_padding,
+            "fixed_effective_total_bytes": fixed_bytes + fixed_padding,
+            "skem_effective_total_bytes": skem_bytes + skem_padding,
+            "effective_bytes_exact": (
+                raw_rate_matched
+                and fixed_bytes + fixed_padding == skem_bytes + skem_padding
+            ),
+            "rate_matched": raw_rate_matched,
         })
     return rows
 
@@ -1746,17 +2132,19 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
   - digital step 정책: `{args.digital_step_policy}`
   - fixed-reference SNR: `{args.fixed_reference_snr_db:g}dB`
 {ablation_note}
-  - keyframe 수 정합: `{"ON — FixedCountKeyframeSelector로 fixed를 SKEM과 정확히 동일 개수로 강제" if args.match_fixed_keyframes else "OFF"}`
+  - rate 정합: `{"ON — fixed max-GOP은 유지하고 SKEM을 영상별 보정해 실제 visual 전송 프레임 수를 정확히 일치; raw bytes 1% gate + 작은 쪽 padding 계상" if args.match_actual_transmissions else ("ON — FixedCountKeyframeSelector로 fixed를 SKEM과 정확히 동일 개수로 강제 (legacy)" if args.match_fixed_keyframes else "OFF")}`
 {baseline_note}
 - 산출물
   - `per_video_metrics.csv` / `aggregate.csv` — 영상 전체 품질(PSNR/SSIM/LPIPS) +
     정확한 전송 bytes. **`total_bundle_bytes`는 bytes/video**, **`total_bundle_bytes_per_frame`은
     bytes/frame**(전체 프레임 기준) — 단위 혼동 금지
   - `failed_pairs.csv` — 중단된 (video, config): 실패 stage·frame·NaN/Inf 수
-  - `rate_matching.csv` (`--match-fixed-keyframes` 사용 시) — 영상×channel별 fixed vs SKEM
-    keyframe 수·bytes/video·bytes/frame·byte 차이 비율. `rate_matched`는 keyframe 수가
-    맞고 **byte 차이가 {int(RATE_MATCH_BYTE_TOLERANCE * 100)}% 이내일 때만** true — keyframe 수만 맞다고
-    "rate-matched"라 부르지 않음
+  - `matched_rate_plan.csv` (`--match-actual-transmissions`) — fixed max-GOP schedule,
+    영상별 선택된 SKEM threshold/max-segment, 계획 visual 전송 index와 exact-count 검증
+  - `rate_matching.csv` (rate matching 사용 시) — 영상×channel별 fixed vs SKEM의 실제
+    전송 프레임 수·raw bytes·byte 차이. actual-transmission mode는 raw 차이
+    **{int(ACTUAL_TRANSMISSION_BYTE_TOLERANCE * 100)}% 이내**를 요구하고 작은 쪽 padding을 계상한
+    effective bytes가 정확히 같을 때만 검증 통과. legacy keyframe mode는 {int(RATE_MATCH_BYTE_TOLERANCE * 100)}% 기준
   - `keyframe_selection.csv` — 프레임별 decision, 구조화된 `force_reason`,
     5필드 회계 스키마, `psss_backend_kind`(`mock`|`proxy`|`real`)
   - `packet_components.csv` — 실제 `.sgbundle` byte의 정확한 구성 breakdown

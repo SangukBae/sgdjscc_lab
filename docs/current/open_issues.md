@@ -87,9 +87,12 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   - 20프레임에서 pixel fidelity와 receiver decode latency는 50-step diffusion보다 우수했지만,
     sender·bundle 전체 지연, semantic fidelity, 할루시네이션, 시간축 지표는 비교하지 않았다.
   - 따라서 VAE-direct/few-step/full diffusion 중 최종 정책은 아직 확정할 수 없다.
-- **fixed–SKEM 비교가 실제 rate-matched가 아님**
+- **fixed–SKEM exact matched-rate full 결과 대기**
   - keyframe 수는 맞았지만 `recompute_semantic`으로 실제 transmitting frame 수가 달라졌다.
   - `rate_matching.csv` 통과: 35/50; selector 절감 효과는 잠정 결과로만 사용한다.
+  - 새 실행기는 fixed max-GOP을 유지한 채 영상별 SKEM을 보정해 실제 visual 전송 수를
+    exact match하고, raw byte 1% + padding 후 effective byte exact를 자동 검증하도록 준비됐다.
+  - 10영상×10설정 3-GPU full 실행과 결과 registry 고정 전까지 SKEM 효과 결론은 여전히 잠정이다.
 - **10dB fixed_int4 packet의 90.90%가 edge·uncertainty**
   - visual latent는 5.89%라 추가 bit-depth 축소 효과가 제한적이다.
   - 다음 전송량 절감 대상은 edge/uncertainty 압축·선택 전송이다.

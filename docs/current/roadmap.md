@@ -29,7 +29,7 @@ supersedes:
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
-| 1 | fixed–SKEM exact matched-rate 재평가 | 실제 transmitting frame과 byte를 기준으로 rate를 맞추고 fixed/SKEM 품질을 동일 전송량에서 비교 |
+| 1 | fixed–SKEM exact matched-rate 재평가 (**실행 준비 완료**) | `run_fixed_skem_matched_rate_10db.sh` full 실행 후 실제 transmitting frame exact + raw byte 1% + padding effective byte exact 검증을 통과하고 fixed/SKEM 품질을 동일 전송량에서 비교·registry 고정 |
 | 2 | edge·uncertainty 전송량 절감 | int4 packet의 90.90% 구성요소를 선택 전송·양자화·해상도 축소로 ablation |
 | 3 | 통합 평가 harness·복원 정책 비교 | Rate·품질·SRS·할루시네이션·시간축·전체 지연을 paired row로 기록하고 VAE-direct/few-step/full diffusion operating point를 비교 |
 | 4 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
