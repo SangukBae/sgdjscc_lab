@@ -516,8 +516,25 @@ def _decode_diffusion(
     re-sampled between conditioning and reconstruction.  ``original_image`` (the
     input patch) enables the verified intra-sampler early-exit metrics.
     """
+    decoder_mode = str(cfg.get("receiver_decoder_mode", "diffusion"))
+    if decoder_mode not in ("diffusion", "vae_direct"):
+        raise ValueError(
+            f"receiver_decoder_mode must be 'diffusion' or 'vae_direct'; got {decoder_mode!r}"
+        )
+
     if not artifacts.use_semantic:
         out = (jscc.vae.decode(jscc.normalize(artifacts.encode_features_hat))[0] + 1) / 2
+        return assert_finite(out, "final_reconstruction")
+
+    # Production-path VAE-direct ablation: decode the exact received JSCC
+    # latent after undoing the semantic-path power normalization.  This is an
+    # explicit opt-in policy; the default diffusion path below is untouched.
+    if decoder_mode == "vae_direct":
+        if not bool(cfg.use_jscc_feature):
+            raise ValueError("receiver_decoder_mode=vae_direct requires use_jscc_feature=true")
+        latent = artifacts.encode_features_hat / artifacts.power_scalar
+        latent = assert_finite(latent, "vae_direct_latent")
+        out = (jscc.vae.decode(jscc.normalize(latent))[0] + 1) / 2
         return assert_finite(out, "final_reconstruction")
 
     use_text       = bool(cfg.use_text)

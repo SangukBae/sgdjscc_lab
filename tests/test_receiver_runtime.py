@@ -21,6 +21,12 @@ class _Jscc:
         return x
 
 
+class _Vae:
+    @staticmethod
+    def decode(x):
+        return (x,)
+
+
 class _Models:
     device = torch.device("cpu")
     jscc_model = _Jscc()
@@ -145,6 +151,30 @@ def test_receiver_marks_serialized_edge_as_already_received(monkeypatch):
     monkeypatch.setattr(infer, "_decode_diffusion", fake_decode)
     reconstruct_frame_from_bundle_bytes(_data(), _Models(), _cfg())
     assert captured["edge_already_received"] is True
+
+
+def test_vae_direct_decoder_uses_received_latent_and_skips_diffusion(monkeypatch):
+    import sgdjscc_lab.pipelines.infer_pipeline as infer
+
+    jscc = _Jscc()
+    jscc.vae = _Vae()
+    artifacts = infer.ForwardArtifacts(
+        use_semantic=True,
+        encode_features_hat=torch.full((1, 4, 2, 2), 4.0),
+        signal_scale=torch.ones(1), device=torch.device("cpu"), batch_size=1,
+        power_scalar=torch.full((1, 4, 2, 2), 2.0),
+    )
+    cfg = OmegaConf.create({
+        "receiver_decoder_mode": "vae_direct", "use_jscc_feature": True,
+    })
+    monkeypatch.setattr(
+        infer, "_run_diffusion",
+        lambda **_kwargs: pytest.fail("vae_direct must not invoke diffusion"),
+    )
+    out = infer._decode_diffusion(
+        artifacts, jscc, object(), None, cfg, torch.device("cpu"),
+    )
+    assert torch.equal(out, torch.full_like(out, 1.5))
 
 
 def test_sender_applies_guide_profile_without_putting_human_label_on_wire(monkeypatch):

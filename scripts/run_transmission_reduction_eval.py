@@ -269,6 +269,15 @@ def _parse_args(argv=None) -> argparse.Namespace:
              "expand every base --configs entry into independent experiment configs.",
     )
     p.add_argument("--no-lpips", action="store_true")
+    p.add_argument(
+        "--decoder-mode", default="diffusion", choices=("diffusion", "vae_direct"),
+        help="Receiver reconstruction policy. vae_direct skips ControlNet/diffusion and "
+             "decodes the received JSCC latent directly.",
+    )
+    p.add_argument(
+        "--diffusion-step", type=int, default=None,
+        help="Override the composed diffusion step count (must be positive).",
+    )
     # accounting estimates (labeled proxy; omit for "unavailable")
     p.add_argument("--bits-per-symbol", type=float, default=None,
                     help="Modulation assumption for estimated_digital_channel_symbols; "
@@ -668,6 +677,8 @@ def _make_cfg(
     config_path=None,
     *,
     fixed_reference_snr_db: float = 10.0,
+    decoder_mode: str = "diffusion",
+    diffusion_step: Optional[int] = None,
 ):
     """Compose a real config via the project's own fragment set (config.py's
     _defaults_ mechanism) rather than hand-rolling a minimal dict — guarantees
@@ -691,12 +702,16 @@ def _make_cfg(
             encoding="utf-8",
         )
         cfg = load_config(composed_path)
-    cfg = OmegaConf.merge(cfg, OmegaConf.create({
+    overrides = {
         "model_root": str(model_root),
         "snr_db": float(snr_db),
         "digital_fixed_reference_snr_db": float(fixed_reference_snr_db),
+        "receiver_decoder_mode": str(decoder_mode),
         "use_phase4": True,
-    }))
+    }
+    if diffusion_step is not None:
+        overrides["diffusion_step"] = int(diffusion_step)
+    cfg = OmegaConf.merge(cfg, OmegaConf.create(overrides))
     return cfg
 
 
@@ -935,6 +950,8 @@ def _shadow_measure_frame(
 
 def run(argv=None) -> int:
     args = _parse_args(argv)
+    if args.diffusion_step is not None and args.diffusion_step < 1:
+        raise ValueError("--diffusion-step must be >= 1")
     output_root = Path(args.output_root)
 
     base_configs = [c for c in args.configs.split(",") if c]
@@ -1002,6 +1019,8 @@ def run(argv=None) -> int:
         args.snr,
         config_path=args.config,
         fixed_reference_snr_db=args.fixed_reference_snr_db,
+        decoder_mode=args.decoder_mode,
+        diffusion_step=args.diffusion_step,
     )
 
     # Run signature + resume-safety check FIRST (before any heavy model load):
@@ -1461,6 +1480,11 @@ def run(argv=None) -> int:
                     "ablation_label": (
                         args.ablation_label if channel_kind == "digital_packet" else ""
                     ),
+                    "decoder_mode": args.decoder_mode,
+                    "diffusion_step": int(cfg.diffusion_step),
+                    "effective_diffusion_step": (
+                        0 if args.decoder_mode == "vae_direct" else int(cfg.diffusion_step)
+                    ),
                     **guide_meta,
                     "n_frames_total": len(frames), "n_transmitting_frames": len(transmitting),
                     "n_keyframes_selected": n_kf_in_gop, "n_nan_or_inf_frames": 0,
@@ -1642,6 +1666,8 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
         "device": args.device,
         "physical_cuda_device": os.environ.get("SGDJSCC_PHYSICAL_CUDA_DEVICE", args.device),
         "digital_step_policy": args.digital_step_policy,
+        "decoder_mode": args.decoder_mode,
+        "diffusion_step": int(cfg.diffusion_step),
         "fixed_reference_snr_db": args.fixed_reference_snr_db,
         "ablation_label": args.ablation_label,
         "match_fixed_keyframes": bool(args.match_fixed_keyframes),
@@ -1823,6 +1849,7 @@ _PER_VIDEO_INT_FIELDS = (
     "matched_rate_target_n_transmitting_frames", "selected_psss_max_segment_length",
     "edge_bit_depth", "uncertainty_bit_depth", "edge_downsample",
     "uncertainty_downsample", "edge_stride", "uncertainty_stride",
+    "diffusion_step", "effective_diffusion_step",
 )
 _PER_VIDEO_FLOAT_FIELDS = (
     "valid_frame_ratio", "mean_psnr", "mean_ssim", "total_elapsed_s",

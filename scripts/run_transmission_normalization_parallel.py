@@ -84,6 +84,8 @@ def _parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument("--fixed-reference-snr-db", type=float, default=10.0)
     parser.add_argument("--ablation-label", default=None)
     parser.add_argument("--guide-profiles", default="baseline")
+    parser.add_argument("--decoder-mode", default="diffusion", choices=("diffusion", "vae_direct"))
+    parser.add_argument("--diffusion-step", type=int, default=None)
     parser.add_argument("--psss-backend", default="proxy", choices=("mock", "proxy", "real"))
     parser.add_argument("--psss-model-id", default=None)
     parser.add_argument("--psss-device", default="cpu")
@@ -184,6 +186,8 @@ def _plan(args: argparse.Namespace, devices: Sequence[str], videos: Sequence[Dic
             "guide_profiles": [
                 item for item in args.guide_profiles.split(",") if item
             ],
+            "decoder_mode": args.decoder_mode,
+            "diffusion_step": args.diffusion_step,
             "psss_backend": args.psss_backend,
             "psss_model_id": args.psss_model_id,
             "psss_device": args.psss_device,
@@ -236,10 +240,13 @@ def _worker_command(
         "--digital-step-policy", args.digital_step_policy,
         "--fixed-reference-snr-db", str(args.fixed_reference_snr_db),
         "--guide-profiles", args.guide_profiles,
+        "--decoder-mode", args.decoder_mode,
         "--psss-backend", args.psss_backend,
         "--psss-device", args.psss_device,
         "--psss-dtype", args.psss_dtype,
     ])
+    if args.diffusion_step is not None:
+        command.extend(["--diffusion-step", str(args.diffusion_step)])
     if args.max_frames is not None:
         command.extend(["--max-frames", str(args.max_frames)])
     if args.ablation_label:
@@ -415,6 +422,8 @@ def merge_worker_outputs(
 
 def run(argv=None) -> int:
     args = _parse_args(argv)
+    if args.diffusion_step is not None and args.diffusion_step < 1:
+        raise ValueError("--diffusion-step must be >= 1")
     if args.output_root and args.resume:
         raise ValueError("pass at most one of --output-root / --resume")
     if args.digital_step_policy != "fixed_reference" and not args.ablation_label:

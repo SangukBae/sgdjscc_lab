@@ -222,6 +222,41 @@ def test_edge_uncertainty_wrapper_locks_full_three_gpu_protocol(tmp_path):
         assert command[command.index("--configs") + 1] == "fixed_int4"
 
 
+def test_integrated_wrapper_locks_grid_and_three_decoder_policies(tmp_path):
+    env = os.environ.copy()
+    env.update({
+        "PYTHON_BIN": sys.executable,
+        "SGDJSCC_GIT_COMMIT": "a" * 40,
+        "SGDJSCC_GIT_DIRTY": "false",
+        "SGDJSCC_GIT_BRANCH": "main",
+    })
+    result = subprocess.run(
+        [
+            "bash", "scripts/run_integrated_semantic_validation_10db.sh",
+            "--dry-run", "--output-root", str(tmp_path / "out"),
+            "--seed", "7", "--devices", "cuda:0",
+        ],
+        cwd=str(_ROOT), env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    plan = payload["plan"]
+    assert plan["seed"] == 2025
+    assert [item["device"] for item in plan["assignments"]] == [
+        "cuda:0", "cuda:1", "cuda:2",
+    ]
+    assert plan["expected_pairs"] == 120
+    assert list(plan["policies"]) == ["full50", "few10", "vae_direct"]
+    assert plan["policies"]["full50"] == {"decoder_mode": "diffusion", "diffusion_step": 50}
+    assert plan["policies"]["few10"] == {"decoder_mode": "diffusion", "diffusion_step": 10}
+    assert plan["policies"]["vae_direct"] == {"decoder_mode": "vae_direct", "diffusion_step": 50}
+    assert plan["guide_profiles"] == [
+        "baseline", "combined_ds4", "candidate_edge_ds4_uncertainty_omit",
+        "candidate_both_omit",
+    ]
+    assert payload["cuda_visible_devices"] == ["0", "1", "2"]
+
+
 def test_single_worker_shell_binds_negative_threshold_csv_to_option(tmp_path):
     env = os.environ.copy()
     env.update({

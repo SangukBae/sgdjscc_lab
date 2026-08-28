@@ -43,6 +43,8 @@ DIGITAL_STEP_POLICY="${DIGITAL_STEP_POLICY:-fixed_reference}"
 FIXED_REFERENCE_SNR_DB="${FIXED_REFERENCE_SNR_DB:-10}"
 ABLATION_LABEL="${ABLATION_LABEL:-}"
 GUIDE_PROFILES="${GUIDE_PROFILES:-baseline}"
+DECODER_MODE="${DECODER_MODE:-diffusion}"
+DIFFUSION_STEP="${DIFFUSION_STEP:-}"
 PSSS_BACKEND="${PSSS_BACKEND:-proxy}"
 PSSS_MODEL_ID="${PSSS_MODEL_ID:-}"
 PSSS_DEVICE="${PSSS_DEVICE:-cpu}"
@@ -90,6 +92,8 @@ Usage: run_transmission_normalization.sh [options]
   --fixed-reference-snr-db DB  Decoder reference SNR for fixed_reference (default: 10).
   --ablation-label LABEL       Required when --digital-step-policy != fixed_reference.
   --guide-profiles CSV         Edge/uncertainty transport profiles (default: baseline).
+  --decoder-mode NAME          diffusion (default) | vae_direct.
+  --diffusion-step N           Positive diffusion-step override.
   --psss-backend NAME           mock | proxy (default) | real -- see --psss-model-id.
   --psss-model-id ID            HF causal-LM/VLM id, required for --psss-backend real.
   --psss-device DEVICE          Device for the PSSS backend (default: cpu).
@@ -124,6 +128,8 @@ while [ $# -gt 0 ]; do
     --fixed-reference-snr-db) FIXED_REFERENCE_SNR_DB="$2"; shift 2 ;;
     --ablation-label) ABLATION_LABEL="$2"; shift 2 ;;
     --guide-profiles) GUIDE_PROFILES="$2"; shift 2 ;;
+    --decoder-mode) DECODER_MODE="$2"; shift 2 ;;
+    --diffusion-step) DIFFUSION_STEP="$2"; shift 2 ;;
     --psss-backend) PSSS_BACKEND="$2"; shift 2 ;;
     --psss-model-id) PSSS_MODEL_ID="$2"; shift 2 ;;
     --psss-device) PSSS_DEVICE="$2"; shift 2 ;;
@@ -294,10 +300,12 @@ SWEEP_CMD=("$PYTHON_BIN" scripts/run_transmission_reduction_eval.py
   --digital-step-policy "$DIGITAL_STEP_POLICY"
   --fixed-reference-snr-db "$FIXED_REFERENCE_SNR_DB"
   --guide-profiles "$GUIDE_PROFILES"
+  --decoder-mode "$DECODER_MODE"
   --psss-backend "$PSSS_BACKEND"
   --psss-device "$PSSS_DEVICE"
   --psss-dtype "$PSSS_DTYPE"
 )
+[ -n "$DIFFUSION_STEP" ] && SWEEP_CMD+=(--diffusion-step "$DIFFUSION_STEP")
 [ -n "$VIDEO_IDS" ] && SWEEP_CMD+=(--video-ids "$VIDEO_IDS")
 [ -n "$MAX_FRAMES" ] && SWEEP_CMD+=(--max-frames "$MAX_FRAMES")
 [ "$MATCH_FIXED_KEYFRAMES" -eq 1 ] && SWEEP_CMD+=(--match-fixed-keyframes)

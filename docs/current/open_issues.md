@@ -114,6 +114,9 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     `edge_ds4 + uncertainty_omit`과 `edge_omit + uncertainty_omit`은 실행하지 않았다.
   - 따라서 자동 Pareto 선택은 조건부 후보이며 최종 운영점이 아니다. 상세:
     [실험 결과](../experiments/2026-08-28_edge_uncertainty_ablation_10db.md).
+  - 두 빈 조합은 통합 120-pair 실행 격자에 추가됐지만 아직 GPU 결과가 없다.
+    실제 CLIP·OWLv2·VQA semantic/hallucination/temporal gate와 paired CI가 통과하기
+    전에는 해결된 이슈로 닫지 않는다. [준비 문서](../experiments/2026-08-28_integrated_semantic_validation_preparation.md).
 
 ## 채널·저지연
 

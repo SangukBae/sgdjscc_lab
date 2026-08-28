@@ -94,6 +94,18 @@ GUIDE_PROFILES: Dict[str, GuideTransportProfile] = {
         edge_downsample=2, uncertainty_downsample=2,
         edge_stride=2, uncertainty_stride=2,
     ),
+    # Follow-up operating-point candidates selected after the 16-profile
+    # ablation.  The ``candidate_`` prefix deliberately keeps them out of the
+    # historical five-per-family accounting while making the protocol names
+    # stable in manifests and resume signatures.
+    "candidate_edge_ds4_uncertainty_omit": _profile(
+        "candidate_edge_ds4_uncertainty_omit", "candidate", stage="integrated",
+        edge_downsample=4, uncertainty_omit=True,
+    ),
+    "candidate_both_omit": _profile(
+        "candidate_both_omit", "candidate", stage="integrated",
+        edge_omit=True, uncertainty_omit=True,
+    ),
 }
 
 DEFAULT_GUIDE_ABLATION_PROFILES = tuple(GUIDE_PROFILES)

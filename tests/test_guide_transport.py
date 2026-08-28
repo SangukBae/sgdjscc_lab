@@ -20,7 +20,8 @@ def test_protocol_contains_five_isolated_profiles_per_component_and_combined_can
     assert len([name for name in GUIDE_PROFILES if name.startswith("edge_")]) == 5
     assert len([name for name in GUIDE_PROFILES if name.startswith("uncertainty_")]) == 5
     assert len([name for name in GUIDE_PROFILES if name.startswith("combined_")]) == 5
-    assert len(DEFAULT_GUIDE_ABLATION_PROFILES) == 16
+    assert len([name for name in GUIDE_PROFILES if name.startswith("candidate_")]) == 2
+    assert len(DEFAULT_GUIDE_ABLATION_PROFILES) == 18
 
 
 def test_profile_parser_rejects_unknown_and_duplicate_names():
@@ -81,3 +82,19 @@ def test_omit_is_zero_action_and_does_not_put_tensor_on_wire():
     assert edge_wire is not None
     assert uncertainty_wire is None
     assert actions == (GUIDE_TRANSMIT, GUIDE_ZERO)
+
+
+def test_integrated_candidates_have_expected_independent_actions():
+    edge = torch.rand(1, 11, 128, 128)
+    uncertainty = torch.rand_like(edge)
+    edge_wire, uncertainty_wire, actions = prepare_guides_for_transport(
+        edge, uncertainty, GUIDE_PROFILES["candidate_edge_ds4_uncertainty_omit"], 0,
+    )
+    assert edge_wire.shape[-2:] == (32, 32)
+    assert uncertainty_wire is None
+    assert actions == (GUIDE_TRANSMIT, GUIDE_ZERO)
+    edge_wire, uncertainty_wire, actions = prepare_guides_for_transport(
+        edge, uncertainty, GUIDE_PROFILES["candidate_both_omit"], 0,
+    )
+    assert edge_wire is None and uncertainty_wire is None
+    assert actions == (GUIDE_ZERO, GUIDE_ZERO)

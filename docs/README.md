@@ -86,6 +86,7 @@
 | [experiments/2026-08-28_fixed_skem_matched_rate_10db.md](./experiments/2026-08-28_fixed_skem_matched_rate_10db.md) | fixed–SKEM actual-transmission/effective-byte exact matching과 proxy SKEM의 fixed schedule 수렴 null 결과 |
 | [experiments/2026-08-28_edge_uncertainty_ablation_10db.md](./experiments/2026-08-28_edge_uncertainty_ablation_10db.md) | fixed_int4 edge·uncertainty 16-profile 3-GPU full ablation; combined_ds4 조건부 최소-byte 후보와 digital uncertainty bypass 확인 |
 | [experiments/2026-08-28_edge_uncertainty_ablation_preparation.md](./experiments/2026-08-28_edge_uncertainty_ablation_preparation.md) | 위 full ablation의 실행 전 profile·wire-accounting 계약 |
+| [experiments/2026-08-28_integrated_semantic_validation_preparation.md](./experiments/2026-08-28_integrated_semantic_validation_preparation.md) | 4 guide × 3 decoder × 10영상 통합 semantic·hallucination·temporal 3-GPU 검증 프로토콜 |
 
 ## 5. 참조 문서 (`reference/`)
 

@@ -35,8 +35,9 @@ edge 민감도가 확인돼 최종 운영점 확정 전 작은 경로 검증이 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
 | 완료 | edge·uncertainty 전송량 절감 1차 | 16-profile·3-GPU full 완료·registry 보존. `combined_ds4` 조건부 최소 후보, uncertainty bypass 확인 |
-| 1 | guide 경로·빈 조합 확인 | uncertainty 제거/조건화 계약 결정, `edge_ds4+uncertainty_omit`·양쪽 omit 및 ControlNet sensitivity 검증 |
-| 2 | 통합 평가 harness·복원 정책 비교 | Rate·품질·SRS·할루시네이션·시간축·전체 지연을 paired row로 기록하고 VAE-direct/few-step/full diffusion operating point를 비교 |
+| 준비 완료 | guide 빈 조합 + 통합 평가 harness | `edge_ds4+uncertainty_omit`·양쪽 omit, full50/few10/VAE-direct 120-pair 3-GPU 실행기와 real ensemble provenance·paired CI 검증 구현 |
+| 1 | 통합 full 실행·분석 | Rate·품질·semantic·hallucination·시간축·전체 지연 결과로 held-out 진입 후보를 결정 |
+| 2 | guide 경로 후속 | full 결과에 따라 uncertainty 제거/조건화 계약과 ControlNet off/scale sensitivity 결정 |
 | 3 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
 | 4 | 동적 예산 controller | 채널·uncertainty·verifier 위험도로 전송량과 복원 연산량을 결정하고 feedback/retransmission byte·RTT 포함 |
 | 5 | 별도 held-out 최종 검증·문서 마감 | paired 통계·confidence interval, 최종 operating point, 표·그래프·재현성 registry 확정 |
