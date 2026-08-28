@@ -82,6 +82,7 @@
 | [experiments/2026-08-26_transmission_normalization.md](./experiments/2026-08-26_transmission_normalization.md) | 전송 정상화·3-GPU 실측 결과와 후속 과제 |
 | [experiments/2026-08-28_float32_digital_step_normalization.md](./experiments/2026-08-28_float32_digital_step_normalization.md) | 60dB→10dB decoder-step 정상화 3-GPU short 실측 |
 | [experiments/2026-08-28_float32_digital_step_normalization_full.md](./experiments/2026-08-28_float32_digital_step_normalization_full.md) | 10dB decoder-step 정상화 3-GPU full 300프레임 최종 실측 |
+| [experiments/2026-08-28_quantization_reevaluation_10db.md](./experiments/2026-08-28_quantization_reevaluation_10db.md) | 10dB fixed-selector float32/int16/int8/int6/int4 양자화 재평가와 4-bit 운영점 확정 |
 
 ## 5. 참조 문서 (`reference/`)
 

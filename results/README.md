@@ -81,3 +81,4 @@ results/
 | [transmission_20260818](./transmission_20260818/) | transmission | frozen | [docs/experiments/2026-08-18_transmission_reduction.md](../docs/experiments/2026-08-18_transmission_reduction.md) |
 | [transmission_normalization_20260826](./transmission_normalization_20260826/) | transmission | frozen | [docs/experiments/2026-08-26_transmission_normalization.md](../docs/experiments/2026-08-26_transmission_normalization.md) |
 | [float32_digital_normalization_full_20260827](./float32_digital_normalization_full_20260827/) | diagnostics | frozen | [docs/experiments/2026-08-28_float32_digital_step_normalization_full.md](../docs/experiments/2026-08-28_float32_digital_step_normalization_full.md) |
+| [quantization_reevaluation_10db_20260828](./quantization_reevaluation_10db_20260828/) | transmission | frozen | [docs/experiments/2026-08-28_quantization_reevaluation_10db.md](../docs/experiments/2026-08-28_quantization_reevaluation_10db.md) |

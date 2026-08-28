@@ -2,7 +2,7 @@
 status: active
 updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c5721cb
+source_commit: 6d6c4ed
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -79,7 +79,8 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     `0.000752dB`, wire round-trip은 300/300 bit-exact였다.
   - 핵심 artifact registry와 리포트 계약 보정은 완료했지만, 이 300프레임은 원인 진단용
     core condition 표본이다. 최종 정책의 일반화 주장은 별도 held-out 검증 후에만 가능하다.
-  - 수정된 10dB 정책의 int16/int8/int6/int4 재평가는 아직 GPU 실행 전이다.
+  - 수정된 10dB 정책의 fixed int16/int8/int6/int4 재평가는 10영상×100프레임에서 완료됐다.
+    4개 bit-depth가 모두 품질 허용 기준을 통과했고 `fixed_int4`가 최소 bit-depth로 선택됐다.
   - [full 실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md),
     [진단 프로토콜](../protocols/float32_digital_diagnostics.md).
 - **VAE-direct의 semantic·시간축 operating point 검증이 없다**
@@ -89,8 +90,8 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - **fixed–SKEM 비교가 실제 rate-matched가 아님**
   - keyframe 수는 맞았지만 `recompute_semantic`으로 실제 transmitting frame 수가 달라졌다.
   - `rate_matching.csv` 통과: 35/50; selector 절감 효과는 잠정 결과로만 사용한다.
-- **int4 이후 packet의 91%가 edge·uncertainty**
-  - visual latent는 약 5.9%라 추가 bit-depth 축소 효과가 제한적이다.
+- **10dB fixed_int4 packet의 90.90%가 edge·uncertainty**
+  - visual latent는 5.89%라 추가 bit-depth 축소 효과가 제한적이다.
   - 다음 전송량 절감 대상은 edge/uncertainty 압축·선택 전송이다.
 
 ## 채널·저지연

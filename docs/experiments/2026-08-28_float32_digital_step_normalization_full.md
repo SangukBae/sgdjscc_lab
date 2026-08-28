@@ -128,10 +128,12 @@ pixel 지표만 비교했으므로 semantic fidelity·할루시네이션·시간
 - **재현성 고정·리포트 계약 보정: 완료.** 핵심 CSV·JSON·JSONL·manifest·checksum과
   원본/보정 통합 리포트를 `results/` registry에 보존했다.
 - full 범위는 3개 core condition 영상이며 ETRI 10영상 전체·별도 held-out은 아니다.
-- 60dB 정책으로 얻은 기존 int16/int8/int6/int4 운영 후보는 10dB에서 재평가해야 한다.
+- 후속 10영상 10dB fixed-only 재평가에서 int16/int8/int6/int4가 모두 품질 기준을
+  통과했고 `fixed_int4`가 최소 bit-depth로 확정됐다
+  ([결과](./2026-08-28_quantization_reevaluation_10db.md)).
 
 ## 다음 작업
 
-1. 준비된 전용 3-GPU 명령으로 10dB int16/int8/int6/int4 양자화 품질·Pareto 재평가.
+1. ~~전용 3-GPU 명령으로 10dB int16/int8/int6/int4 양자화 품질·Pareto 재평가~~ — 완료.
 2. fixed–SKEM exact matched-rate 재평가.
 3. VAE-direct/few-step/full diffusion을 semantic·할루시네이션·시간축 지표로 비교.

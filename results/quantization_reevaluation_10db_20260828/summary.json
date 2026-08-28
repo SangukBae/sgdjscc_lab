@@ -1,0 +1,91 @@
+{
+  "devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2"
+  ],
+  "generated_at": "2026-08-28T00:17:35",
+  "n_completed_pairs": 60,
+  "n_expected_videos": 10,
+  "n_failed_pairs": 0,
+  "n_workers": 3,
+  "parallel": true,
+  "pareto_baseline": {
+    "baseline_config": "fixed_float32",
+    "baseline_is_analog": false,
+    "baseline_valid": true
+  },
+  "pareto_selected": {
+    "ablation_label": "",
+    "all_expected_videos_present": true,
+    "all_finite_metrics": true,
+    "analog_no_wire_bytes": false,
+    "baseline_config": "fixed_float32",
+    "bit_depth": 4,
+    "channel": "int4",
+    "config": "fixed_int4",
+    "digital_step_policy": "fixed_reference",
+    "fixed_reference_snr_db": 10.0,
+    "keyframe_count_matched": "",
+    "lpips_rise": -0.00048741498589521814,
+    "mean_latent_elements": 271974.4,
+    "mean_lpips": 0.2536186347529292,
+    "mean_n_keyframes_selected": 7.0,
+    "mean_psnr": 23.476279297828675,
+    "mean_ssim": 0.7333009636700154,
+    "mean_total_bundle_bytes_per_frame": 23946.500999999997,
+    "mean_total_bundle_bytes_per_video": 2394650.1,
+    "n_videos": 10,
+    "n_videos_expected": 10,
+    "nonfinite_stages": "",
+    "psnr_drop_db": 0.05263136196136742,
+    "psss_backend_kind": null,
+    "quality_gate_failure_reason": "",
+    "rank": 0,
+    "selected_as_smallest_in_budget": true,
+    "selector": "fixed",
+    "ssim_drop": 0.002005588829517402,
+    "total_frames": 1000,
+    "total_nan_or_inf_frames": 0,
+    "total_quality_frames": 1000,
+    "total_transmitting_frames": 83,
+    "valid_frame_ratio": 1.0,
+    "video_keys": "01_person_walk,02_car_pass,03_dog_walk,04_person_car,05_camera_pan_person,06_handheld_sign,07_person_enter,08_car_exit,09_scene_cut_chair_car,10_busy_sidewalk",
+    "visual_transport_complete": true,
+    "within_quality_gate": true
+  },
+  "run_status": "completed",
+  "worker_statuses": [
+    {
+      "device": "cuda:0",
+      "returncode": 0,
+      "videos": [
+        "01_person_walk",
+        "04_person_car",
+        "07_person_enter",
+        "10_busy_sidewalk"
+      ],
+      "worker_id": "worker_00"
+    },
+    {
+      "device": "cuda:1",
+      "returncode": 0,
+      "videos": [
+        "02_car_pass",
+        "05_camera_pan_person",
+        "08_car_exit"
+      ],
+      "worker_id": "worker_01"
+    },
+    {
+      "device": "cuda:2",
+      "returncode": 0,
+      "videos": [
+        "03_dog_walk",
+        "06_handheld_sign",
+        "09_scene_cut_chair_car"
+      ],
+      "worker_id": "worker_02"
+    }
+  ]
+}

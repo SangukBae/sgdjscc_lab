@@ -11,6 +11,12 @@ supersedes:
 
 # 전송 실험 정상화 결과
 
+> **후속 상태(2026-08-28):** 이 문서의 60 dB 품질 수치와 fixed operating point는
+> legacy 근거다. 10 dB fixed-only 재평가에서 `fixed_int4`가 품질 허용 기준을
+> 통과한 최소 bit-depth로 재확정됐다. 최신 판정은
+> [10 dB 양자화 재평가](./2026-08-28_quantization_reevaluation_10db.md)를 사용한다.
+> SKEM 결과는 여전히 actual-byte matched-rate 재평가 전까지 잠정이다.
+
 ## 범위
 
 - 데이터: ETRI 10영상 × 100프레임

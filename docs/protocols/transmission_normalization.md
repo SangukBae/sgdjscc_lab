@@ -224,10 +224,15 @@ bash scripts/run_quantization_reevaluation_10db.sh \
 
 - 범위는 `fixed_awgn,fixed_float32,fixed_int16,fixed_int8,fixed_int6,fixed_int4`로 고정한다.
 - SKEM과 matched-rate 변수를 섞지 않아 bit-depth 효과만 분리한다.
-- `fixed_reference=10dB`는 resolved config뿐 아니라 per-video/aggregate CSV, summary,
-  parallel plan, manifest, resume signature에 기록된다. 다른 SNR로 같은 output을 resume하면 거부한다.
+- `fixed_reference=10dB`는 resolved config뿐 아니라 digital per-video/aggregate CSV,
+  summary, parallel plan, manifest, resume signature에 기록된다. 다른 SNR로 같은
+  output을 resume하면 거부한다. `fixed_awgn` CSV의 digital 전용
+  `fixed_reference_snr_db` 열은 공란이며 실제 AWGN SNR은 resolved config의
+  `snr_db`에서 확인한다.
 - 결과 판단은 `quantization_effect.csv`와 `pareto_frontier.csv`를 사용하고,
   실제 GPU 실행 전에는 operating point를 확정하지 않는다.
+- 2026-08-28 full 실행 결과는 [실험 문서](../experiments/2026-08-28_quantization_reevaluation_10db.md)에
+  고정했으며, 최소 통과 bit-depth는 `fixed_int4`로 확정했다.
 
 - 작업 분배
   - `manifest.csv`의 프레임 수를 기준으로 영상을 longest-first 방식으로 균등 배분

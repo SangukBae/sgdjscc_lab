@@ -1,0 +1,73 @@
+{
+  "ablation_label": null,
+  "checkpoint_sha256": {
+    "JSCC_model.pth": "455cb603d071d9aee7f6e3704c3228f543178453bc7c25ffcbfd95e5ab1915fe",
+    "diffusion_backbone.pth": "1ac5c6eb69f81b415da10118d231ca90a5020d23f10841305af2d332eae9a49f",
+    "diffusion_controlnet.pth": "4f1ba885df72be90c8204588560b3ecdbe6d098505478d2bcbc9ae0c83619945",
+    "muge-epoch-19-checkpoint.pth": "0db6b14550925cbd4ca12160f9f19c78302b0814f560695d6ded37bf0eb3c683"
+  },
+  "configs": [
+    "fixed_awgn",
+    "fixed_float32",
+    "fixed_int16",
+    "fixed_int4",
+    "fixed_int6",
+    "fixed_int8"
+  ],
+  "dataset_artifact_sha256": {
+    "02_car_pass": {
+      "captions": "5e22d5159bc13adb2896d5a99fe425f43f19a24d1c741794d19393d076503515",
+      "gt": "c7d8a11e1ecd0ac6b9e46f0a0fd5c8fc684d34874b4fc3f712523850edf02243",
+      "processed": "0bf6bda0e8318c641c3fe77fd0373d421fd50e13ecf354075a854547645b28aa"
+    },
+    "05_camera_pan_person": {
+      "captions": "b74dc653f8edef63f98f2e6cc464dbb75c8f1ca5d92c360e2b16b1bfe953fd36",
+      "gt": "d705a721425c70256cbc8e83ab3686b7f15ea9cb405465acfa4104fe30a19ea3",
+      "processed": "ff2383dc8b0bcc03b424b83375644b7884ed8938abaa559d2819a2e0786d60b5"
+    },
+    "08_car_exit": {
+      "captions": "a6b221769565b39f707929c69d8db37055b2ab3480b8d965d0b3cc86e9430b9a",
+      "gt": "28ab19205839d48f861be8f229ebd2ff9d49e0d025b229719a0d5ac682bbb2a5",
+      "processed": "3300be5fbc7cf9cb1fa95127d881d23dfe34128d4a5425b87dc8e7dd5e3f05a6"
+    }
+  },
+  "dataset_manifest_sha256": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c",
+  "dataset_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+  "device": "cuda:0",
+  "digital_step_policy": "fixed_reference",
+  "eval_options": {
+    "bits_per_symbol": null,
+    "code_rate": 1.0,
+    "no_lpips": false
+  },
+  "fixed_max_gop": 16,
+  "fixed_reference_snr_db": 10.0,
+  "git_branch": "main",
+  "git_commit": "6d6c4ed60c05f91794bc5a2b9b71e18c022b1521",
+  "git_dirty": "unknown",
+  "granularity": "per_tensor",
+  "match_fixed_keyframes": false,
+  "max_frames_cap": null,
+  "physical_cuda_device": "cuda:1",
+  "psss": {
+    "backend": "proxy",
+    "device": "cpu",
+    "dtype": "fp32",
+    "max_segment_length": 16,
+    "model_id": null,
+    "threshold": 0.35,
+    "use_scene_detector": false
+  },
+  "resolved_config_sha256": "819418ff9f4c4263f97b346789405ef8fd3c508bb3a24e635a31fae6e728fb23",
+  "seed": 2025,
+  "video_frame_counts": {
+    "02_car_pass": 100,
+    "05_camera_pan_person": 100,
+    "08_car_exit": 100
+  },
+  "video_keys": [
+    "02_car_pass",
+    "05_camera_pan_person",
+    "08_car_exit"
+  ]
+}

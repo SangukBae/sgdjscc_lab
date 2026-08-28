@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "run_id": "transmission_normalization_parallel_20260827_225722",
+  "validation_date": "2026-08-28",
+  "source_integrity": {
+    "remote_file_count": 13144,
+    "local_file_count": 13144,
+    "remote_total_bytes": 1210877488,
+    "local_total_bytes": 1210877488,
+    "all_file_sha256_match": true
+  },
+  "scope": {
+    "n_videos": 10,
+    "configs": [
+      "fixed_awgn",
+      "fixed_float32",
+      "fixed_int16",
+      "fixed_int8",
+      "fixed_int6",
+      "fixed_int4"
+    ],
+    "expected_pairs": 60,
+    "completed_unique_pairs": 60,
+    "missing_pairs": 0,
+    "extra_pairs": 0,
+    "failed_pairs": 0,
+    "nan_or_inf_frames": 0,
+    "all_metrics_finite": true
+  },
+  "provenance": {
+    "git_commit": "6d6c4ed60c05f91794bc5a2b9b71e18c022b1521",
+    "manifest_git_dirty": "unknown",
+    "host_shared_checkout_tracked_clean": true,
+    "seed": 2025,
+    "gpu_model": "NVIDIA GeForce RTX 4090",
+    "workers": {
+      "worker_00": "cuda:0",
+      "worker_01": "cuda:1",
+      "worker_02": "cuda:2"
+    },
+    "worker_returncodes": {
+      "worker_00": 0,
+      "worker_01": 0,
+      "worker_02": 0
+    }
+  },
+  "snr_contract": {
+    "resolved_config_snr_db": 10.0,
+    "resolved_config_digital_fixed_reference_snr_db": 10.0,
+    "parallel_plan_fixed_reference_snr_db": 10.0,
+    "worker_signature_fixed_reference_snr_db": 10.0,
+    "digital_csv_rows_fixed_reference_snr_db": 10.0,
+    "fixed_awgn_csv_fixed_reference_snr_db": "not_applicable_blank",
+    "note": "fixed_awgn uses resolved_config.snr_db=10.0; its CSV fixed_reference_snr_db field is blank because that field records the digital decoder-step reference only"
+  },
+  "digital_baseline": "fixed_float32",
+  "fixed_awgn_used_as_digital_pareto_baseline": false,
+  "quality_limits": {
+    "max_psnr_drop_db": 0.5,
+    "max_ssim_drop": 0.01,
+    "max_lpips_rise": 0.02
+  },
+  "aggregate": [
+    {
+      "config": "fixed_awgn",
+      "mean_psnr": 23.352093110084535,
+      "mean_ssim": 0.7294070789515972,
+      "mean_lpips": 0.2562199262082577,
+      "mean_total_bundle_bytes_per_video": 2251906.7,
+      "mean_total_bundle_bytes_per_frame": 22519.067000000003,
+      "reference_only": true
+    },
+    {
+      "config": "fixed_float32",
+      "mean_psnr": 23.528910659790043,
+      "mean_ssim": 0.7353065524995328,
+      "mean_lpips": 0.2541060497388244,
+      "mean_total_bundle_bytes_per_video": 3346860.5,
+      "mean_total_bundle_bytes_per_frame": 33468.604999999996,
+      "byte_saving_vs_float32": 0.0,
+      "is_digital_baseline": true
+    },
+    {
+      "config": "fixed_int16",
+      "mean_psnr": 23.528912526130675,
+      "mean_ssim": 0.7353065547943116,
+      "mean_lpips": 0.254105670042336,
+      "mean_total_bundle_bytes_per_video": 2802711.7,
+      "mean_total_bundle_bytes_per_frame": 28027.117,
+      "psnr_drop_db": -1.8663406322616538e-06,
+      "ssim_drop": -2.294778811418041e-09,
+      "lpips_rise": -3.7969648841729153e-07,
+      "byte_saving_vs_float32": 0.16258484630596337,
+      "passes_quality_limits": true
+    },
+    {
+      "config": "fixed_int8",
+      "mean_psnr": 23.528194381713867,
+      "mean_ssim": 0.7353016556501389,
+      "mean_lpips": 0.25410470813512803,
+      "mean_total_bundle_bytes_per_video": 2530637.3,
+      "mean_total_bundle_bytes_per_frame": 25306.373,
+      "psnr_drop_db": 0.0007162780761760246,
+      "ssim_drop": 4.896849393865033e-06,
+      "lpips_rise": -1.3416036963587175e-06,
+      "byte_saving_vs_float32": 0.24387726945894528,
+      "passes_quality_limits": true
+    },
+    {
+      "config": "fixed_int6",
+      "mean_psnr": 23.5266930437088,
+      "mean_ssim": 0.7351980953514576,
+      "mean_lpips": 0.25405197173357014,
+      "mean_total_bundle_bytes_per_video": 2462643.7,
+      "mean_total_bundle_bytes_per_frame": 24626.437,
+      "psnr_drop_db": 0.0022176160812428236,
+      "ssim_drop": 0.00010845714807516948,
+      "lpips_rise": -5.4078005254254435e-05,
+      "byte_saving_vs_float32": 0.2641929055603004,
+      "passes_quality_limits": true
+    },
+    {
+      "config": "fixed_int4",
+      "mean_psnr": 23.476279297828675,
+      "mean_ssim": 0.7333009636700154,
+      "mean_lpips": 0.2536186347529292,
+      "mean_total_bundle_bytes_per_video": 2394650.1,
+      "mean_total_bundle_bytes_per_frame": 23946.500999999997,
+      "psnr_drop_db": 0.05263136196136742,
+      "ssim_drop": 0.002005588829517402,
+      "lpips_rise": -0.00048741498589521814,
+      "byte_saving_vs_float32": 0.28450854166165573,
+      "passes_quality_limits": true
+    }
+  ],
+  "minimum_passing_bit_depth": 4,
+  "selected_operating_point": "fixed_int4",
+  "quantization_effect_crosscheck_errors": 0,
+  "pareto_validation": {
+    "row_count": 4,
+    "all_rows_use_fixed_float32_baseline": true,
+    "fixed_awgn_absent": true,
+    "selected_smallest_in_budget": "fixed_int4"
+  },
+  "fixed_int4_packet_composition": {
+    "edge_plus_uncertainty_fraction": 0.9090295905861153,
+    "visual_fraction": 0.05889528495206878,
+    "note": "fractions are independently computed from packet_components.csv byte totals"
+  }
+}
