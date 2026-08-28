@@ -1,0 +1,141 @@
+{
+  "ablation_label": null,
+  "checkpoint_sha256": {
+    "JSCC_model.pth": "455cb603d071d9aee7f6e3704c3228f543178453bc7c25ffcbfd95e5ab1915fe",
+    "diffusion_backbone.pth": "1ac5c6eb69f81b415da10118d231ca90a5020d23f10841305af2d332eae9a49f",
+    "diffusion_controlnet.pth": "4f1ba885df72be90c8204588560b3ecdbe6d098505478d2bcbc9ae0c83619945",
+    "muge-epoch-19-checkpoint.pth": "0db6b14550925cbd4ca12160f9f19c78302b0814f560695d6ded37bf0eb3c683"
+  },
+  "configs": [
+    "fixed_float32",
+    "fixed_int16",
+    "fixed_int4",
+    "fixed_int6",
+    "fixed_int8",
+    "skem_float32",
+    "skem_int16",
+    "skem_int4",
+    "skem_int6",
+    "skem_int8"
+  ],
+  "dataset_artifact_sha256": {
+    "01_person_walk": {
+      "captions": "517e8678d531d4f555c26acb89325a7e2b65f7aeed1e7057146782a57432aa2e",
+      "gt": "4b6f619aae952068055ab33a9ae8121fe0a17c01a45f3e514176f05abcd63a30",
+      "processed": "2291dfb0e9cea96d5e7a3b00f2924a95eeb41f1ba4a170a63c723ef8fbeb21dc"
+    },
+    "04_person_car": {
+      "captions": "5dd86ef17be1818b1eac750ceedbf0316ab2a7fa5ba616001dcd1e486794ffdf",
+      "gt": "553bac979407345b6b7977fd2dc918bc590855e4dbc09b298fb106fbfe8cc4f1",
+      "processed": "4f9e94903a0d970d9406a28c4c6a807d7758b6ed74fe680d147a737687f4d07a"
+    },
+    "07_person_enter": {
+      "captions": "24913e13775a0eb1284e01a5dc552da46b11a0631f89fd4e13531eb6d4bc7bd2",
+      "gt": "4642063b3f19f7df1feb5aceed9a098b63a83d3364cc33c6d48c1e02e0219ade",
+      "processed": "d0548d81deca001241516a177f2dfa1e8c155b34008a864cdddabfc2ed58ecc6"
+    },
+    "10_busy_sidewalk": {
+      "captions": "41c612f6d36fa3ce1ac93890ea7d19a0ee8f3209380ff21a26b92e5703373b9f",
+      "gt": "120d67e60f1f9a0ca3e41128e8b12d7f5a91b36ee97551efd075c53e3c5f023b",
+      "processed": "4e60e9f2029fd467ef3cbb47f98a4e10bed531a2319a10e4140a5188994268c4"
+    }
+  },
+  "dataset_manifest_sha256": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c",
+  "dataset_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+  "device": "cuda:0",
+  "digital_step_policy": "fixed_reference",
+  "eval_options": {
+    "bits_per_symbol": null,
+    "code_rate": 1.0,
+    "no_lpips": false
+  },
+  "fixed_max_gop": 16,
+  "fixed_reference_snr_db": 10.0,
+  "git_branch": "main",
+  "git_commit": "2218824f301ad238129a72ade42b0210be2f21a5",
+  "git_dirty": false,
+  "granularity": "per_tensor",
+  "match_actual_transmissions": true,
+  "match_fixed_keyframes": false,
+  "matched_rate_byte_tolerance": 0.01,
+  "matched_rate_max_segment_lengths": [
+    8,
+    10,
+    12,
+    14,
+    16,
+    20,
+    24,
+    32,
+    48,
+    64,
+    100
+  ],
+  "matched_rate_thresholds": [
+    -0.95,
+    -0.9,
+    -0.85,
+    -0.8,
+    -0.75,
+    -0.7,
+    -0.65,
+    -0.6,
+    -0.55,
+    -0.5,
+    -0.45,
+    -0.4,
+    -0.35,
+    -0.3,
+    -0.25,
+    -0.2,
+    -0.15,
+    -0.1,
+    -0.05,
+    0.0,
+    0.05,
+    0.1,
+    0.15,
+    0.2,
+    0.25,
+    0.3,
+    0.35,
+    0.4,
+    0.45,
+    0.5,
+    0.55,
+    0.6,
+    0.65,
+    0.7,
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95,
+    0.999999
+  ],
+  "max_frames_cap": null,
+  "physical_cuda_device": "cuda:0",
+  "psss": {
+    "backend": "proxy",
+    "device": "cpu",
+    "dtype": "fp32",
+    "max_segment_length": 16,
+    "model_id": null,
+    "threshold": 0.35,
+    "use_scene_detector": false
+  },
+  "resolved_config_sha256": "819418ff9f4c4263f97b346789405ef8fd3c508bb3a24e635a31fae6e728fb23",
+  "seed": 2025,
+  "video_frame_counts": {
+    "01_person_walk": 100,
+    "04_person_car": 100,
+    "07_person_enter": 100,
+    "10_busy_sidewalk": 100
+  },
+  "video_keys": [
+    "01_person_walk",
+    "04_person_car",
+    "07_person_enter",
+    "10_busy_sidewalk"
+  ]
+}

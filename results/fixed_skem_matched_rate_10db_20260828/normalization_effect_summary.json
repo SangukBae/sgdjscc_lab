@@ -1,0 +1,12 @@
+{
+  "run_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/fixed_skem_matched_rate_10db_20260828_011620",
+  "n_quantization_effect_rows": 10,
+  "n_selector_effect_rows": 5,
+  "n_invalid_configs": 0,
+  "ablation_policies_present": [],
+  "quantization_effect_file": "quantization_effect.csv",
+  "selector_effect_file": "selector_effect.csv",
+  "skem_backend_kinds_present": [
+    "proxy"
+  ]
+}

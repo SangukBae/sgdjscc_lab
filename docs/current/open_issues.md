@@ -87,12 +87,14 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   - 20프레임에서 pixel fidelity와 receiver decode latency는 50-step diffusion보다 우수했지만,
     sender·bundle 전체 지연, semantic fidelity, 할루시네이션, 시간축 지표는 비교하지 않았다.
   - 따라서 VAE-direct/few-step/full diffusion 중 최종 정책은 아직 확정할 수 없다.
-- **fixed–SKEM exact matched-rate full 결과 대기**
-  - keyframe 수는 맞았지만 `recompute_semantic`으로 실제 transmitting frame 수가 달라졌다.
-  - `rate_matching.csv` 통과: 35/50; selector 절감 효과는 잠정 결과로만 사용한다.
-  - 새 실행기는 fixed max-GOP을 유지한 채 영상별 SKEM을 보정해 실제 visual 전송 수를
-    exact match하고, raw byte 1% + padding 후 effective byte exact를 자동 검증하도록 준비됐다.
-  - 10영상×10설정 3-GPU full 실행과 결과 registry 고정 전까지 SKEM 효과 결론은 여전히 잠정이다.
+- **proxy SKEM exact-rate 보정이 fixed schedule로 퇴화**
+  - 10영상×10설정 full 결과는 actual transmitting count와 effective byte를 정확히
+    맞췄지만, 10/10 영상에서 fixed/SKEM keyframe·transmitting index가 같았다.
+  - PSNR/SSIM/LPIPS 차이 0은 SKEM 우위가 아니라 동일 schedule 결과다. raw 100
+    byte/video 차이도 config label의 manifest 길이뿐이라 padding 후 완전 동률이다.
+  - 현재 operating point는 `fixed_int4`를 유지한다. 다른 semantic schedule의 효용을
+    보려면 exact-count 후보 중 fixed와 다른 index를 강제하거나 실제 MLLM PSSS로
+    재검증해야 한다. 상세: [실험 결과](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md).
 - **10dB fixed_int4 packet의 90.90%가 edge·uncertainty**
   - visual latent는 5.89%라 추가 bit-depth 축소 효과가 제한적이다.
   - 다음 전송량 절감 대상은 edge/uncertainty 압축·선택 전송이다.

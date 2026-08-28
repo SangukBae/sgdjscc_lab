@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "run_id": "fixed_skem_matched_rate_10db_20260828_011620",
+  "original_output_root": "outputs/fixed_skem_matched_rate_10db_20260828_011620/",
+  "experiment_commit": "2218824f301ad238129a72ade42b0210be2f21a5",
+  "transfer_integrity": {
+    "remote_regular_files": 21194,
+    "local_regular_files": 21194,
+    "remote_total_bytes": 1926849641,
+    "local_total_bytes": 1926849641,
+    "all_file_sha256_match": true,
+    "note": "The first rsync could not read root-owned 0600 tables. Read permission was added to this run only, then an incremental rsync transferred the 47 omitted files; the final all-file SHA-256 comparison passed."
+  },
+  "completion": {
+    "run_status": "completed",
+    "validation_passed": true,
+    "expected_video_config_pairs": 100,
+    "observed_video_config_pairs": 100,
+    "expected_rate_rows": 50,
+    "observed_rate_rows": 50,
+    "failed_pairs": 0,
+    "nonfinite_values": 0,
+    "worker_returncodes": [0, 0, 0],
+    "wall_time_seconds": 7692
+  },
+  "provenance": {
+    "seed": 2025,
+    "digital_step_policy": "fixed_reference",
+    "fixed_reference_snr_db": 10.0,
+    "psss_backend_kind": "proxy",
+    "devices": ["cuda:0", "cuda:1", "cuda:2"],
+    "gpu_name": "NVIDIA GeForce RTX 4090",
+    "python_version": "3.9.25",
+    "torch_version": "2.1.0+cu118",
+    "cuda_version": "11.8"
+  },
+  "exact_rate_matching": {
+    "plan_rows": 10,
+    "all_actual_transmission_counts_exact": true,
+    "all_raw_byte_differences_within_1pct": true,
+    "all_effective_bytes_exact_after_padding": true,
+    "max_raw_byte_diff_ratio": 0.000049534082420750425,
+    "fixed_minus_skem_raw_bytes_per_video_channel": 100,
+    "skem_padding_bytes_total": 5000,
+    "byte_difference_source": "manifest_bytes only; caption, edge, uncertainty, semantic packet, visual payload and bundle overhead differences are all zero"
+  },
+  "selector_result": {
+    "videos_with_identical_keyframe_indices": 10,
+    "videos_with_identical_actual_transmission_indices": 10,
+    "max_abs_psnr_delta_skem_minus_fixed": 0.0,
+    "max_abs_ssim_delta_skem_minus_fixed": 0.0,
+    "max_abs_lpips_delta_skem_minus_fixed": 0.0,
+    "selected_parameter_counts": {
+      "threshold_0.35_max_segment_16": 9,
+      "threshold_-0.65_max_segment_16": 1
+    },
+    "interpretation": "The proxy SKEM calibration converged to the same schedule as fixed for every video. This is a degenerate null comparison, not evidence that SKEM improves quality at equal rate."
+  },
+  "quantization_result": {
+    "minimum_passing_bit_depth": 4,
+    "int4_vs_float32": {
+      "byte_reduction_fraction": 0.2845085416616557,
+      "psnr_drop_db": 0.05263136196136742,
+      "ssim_drop": 0.002005588829517402,
+      "lpips_rise": -0.00048741498589521814
+    },
+    "fixed_int4_packet_composition": {
+      "edge_plus_uncertainty_fraction": 0.9090295905861153,
+      "visual_fraction": 0.05889528495206878
+    }
+  }
+}

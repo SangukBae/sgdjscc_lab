@@ -27,14 +27,17 @@ supersedes:
 
 ## 권장 실행 순서
 
+fixed–SKEM exact matched-rate 재평가는 완료됐다. proxy SKEM이 10/10 영상에서 fixed와
+동일 schedule로 수렴해 별도 selector 이득은 없었고 `fixed_int4`를 유지한다. 아래는
+그 결과를 반영한 다음 실행 순서다.
+
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
-| 1 | fixed–SKEM exact matched-rate 재평가 (**실행 준비 완료**) | `run_fixed_skem_matched_rate_10db.sh` full 실행 후 실제 transmitting frame exact + raw byte 1% + padding effective byte exact 검증을 통과하고 fixed/SKEM 품질을 동일 전송량에서 비교·registry 고정 |
-| 2 | edge·uncertainty 전송량 절감 | int4 packet의 90.90% 구성요소를 선택 전송·양자화·해상도 축소로 ablation |
-| 3 | 통합 평가 harness·복원 정책 비교 | Rate·품질·SRS·할루시네이션·시간축·전체 지연을 paired row로 기록하고 VAE-direct/few-step/full diffusion operating point를 비교 |
-| 4 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
-| 5 | 동적 예산 controller | 채널·uncertainty·verifier 위험도로 전송량과 복원 연산량을 결정하고 feedback/retransmission byte·RTT 포함 |
-| 6 | 별도 held-out 최종 검증·문서 마감 | paired 통계·confidence interval, 최종 operating point, 표·그래프·재현성 registry 확정 |
+| 1 | edge·uncertainty 전송량 절감 | int4 packet의 90.90% 구성요소를 선택 전송·양자화·해상도 축소로 ablation |
+| 2 | 통합 평가 harness·복원 정책 비교 | Rate·품질·SRS·할루시네이션·시간축·전체 지연을 paired row로 기록하고 VAE-direct/few-step/full diffusion operating point를 비교 |
+| 3 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
+| 4 | 동적 예산 controller | 채널·uncertainty·verifier 위험도로 전송량과 복원 연산량을 결정하고 feedback/retransmission byte·RTT 포함 |
+| 5 | 별도 held-out 최종 검증·문서 마감 | paired 통계·confidence interval, 최종 operating point, 표·그래프·재현성 registry 확정 |
 
 - 역할 분리
   - 평가 harness: hyperparameter 조합 반복 실행
@@ -85,7 +88,9 @@ supersedes:
 - 현재 판정
   - float32 10dB baseline: full 300프레임에서 AWGN 동등 이상, transport bit-exact 확인 완료
   - `fixed_int4`: float32 대비 28.45% byte 절감, 세 품질 허용 기준을 모두 통과한 최소 bit-depth
-  - `skem_int4`: fixed-only 재평가 범위 밖이며 actual-byte matched-rate 재검증 전까지 잠정
+  - exact matched-rate에서 proxy `skem_int4`는 fixed와 동일 schedule·품질로 수렴했다.
+    raw 100 byte/video 차이도 manifest label 길이뿐이며 padding 후 동률이므로 운영점은
+    `fixed_int4`를 유지한다.
 - 근사
   - 물리 channel symbol·FEC는 proxy
 - 목표
@@ -135,7 +140,7 @@ supersedes:
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|
-| 9월 | 공정 selector 비교 기반 확정 | fixed–SKEM exact matched-rate 결과 |
+| 9월 | 공정 selector 비교 기반 확정 | **완료** — proxy SKEM null 결과, `fixed_int4` 유지 |
 | 10월 | 전송량 절감 + verifier 폐루프 | edge·uncertainty 절감 결과, 통합 평가 row, verifier candidate action 실제 sampler 반영 |
 | 11월 | 동적 제어 + 최종 정리 | 예산 controller ablation, 별도 held-out 최종 검증, 비교 프로토콜·최종 보고서 |
 
