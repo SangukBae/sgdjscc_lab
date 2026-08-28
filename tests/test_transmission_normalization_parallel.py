@@ -185,6 +185,35 @@ def test_fixed_skem_wrapper_locks_exact_matched_rate_scope(tmp_path):
         assert "--match-fixed-keyframes" not in command
 
 
+def test_single_worker_shell_binds_negative_threshold_csv_to_option(tmp_path):
+    env = os.environ.copy()
+    env.update({
+        "PYTHON_BIN": sys.executable,
+        "SGDJSCC_GIT_COMMIT": "a" * 40,
+        "SGDJSCC_GIT_DIRTY": "false",
+        "SGDJSCC_GIT_BRANCH": "main",
+    })
+    result = subprocess.run(
+        [
+            "bash", "scripts/run_transmission_normalization.sh",
+            "--dry-run", "--device", "cpu", "--output-root", str(tmp_path / "out"),
+            "--configs", "fixed_int8,skem_int8", "--match-actual-transmissions",
+            "--skip-keyframe-sweep", "--skip-source-size-report",
+        ],
+        cwd=str(_ROOT), env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    command_line = next(
+        line for line in result.stdout.splitlines()
+        if "run_transmission_reduction_eval.py" in line
+    )
+    # argparse otherwise mistakes a separate CSV beginning with -0.95 for a
+    # new option and raises "expected one argument" before any video starts.
+    unescaped_command_line = command_line.replace("\\", "")
+    assert "--matched-rate-thresholds=-0.95" in unescaped_command_line
+    assert "--matched-rate-max-segment-lengths=8,10" in unescaped_command_line
+
+
 def test_merge_builds_global_aggregate_effects_and_manifest(tmp_path):
     plan = {
         "schema_version": 1,

@@ -299,8 +299,8 @@ SWEEP_CMD=("$PYTHON_BIN" scripts/run_transmission_reduction_eval.py
 [ "$MATCH_FIXED_KEYFRAMES" -eq 1 ] && SWEEP_CMD+=(--match-fixed-keyframes)
 [ "$MATCH_ACTUAL_TRANSMISSIONS" -eq 1 ] && SWEEP_CMD+=(
   --match-actual-transmissions
-  --matched-rate-thresholds "$MATCHED_RATE_THRESHOLDS"
-  --matched-rate-max-segment-lengths "$MATCHED_RATE_MAX_SEGMENT_LENGTHS"
+  "--matched-rate-thresholds=$MATCHED_RATE_THRESHOLDS"
+  "--matched-rate-max-segment-lengths=$MATCHED_RATE_MAX_SEGMENT_LENGTHS"
 )
 [ "$SKIP_KEYFRAME_SWEEP" -eq 1 ] && SWEEP_CMD+=(--skip-keyframe-sweep)
 [ "$SKIP_SOURCE_SIZE_REPORT" -eq 1 ] && SWEEP_CMD+=(--skip-source-size-report)
