@@ -84,7 +84,8 @@
 | [experiments/2026-08-28_float32_digital_step_normalization_full.md](./experiments/2026-08-28_float32_digital_step_normalization_full.md) | 10dB decoder-step 정상화 3-GPU full 300프레임 최종 실측 |
 | [experiments/2026-08-28_quantization_reevaluation_10db.md](./experiments/2026-08-28_quantization_reevaluation_10db.md) | 10dB fixed-selector float32/int16/int8/int6/int4 양자화 재평가와 4-bit 운영점 확정 |
 | [experiments/2026-08-28_fixed_skem_matched_rate_10db.md](./experiments/2026-08-28_fixed_skem_matched_rate_10db.md) | fixed–SKEM actual-transmission/effective-byte exact matching과 proxy SKEM의 fixed schedule 수렴 null 결과 |
-| [experiments/2026-08-28_edge_uncertainty_ablation_preparation.md](./experiments/2026-08-28_edge_uncertainty_ablation_preparation.md) | fixed_int4 edge·uncertainty 독립 5종·결합 5종, 16-profile 3-GPU 검증 준비 |
+| [experiments/2026-08-28_edge_uncertainty_ablation_10db.md](./experiments/2026-08-28_edge_uncertainty_ablation_10db.md) | fixed_int4 edge·uncertainty 16-profile 3-GPU full ablation; combined_ds4 조건부 최소-byte 후보와 digital uncertainty bypass 확인 |
+| [experiments/2026-08-28_edge_uncertainty_ablation_preparation.md](./experiments/2026-08-28_edge_uncertainty_ablation_preparation.md) | 위 full ablation의 실행 전 profile·wire-accounting 계약 |
 
 ## 5. 참조 문서 (`reference/`)
 

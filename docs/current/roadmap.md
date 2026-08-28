@@ -27,13 +27,15 @@ supersedes:
 
 ## 권장 실행 순서
 
-fixed–SKEM exact matched-rate 재평가는 완료됐다. proxy SKEM이 10/10 영상에서 fixed와
-동일 schedule로 수렴해 별도 selector 이득은 없었고 `fixed_int4`를 유지한다. 아래는
-그 결과를 반영한 다음 실행 순서다.
+fixed–SKEM exact matched-rate와 edge·uncertainty 16-profile 재평가는 완료됐다.
+`combined_ds4`가 시험 후보 중 byte 최소였지만 digital uncertainty bypass와 매우 약한
+edge 민감도가 확인돼 최종 운영점 확정 전 작은 경로 검증이 필요하다. 아래는 두 결과를
+반영한 다음 실행 순서다.
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
-| 1 | edge·uncertainty 전송량 절감 | **실행 준비 완료** — 16-profile·3-GPU harness를 full 실행하고 품질 gate 내 최소-byte 후보를 확정·registry 보존 |
+| 완료 | edge·uncertainty 전송량 절감 1차 | 16-profile·3-GPU full 완료·registry 보존. `combined_ds4` 조건부 최소 후보, uncertainty bypass 확인 |
+| 1 | guide 경로·빈 조합 확인 | uncertainty 제거/조건화 계약 결정, `edge_ds4+uncertainty_omit`·양쪽 omit 및 ControlNet sensitivity 검증 |
 | 2 | 통합 평가 harness·복원 정책 비교 | Rate·품질·SRS·할루시네이션·시간축·전체 지연을 paired row로 기록하고 VAE-direct/few-step/full diffusion operating point를 비교 |
 | 3 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
 | 4 | 동적 예산 controller | 채널·uncertainty·verifier 위험도로 전송량과 복원 연산량을 결정하고 feedback/retransmission byte·RTT 포함 |
@@ -91,6 +93,11 @@ fixed–SKEM exact matched-rate 재평가는 완료됐다. proxy SKEM이 10/10 �
   - exact matched-rate에서 proxy `skem_int4`는 fixed와 동일 schedule·품질로 수렴했다.
     raw 100 byte/video 차이도 manifest label 길이뿐이며 padding 후 동률이므로 운영점은
     `fixed_int4`를 유지한다.
+  - edge·uncertainty 1차 ablation에서 `combined_ds4`는 baseline 대비 85.11% byte를
+    줄이며 pixel quality gate를 통과했다. 그러나 uncertainty는 reliable-digital
+    decoder에서 소비되지 않고 edge 영향도 수치적으로 매우 작아 조건부 후보다.
+    혼합 omit/downsample과 semantic·temporal 지표를 통과하기 전 최종 운영점으로
+    확정하지 않는다.
 - 근사
   - 물리 channel symbol·FEC는 proxy
 - 목표
@@ -135,13 +142,14 @@ fixed–SKEM exact matched-rate 재평가는 완료됐다. proxy SKEM이 10/10 �
   - float32 digital 진단 harness·3-GPU 실행기·production 오류 집중 GPU 검증
   - 10dB decoder-step full 검증(3 core condition×100프레임) 및 raw output 원격–로컬 SHA 대조
   - 10dB fixed 양자화 10영상×6설정 full 재평가, 4-bit 운영점 확정 및 결과 registry 고정
+  - fixed_int4 edge·uncertainty 16-profile 3-GPU full ablation, 160/160 pair와 byte accounting 검증 및 결과 registry 고정
 - 근거: [status.md](./status.md)
 - 남은 일정
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|
 | 9월 | 공정 selector 비교 기반 확정 | **완료** — proxy SKEM null 결과, `fixed_int4` 유지 |
-| 10월 | 전송량 절감 + verifier 폐루프 | edge·uncertainty 절감 결과, 통합 평가 row, verifier candidate action 실제 sampler 반영 |
+| 10월 | guide 경로 확정 + verifier 폐루프 | mixed guide 후보·ControlNet sensitivity, 통합 평가 row, verifier candidate action 실제 sampler 반영 |
 | 11월 | 동적 제어 + 최종 정리 | 예산 controller ablation, 별도 held-out 최종 검증, 비교 프로토콜·최종 보고서 |
 
 ## 신규 연구 아이템 확장 가능성

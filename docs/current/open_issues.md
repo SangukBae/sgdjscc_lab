@@ -95,12 +95,25 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   - 현재 operating point는 `fixed_int4`를 유지한다. 다른 semantic schedule의 효용을
     보려면 exact-count 후보 중 fixed와 다른 index를 강제하거나 실제 MLLM PSSS로
     재검증해야 한다. 상세: [실험 결과](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md).
-- **10dB fixed_int4 packet의 90.90%가 edge·uncertainty**
-  - visual latent는 5.89%라 추가 bit-depth 축소 효과가 제한적이다.
-  - q4·1/2·1/4 해상도·reuse2·omit의 성분별 독립 ablation과 결합 후보를 실행하는
-    3-GPU harness는 준비됐지만 full 결과는 아직 없다.
-  - `reuse2`는 같은 영상에서 이전에 수신한 guide shape가 유지된다는 조건을 검증하며,
-    해상도/patch layout이 바뀌어 cache shape가 맞지 않으면 조용히 보간하지 않고 실패해야 한다.
+- **reliable-digital 경로에서 uncertainty payload를 decoder가 소비하지 않는다**
+  - 16-profile full 결과에서 uncertainty q4/ds2/ds4/reuse2/omit이 10영상 각각의
+    PSNR·SSIM·LPIPS를 baseline과 전부 정확히 같게 만들었다.
+  - 수신기는 `edge_already_received=true`로 analog Canny 재전송을 건너뛰며,
+    uncertainty는 건너뛴 `_retransmit_canny()`에서만 사용된다. 따라서 현재 packet은
+    복원에 기여하지 않는 uncertainty를 baseline byte의 45.41%만큼 전송한다.
+  - uncertainty를 digital packet에서 제거할지, 별도 decoder 조건으로 연결할지
+    Tx/Rx 계약 결정이 필요하다.
+- **edge guide 영향이 현재 checkpoint/config에서 수치적으로 매우 약하다**
+  - `edge_omit`의 영상별 최대 절대 변화가 PSNR 0.0000747dB, SSIM 0.000000444,
+    LPIPS 0.00000252뿐이었다. edge는 ControlNet latent로 연결되므로 uncertainty와
+    달리 구조적 bypass는 아니지만, pixel metric만 보면 사실상 무감도에 가깝다.
+  - ControlNet off/scale sensitivity와 SRS·hallucination·temporal 지표를 확인하기 전
+    guide가 불필요하다고 일반화하면 안 된다.
+- **guide ablation의 최소-byte 조합 탐색이 닫히지 않았다**
+  - `combined_ds4`는 시험한 16개 중 356,824.7 bytes/video(-85.11%)로 최소였지만,
+    `edge_ds4 + uncertainty_omit`과 `edge_omit + uncertainty_omit`은 실행하지 않았다.
+  - 따라서 자동 Pareto 선택은 조건부 후보이며 최종 운영점이 아니다. 상세:
+    [실험 결과](../experiments/2026-08-28_edge_uncertainty_ablation_10db.md).
 
 ## 채널·저지연
 

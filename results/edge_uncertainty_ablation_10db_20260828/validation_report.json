@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "validation_kind": "independent_post_transfer_review",
+  "source_run": "outputs/edge_uncertainty_ablation_10db_20260828_051915/",
+  "transfer_integrity": {
+    "remote_regular_file_count": 33256,
+    "local_regular_file_count": 33256,
+    "remote_total_bytes": 2813319377,
+    "local_total_bytes": 2813319377,
+    "all_file_sha256_match": true,
+    "preserved_artifacts_compared": 23,
+    "preserved_artifacts_sha256_match": true
+  },
+  "run_contract": {
+    "git_commit": "1d33fa312d0f6c540a319e791102f98b5f0118b7",
+    "git_dirty": false,
+    "git_branch": "main",
+    "seed": 2025,
+    "fixed_reference_snr_db": 10.0,
+    "expected_videos": 10,
+    "expected_profiles": 16,
+    "expected_video_profile_pairs": 160,
+    "observed_unique_video_profile_pairs": 160,
+    "failed_pairs": 0,
+    "nonfinite_frames": 0,
+    "all_quality_frames_present": true,
+    "worker_devices": [
+      "cuda:0",
+      "cuda:1",
+      "cuda:2"
+    ],
+    "all_worker_returncodes_zero": true,
+    "packet_component_rows": 16000,
+    "all_packet_component_sums_reconcile": true
+  },
+  "quality_gate": {
+    "psnr_drop_db_max": 0.5,
+    "ssim_drop_max": 0.01,
+    "lpips_rise_max": 0.02,
+    "profiles_passing": 16,
+    "profiles_total": 16
+  },
+  "baseline": {
+    "guide_profile": "baseline",
+    "mean_total_bundle_bytes_per_video": 2396632.7,
+    "mean_psnr": 23.476279297828675,
+    "mean_ssim": 0.7333009636700154,
+    "mean_lpips": 0.2536186347529292,
+    "edge_byte_share": 0.4541388006597757,
+    "uncertainty_byte_share": 0.4541388006597757,
+    "combined_edge_uncertainty_byte_share": 0.9082776013195514
+  },
+  "minimum_bytes_among_tested_profiles": {
+    "guide_profile": "combined_ds4",
+    "mean_total_bundle_bytes_per_video": 356824.7,
+    "byte_reduction_ratio_vs_baseline": 0.8511141486135945,
+    "psnr_drop_db": 0.000009822845456142204,
+    "ssim_drop": 0.00000011488795292891041,
+    "lpips_rise": -0.0000005644336342203182,
+    "status": "provisional_candidate_among_tested_profiles"
+  },
+  "paired_sensitivity": {
+    "uncertainty_only_profiles_exactly_equal_to_baseline_for_all_10_videos": true,
+    "uncertainty_only_max_abs_psnr_delta_db": 0.0,
+    "uncertainty_only_max_abs_ssim_delta": 0.0,
+    "uncertainty_only_max_abs_lpips_delta": 0.0,
+    "edge_omit_max_abs_psnr_delta_db": 0.000074634552,
+    "edge_omit_max_abs_ssim_delta": 0.000000444054603532,
+    "edge_omit_max_abs_lpips_delta": 0.00000251941382884
+  },
+  "interpretation": {
+    "uncertainty_path": "The reliable-digital receiver calls _decode_diffusion with edge_already_received=true. The received uncertainty tensor is only consumed by _retransmit_canny, which is skipped in that branch, so uncertainty changes cannot affect reconstruction in this evaluated path.",
+    "edge_path": "The received edge is encoded into a ControlNet latent and is therefore connected, but all tested edge perturbations had only numerical-scale pixel-metric effects under this checkpoint/configuration.",
+    "decision": "combined_ds4 is the minimum-byte profile among the 16 tested profiles, not a final global operating point. Mixed edge_ds4+uncertainty_omit and edge_omit+uncertainty_omit were not tested, and semantic/temporal/hallucination metrics were not part of this run."
+  },
+  "validation_passed": true,
+  "scientific_conclusion_is_conditional": true
+}

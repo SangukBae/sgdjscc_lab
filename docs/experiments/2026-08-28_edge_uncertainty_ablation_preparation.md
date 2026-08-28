@@ -1,5 +1,5 @@
 ---
-status: prepared
+status: superseded
 updated: 2026-08-28
 owner: ETRI SGD-JSCC 연구팀
 ---
@@ -7,6 +7,10 @@ owner: ETRI SGD-JSCC 연구팀
 > [← 문서 색인](../README.md)
 
 # fixed_int4 edge·uncertainty 전송 절감 ablation 준비
+
+> 실행과 결과 분석이 완료됐다. 최종 기록은
+> [2026-08-28_edge_uncertainty_ablation_10db.md](./2026-08-28_edge_uncertainty_ablation_10db.md)를
+> 기준으로 한다.
 
 ## 목적
 
@@ -74,4 +78,4 @@ bash scripts/run_edge_uncertainty_ablation_10db.sh \
   --output-root "outputs/$RUN_DIR"
 ```
 
-실제 장시간 GPU 실행과 결과 확정은 아직 수행하지 않았다.
+실제 장시간 GPU 실행은 이후 완료됐으며 이 문서는 실행 전 계약을 보존한다.

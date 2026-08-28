@@ -1,0 +1,87 @@
+{
+  "assignments": [
+    {
+      "device": "cuda:0",
+      "estimated_frames": 400,
+      "videos": [
+        "01_person_walk",
+        "04_person_car",
+        "07_person_enter",
+        "10_busy_sidewalk"
+      ],
+      "worker_id": "worker_00"
+    },
+    {
+      "device": "cuda:1",
+      "estimated_frames": 300,
+      "videos": [
+        "02_car_pass",
+        "05_camera_pan_person",
+        "08_car_exit"
+      ],
+      "worker_id": "worker_01"
+    },
+    {
+      "device": "cuda:2",
+      "estimated_frames": 300,
+      "videos": [
+        "03_dog_walk",
+        "06_handheld_sign",
+        "09_scene_cut_chair_car"
+      ],
+      "worker_id": "worker_02"
+    }
+  ],
+  "dataset_manifest_sha256": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c",
+  "dataset_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+  "devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2"
+  ],
+  "git": {
+    "branch": "main",
+    "commit": "1d33fa312d0f6c540a319e791102f98b5f0118b7",
+    "dirty": false
+  },
+  "schema_version": 1,
+  "settings": {
+    "ablation_label": null,
+    "configs": "fixed_int4",
+    "digital_step_policy": "fixed_reference",
+    "fixed_reference_snr_db": 10.0,
+    "guide_profiles": [
+      "baseline",
+      "edge_q4",
+      "edge_ds2",
+      "edge_ds4",
+      "edge_reuse2",
+      "edge_omit",
+      "uncertainty_q4",
+      "uncertainty_ds2",
+      "uncertainty_ds4",
+      "uncertainty_reuse2",
+      "uncertainty_omit",
+      "combined_q4",
+      "combined_ds2",
+      "combined_ds4",
+      "combined_reuse2",
+      "combined_q4_ds2_reuse2"
+    ],
+    "match_actual_transmissions": false,
+    "match_fixed_keyframes": false,
+    "matched_rate_max_segment_lengths": "8,10,12,14,16,20,24,32,48,64,100",
+    "matched_rate_thresholds": "-0.95,-0.9,-0.85,-0.8,-0.75,-0.7,-0.65,-0.6,-0.55,-0.5,-0.45,-0.4,-0.35,-0.3,-0.25,-0.2,-0.15,-0.1,-0.05,0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,0.999999",
+    "max_frames": null,
+    "psss_backend": "proxy",
+    "psss_device": "cpu",
+    "psss_dtype": "fp32",
+    "psss_max_segment_length": null,
+    "psss_model_id": null,
+    "psss_threshold": null,
+    "seed": 2025,
+    "skip_keyframe_sweep": true,
+    "skip_source_size_report": true,
+    "use_scene_detector": false
+  }
+}

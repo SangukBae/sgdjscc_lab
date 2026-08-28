@@ -1,0 +1,524 @@
+{
+  "schema_version": 2,
+  "run_id": "worker_01",
+  "generated_at": "2026-08-28T08:09:55.912984+00:00",
+  "git": {
+    "commit": "1d33fa312d0f6c540a319e791102f98b5f0118b7",
+    "dirty": false,
+    "branch": "main"
+  },
+  "command": {
+    "text": "scripts/run_transmission_reduction_eval.py --output-root /home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/edge_uncertainty_ablation_10db_20260828_051915/workers/worker_01 --dataset-root /home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval --configs fixed_int4 --device cuda:0 --seed 2025 --digital-step-policy fixed_reference --fixed-reference-snr-db 10.0 --guide-profiles baseline,edge_q4,edge_ds2,edge_ds4,edge_reuse2,edge_omit,uncertainty_q4,uncertainty_ds2,uncertainty_ds4,uncertainty_reuse2,uncertainty_omit,combined_q4,combined_ds2,combined_ds4,combined_reuse2,combined_q4_ds2_reuse2 --psss-backend proxy --psss-device cpu --psss-dtype fp32 --video-ids 02_car_pass,05_camera_pan_person,08_car_exit --skip-keyframe-sweep --skip-source-size-report",
+    "argv": [
+      "scripts/run_transmission_reduction_eval.py",
+      "--output-root",
+      "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/edge_uncertainty_ablation_10db_20260828_051915/workers/worker_01",
+      "--dataset-root",
+      "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+      "--configs",
+      "fixed_int4",
+      "--device",
+      "cuda:0",
+      "--seed",
+      "2025",
+      "--digital-step-policy",
+      "fixed_reference",
+      "--fixed-reference-snr-db",
+      "10.0",
+      "--guide-profiles",
+      "baseline,edge_q4,edge_ds2,edge_ds4,edge_reuse2,edge_omit,uncertainty_q4,uncertainty_ds2,uncertainty_ds4,uncertainty_reuse2,uncertainty_omit,combined_q4,combined_ds2,combined_ds4,combined_reuse2,combined_q4_ds2_reuse2",
+      "--psss-backend",
+      "proxy",
+      "--psss-device",
+      "cpu",
+      "--psss-dtype",
+      "fp32",
+      "--video-ids",
+      "02_car_pass,05_camera_pan_person,08_car_exit",
+      "--skip-keyframe-sweep",
+      "--skip-source-size-report"
+    ],
+    "source": "captured"
+  },
+  "seed": 2025,
+  "resolved_config": {
+    "status": "resolved",
+    "resolved": {
+      "inline": {
+        "channel": "awgn",
+        "snr_db": 10.0,
+        "model_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/checkpoints",
+        "use_semantic": true,
+        "use_text": true,
+        "use_controlnet": true,
+        "use_jscc_feature": true,
+        "use_gt_csi": false,
+        "canny_cr": "0.2",
+        "diffusion_step": 50,
+        "step_style": "continuous",
+        "guidance_scale": 4.0,
+        "controlnet_scale": 0.3,
+        "cfg_method": "pcs_1.0",
+        "mask_method": "none",
+        "th": 0.25,
+        "input_path": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/inputs/",
+        "output_dir": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/",
+        "device": "cuda:0",
+        "use_phase4": true,
+        "use_phase5": false,
+        "metrics": [
+          "psnr",
+          "ssim",
+          "lpips",
+          "clip_image_image",
+          "clip_text_image",
+          "object_preservation_rate",
+          "missing_object_rate",
+          "additional_object_rate",
+          "hallucination_score",
+          "semantic_reliability_score"
+        ],
+        "snr_list": [
+          -5,
+          0,
+          5,
+          10,
+          15,
+          20,
+          25
+        ],
+        "save_csv": true,
+        "csv_path": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/results.csv",
+        "clip_model_name": "ViT-B/32",
+        "semantic_reliability_weights": {
+          "w_img": 0.3,
+          "w_txt": 0.25,
+          "w_pres": 0.25,
+          "w_miss": 0.1,
+          "w_add": 0.1
+        },
+        "object_presence_threshold": 0.25,
+        "object_presence_uncertain_band": 0.0,
+        "use_regeneration_loop": false,
+        "regeneration_threshold": 0.5,
+        "regeneration_max_retries": 1,
+        "use_packet_eval": false,
+        "packet_dir": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/packets",
+        "packet_use_segmentation": false,
+        "packet_use_depth": false,
+        "packet_caption_objects": true,
+        "packet_blend": 0.5,
+        "use_packet_regeneration": false,
+        "use_adaptive_guidance": false,
+        "adaptive_guidance": {
+          "thresholds": {
+            "low": 0.0,
+            "high": 8.0
+          }
+        },
+        "use_temporal": true,
+        "scene_change": {
+          "threshold": 0.35,
+          "hist_weight": 1.0,
+          "clip_weight": 0.0,
+          "lpips_weight": 0.0,
+          "hist_bins": 16,
+          "use_lpips": false
+        },
+        "keyframe": {
+          "max_gop": 12,
+          "selector": "fixed",
+          "fixed_interval": {
+            "interval": 12
+          },
+          "fixed_count": {
+            "count": null
+          },
+          "psss": {
+            "backend": "mock",
+            "threshold": 0.35,
+            "semantic_focus": "the main subject and action",
+            "min_segment_length": 1,
+            "max_segment_length": 12,
+            "seed": null,
+            "caption_source": "captions_file",
+            "use_scene_detector": false,
+            "mock": {},
+            "proxy": {
+              "model_name": "ViT-B/32"
+            },
+            "real": {
+              "model_id": null,
+              "device": "cpu",
+              "dtype": "fp32"
+            }
+          }
+        },
+        "temporal": {
+          "reuse_threshold": 0.2,
+          "motion_threshold": null,
+          "motion_weight": 0.5,
+          "motion_grid": 8
+        },
+        "video_io": {
+          "extracted_frames_dir": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/video_frames",
+          "recon_frames_dir": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/recon_frames",
+          "save_recon_frames": true,
+          "save_recon_video": false,
+          "recon_video": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/recon.mp4",
+          "fps": null
+        },
+        "keyframe_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/keyframes.json",
+        "segment_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/segments.json",
+        "temporal_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/temporal_metrics.csv",
+        "frame_log_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/temporal_frames.csv",
+        "use_packet_verifier": false,
+        "verifier": {
+          "enabled": false,
+          "severity_threshold": 0.6,
+          "keyframe_fallback_severity": 0.85,
+          "accept_severity": 0.15,
+          "missing_object_threshold": 1,
+          "additional_object_threshold": 1,
+          "structural_error_threshold": 1,
+          "save_reports": true,
+          "report_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/packet_match_report.json",
+          "report_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/packet_match_report.csv",
+          "decisions_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/controller_decisions.json",
+          "decisions_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/controller_decisions.csv",
+          "use_presence_calibration": false,
+          "presence_mode": "clip_only",
+          "presence_backends": [
+            "clip"
+          ],
+          "presence_backend_weights": {},
+          "presence_backend_cfg": {},
+          "metric_role": "loop_internal"
+        },
+        "use_video_gen": false,
+        "video_generator": {
+          "enabled": false,
+          "backend": "auto",
+          "conditioning_mode": "start_only",
+          "interpolation_alpha": 0.5,
+          "allow_ground_truth_reference": false,
+          "generate_delta_min": null,
+          "generate_delta_max": null,
+          "generate_motion_max": null,
+          "save_generated_frames": true,
+          "generated_frames_dir": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/generated_frames",
+          "bidirectional_missing_end_policy": "error",
+          "comparison_enabled": false,
+          "comparison_output": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/generation_mode_comparison.json",
+          "comparison_start_only_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/temporal_metrics_start_only.csv",
+          "comparison_bidirectional_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/temporal_metrics_bidirectional.csv",
+          "worker": {
+            "python_bin": null,
+            "worker_script": null,
+            "backend": "mock",
+            "backend_entrypoint": null,
+            "model_id": null,
+            "device": "cpu",
+            "dtype": "fp32",
+            "seed": null,
+            "height": null,
+            "width": null,
+            "num_inference_steps": null,
+            "decode_chunk_size": null,
+            "extra_json": null,
+            "timeout_sec": null,
+            "work_dir": null,
+            "cleanup_on_success": true,
+            "extra_env": null
+          }
+        },
+        "heldout": {
+          "enabled": false,
+          "clip_only_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/heldout/clip_only_metrics.json",
+          "clip_only_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/heldout/clip_only_metrics.csv",
+          "calibrated_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/heldout/calibrated_metrics.json",
+          "calibrated_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/heldout/calibrated_metrics.csv",
+          "output_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/heldout/metric_delta.json",
+          "output_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/heldout/metric_delta.csv"
+        },
+        "temporal_srs_calibration": {
+          "enabled": false,
+          "weights_output": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/temporal_srs_calibration_weights.json"
+        },
+        "accounting": {
+          "enabled": false,
+          "output_dir": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/accounting",
+          "frame_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/accounting/frame_accounting.json",
+          "frame_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/accounting/frame_accounting.csv",
+          "segment_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/accounting/segment_accounting.json",
+          "segment_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/accounting/segment_accounting.csv",
+          "summary_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/accounting/accounting_summary.json",
+          "baseline": "naive_full_frame_packet",
+          "latent_symbols_per_frame": null,
+          "edge_cr": 0.078125,
+          "symbols_per_bit_proxy": 1.0
+        },
+        "rate_reliability": {
+          "enabled": false,
+          "output_json": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/accounting/rate_reliability_summary.json",
+          "curve_csv": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/accounting/rate_reliability_curve.csv"
+        },
+        "digital_fixed_reference_snr_db": 10.0
+      }
+    },
+    "config_source": null
+  },
+  "dataset": {
+    "ref": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+    "hash": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c"
+  },
+  "checkpoints": {
+    "status": "recorded",
+    "items": {
+      "JSCC_model.pth": {
+        "path": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/checkpoints/JSCC_model.pth",
+        "sha256": "455cb603d071d9aee7f6e3704c3228f543178453bc7c25ffcbfd95e5ab1915fe"
+      },
+      "diffusion_backbone.pth": {
+        "path": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/checkpoints/diffusion_backbone.pth",
+        "sha256": "1ac5c6eb69f81b415da10118d231ca90a5020d23f10841305af2d332eae9a49f"
+      },
+      "diffusion_controlnet.pth": {
+        "path": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/checkpoints/diffusion_controlnet.pth",
+        "sha256": "4f1ba885df72be90c8204588560b3ecdbe6d098505478d2bcbc9ae0c83619945"
+      },
+      "muge-epoch-19-checkpoint.pth": {
+        "path": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/checkpoints/muge-epoch-19-checkpoint.pth",
+        "sha256": "0db6b14550925cbd4ca12160f9f19c78302b0814f560695d6ded37bf0eb3c683"
+      }
+    }
+  },
+  "environment": {
+    "python_version": "3.9.25",
+    "platform": "Linux-6.8.0-90-generic-x86_64-with-glibc2.35",
+    "torch_version": "2.1.0+cu118",
+    "cuda_available": true,
+    "cuda_version": "11.8",
+    "gpu_name": "NVIDIA GeForce RTX 4090"
+  },
+  "evaluator_versions": {},
+  "original_artifact_paths": {},
+  "artifacts": {},
+  "accounting": {
+    "exact_fields": [
+      "latent_elements",
+      "source_packet_bits",
+      "header_bytes",
+      "shape_bytes",
+      "scale_zp_bytes",
+      "metadata_bytes",
+      "payload_bytes",
+      "checksum_bytes",
+      "total_bundle_bytes",
+      "quant_mse",
+      "quant_signal_power",
+      "quant_snr_db"
+    ],
+    "proxy_fields": [
+      "estimated_digital_channel_symbols",
+      "estimated_wire_bytes",
+      "bitdepth_proxy (pipelines/infer_pipeline.py::_digital_quant_snr_db)"
+    ]
+  },
+  "nan_or_failure_counts": {
+    "total_nan_or_inf_frames": 0,
+    "n_failed_pairs": 0,
+    "failed_pair_nan_values": 0,
+    "failed_pair_inf_values": 0,
+    "failure_stages": {}
+  },
+  "extra": {
+    "configs_run": [
+      "fixed_int4"
+    ],
+    "guide_profiles": [
+      "baseline",
+      "edge_q4",
+      "edge_ds2",
+      "edge_ds4",
+      "edge_reuse2",
+      "edge_omit",
+      "uncertainty_q4",
+      "uncertainty_ds2",
+      "uncertainty_ds4",
+      "uncertainty_reuse2",
+      "uncertainty_omit",
+      "combined_q4",
+      "combined_ds2",
+      "combined_ds4",
+      "combined_reuse2",
+      "combined_q4_ds2_reuse2"
+    ],
+    "phase": "final",
+    "run_status": "completed",
+    "run_signature": {
+      "git_commit": "1d33fa312d0f6c540a319e791102f98b5f0118b7",
+      "git_dirty": false,
+      "git_branch": "main",
+      "dataset_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+      "dataset_manifest_sha256": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c",
+      "dataset_artifact_sha256": {
+        "02_car_pass": {
+          "processed": "0bf6bda0e8318c641c3fe77fd0373d421fd50e13ecf354075a854547645b28aa",
+          "captions": "5e22d5159bc13adb2896d5a99fe425f43f19a24d1c741794d19393d076503515",
+          "gt": "c7d8a11e1ecd0ac6b9e46f0a0fd5c8fc684d34874b4fc3f712523850edf02243"
+        },
+        "05_camera_pan_person": {
+          "processed": "ff2383dc8b0bcc03b424b83375644b7884ed8938abaa559d2819a2e0786d60b5",
+          "captions": "b74dc653f8edef63f98f2e6cc464dbb75c8f1ca5d92c360e2b16b1bfe953fd36",
+          "gt": "d705a721425c70256cbc8e83ab3686b7f15ea9cb405465acfa4104fe30a19ea3"
+        },
+        "08_car_exit": {
+          "processed": "3300be5fbc7cf9cb1fa95127d881d23dfe34128d4a5425b87dc8e7dd5e3f05a6",
+          "captions": "a6b221769565b39f707929c69d8db37055b2ab3480b8d965d0b3cc86e9430b9a",
+          "gt": "28ab19205839d48f861be8f229ebd2ff9d49e0d025b229719a0d5ac682bbb2a5"
+        }
+      },
+      "resolved_config_sha256": "819418ff9f4c4263f97b346789405ef8fd3c508bb3a24e635a31fae6e728fb23",
+      "checkpoint_sha256": {
+        "JSCC_model.pth": "455cb603d071d9aee7f6e3704c3228f543178453bc7c25ffcbfd95e5ab1915fe",
+        "diffusion_backbone.pth": "1ac5c6eb69f81b415da10118d231ca90a5020d23f10841305af2d332eae9a49f",
+        "diffusion_controlnet.pth": "4f1ba885df72be90c8204588560b3ecdbe6d098505478d2bcbc9ae0c83619945",
+        "muge-epoch-19-checkpoint.pth": "0db6b14550925cbd4ca12160f9f19c78302b0814f560695d6ded37bf0eb3c683"
+      },
+      "seed": 2025,
+      "video_keys": [
+        "02_car_pass",
+        "05_camera_pan_person",
+        "08_car_exit"
+      ],
+      "video_frame_counts": {
+        "02_car_pass": 100,
+        "05_camera_pan_person": 100,
+        "08_car_exit": 100
+      },
+      "max_frames_cap": null,
+      "granularity": "per_tensor",
+      "psss": {
+        "backend": "proxy",
+        "model_id": null,
+        "device": "cpu",
+        "dtype": "fp32",
+        "threshold": 0.35,
+        "max_segment_length": 16,
+        "use_scene_detector": false
+      },
+      "eval_options": {
+        "no_lpips": false,
+        "bits_per_symbol": null,
+        "code_rate": 1.0
+      },
+      "configs": [
+        "fixed_int4"
+      ],
+      "guide_profiles": [
+        "baseline",
+        "edge_q4",
+        "edge_ds2",
+        "edge_ds4",
+        "edge_reuse2",
+        "edge_omit",
+        "uncertainty_q4",
+        "uncertainty_ds2",
+        "uncertainty_ds4",
+        "uncertainty_reuse2",
+        "uncertainty_omit",
+        "combined_q4",
+        "combined_ds2",
+        "combined_ds4",
+        "combined_reuse2",
+        "combined_q4_ds2_reuse2"
+      ],
+      "device": "cuda:0",
+      "physical_cuda_device": "cuda:1",
+      "digital_step_policy": "fixed_reference",
+      "fixed_reference_snr_db": 10.0,
+      "ablation_label": null,
+      "match_fixed_keyframes": false,
+      "match_actual_transmissions": false,
+      "matched_rate_byte_tolerance": 0.1,
+      "matched_rate_thresholds": [
+        -0.95,
+        -0.9,
+        -0.85,
+        -0.8,
+        -0.75,
+        -0.7,
+        -0.65,
+        -0.6,
+        -0.55,
+        -0.5,
+        -0.45,
+        -0.4,
+        -0.35,
+        -0.3,
+        -0.25,
+        -0.2,
+        -0.15,
+        -0.1,
+        -0.05,
+        0.0,
+        0.05,
+        0.1,
+        0.15,
+        0.2,
+        0.25,
+        0.3,
+        0.35,
+        0.4,
+        0.45,
+        0.5,
+        0.55,
+        0.6,
+        0.65,
+        0.7,
+        0.75,
+        0.8,
+        0.85,
+        0.9,
+        0.95,
+        0.999999
+      ],
+      "matched_rate_max_segment_lengths": [
+        8,
+        10,
+        12,
+        14,
+        16,
+        20,
+        24,
+        32,
+        48,
+        64,
+        100
+      ],
+      "fixed_max_gop": 16
+    },
+    "logical_device": "cuda:0",
+    "physical_cuda_device": "cuda:1",
+    "output_artifact_sha256": {
+      "aggregate.csv": "0d9915dfb0d7e86d082584a4c292926238287c865f3da4848894d047c3f08922",
+      "per_video_metrics.csv": "4c29e7b9e396a59faa99266fbe20ae64b81a2e1946045361b90cf3981effce18",
+      "pareto_frontier.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "keyframe_selection.csv": "a8eff30fb39785de640059866d5a2e221ab6c1251d0b2494cfe36399b8e8259a",
+      "packet_components.csv": "216a0fc90d81311123ed756b745e86fb864443046dbd49d457e17dcc71632320",
+      "keyframe_sweep.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matched_rate_plan.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failed_pairs.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_size_report.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "quantization_diagnostics.csv": "02533d97ca37241e2033516ee7addae020530c2000d6ba8db8520dcc6d29537c",
+      "guide_ablation_effect.csv": "dde762b8044cb989949fe269767946376a837327ffc71e29550b9c38195597e1",
+      "guide_component_bytes.csv": "e7e21fbea5da61f794c81fe75203e8300a0c40568e90ddcdf06e8e1aa2587bdf",
+      "guide_pareto_frontier.csv": "0662cc541a851bc62c2d2e823aab001ef2e25d98376f3236873559c9ceea927f",
+      "guide_ablation_validation.json": "f1c03f381574c820e7692451519131da3eeba62dfca0f03974cc8b7eea6d5791",
+      "GUIDE_ABLATION_REPORT.md": "955c2ce70f5d6d6fc63e4109c430e9c7f8d6d2c2a57dc7b1c53715f16d3bcaea",
+      "summary.json": "7ff61ea55aaa5e700314fb0e3e405fb6a255a8062cd79fa1df038b5a7d379950",
+      "README.md": "2b68bc5cf6e4e50a1d497e0c4eb31f940b05dc808089a2444c8ee0cd5c30c96d"
+    }
+  }
+}
