@@ -1667,7 +1667,7 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
         "physical_cuda_device": os.environ.get("SGDJSCC_PHYSICAL_CUDA_DEVICE", args.device),
         "digital_step_policy": args.digital_step_policy,
         "decoder_mode": args.decoder_mode,
-        "diffusion_step": int(cfg.diffusion_step),
+        "diffusion_step": int(OmegaConf.select(cfg, "diffusion_step", default=50)),
         "fixed_reference_snr_db": args.fixed_reference_snr_db,
         "ablation_label": args.ablation_label,
         "match_fixed_keyframes": bool(args.match_fixed_keyframes),
