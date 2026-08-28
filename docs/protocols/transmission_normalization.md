@@ -258,6 +258,33 @@ bash scripts/run_quantization_reevaluation_10db.sh \
   `snr_db`에서 확인한다.
 - 결과 판단은 `quantization_effect.csv`와 `pareto_frontier.csv`를 사용하고,
   실제 GPU 실행 전에는 operating point를 확정하지 않는다.
+
+### fixed_int4 edge·uncertainty ablation 전용 명령
+
+```bash
+# 전체 10영상 × 16 profile, RTX 4090 3장
+bash scripts/run_edge_uncertainty_ablation_10db.sh \
+  --output-root outputs/edge_uncertainty_ablation_10db_$(date +%Y%m%d_%H%M%S)
+
+# 실행 계획·worker 배분만 확인
+bash scripts/run_edge_uncertainty_ablation_10db.sh --dry-run
+
+# 중단된 동일 실행 재개
+bash scripts/run_edge_uncertainty_ablation_10db.sh \
+  --resume outputs/edge_uncertainty_ablation_10db_<timestamp>
+```
+
+- 범위는 `fixed_int4`와 `fixed_reference=10dB`로 고정한다.
+- baseline 1개, edge 독립 5개, uncertainty 독립 5개, 결합 5개로 총 16 profile이다.
+- q4는 실제 4-bit packing, ds2/ds4는 실제 축소 tensor를 직렬화하고 Rx에서 128×128로
+  복원, reuse2는 이전 **수신 bundle에서 decode한 cache**만 사용, omit은 대상 guide만
+  0-map으로 만든다.
+- 전송 manifest는 사람이 읽는 config/profile label을 제외하고 고정 폭 action code만
+  기록하므로 이름 길이가 byte 절감으로 섞이지 않는다.
+- 병합 후 `summarize_guide_ablation.py`가 video-profile 완전성, 실패/non-finite 0,
+  모든 digital row 10dB, 실제 component byte reconciliation과 품질 gate를 검증한다.
+- 최종 판정은 `guide_ablation_effect.csv`, `guide_component_bytes.csv`,
+  `guide_pareto_frontier.csv`, `guide_ablation_validation.json`을 사용한다.
 - 2026-08-28 full 실행 결과는 [실험 문서](../experiments/2026-08-28_quantization_reevaluation_10db.md)에
   고정했으며, 최소 통과 bit-depth는 `fixed_int4`로 확정했다.
 

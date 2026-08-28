@@ -72,6 +72,12 @@ class TestArgParsing:
         assert mod._parse_args(["--output-root", "/tmp/x"]).retry_failed is False
         assert mod._parse_args(["--output-root", "/tmp/x", "--retry-failed"]).retry_failed is True
 
+    def test_guide_profile_config_names_round_trip_without_changing_channel(self):
+        name = mod._experiment_config_name("fixed_int4", "edge_ds2", explicit=True)
+        assert name == "fixed_int4__edge_ds2"
+        assert mod._split_experiment_config(name) == ("fixed", "int4", "edge_ds2")
+        assert mod._split_experiment_config("fixed_int4") == ("fixed", "int4", "baseline")
+
     def test_actual_transmission_matching_is_explicit_and_exclusive(self, tmp_path):
         import pytest
 

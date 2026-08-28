@@ -85,6 +85,11 @@ if str(_SRC_ROOT) not in sys.path:
 # start) rather than degrading to a "status: unavailable" placeholder deep
 # into a run.
 from sgdjscc_lab.utils import run_manifest as rm  # noqa: E402
+from sgdjscc_lab.transmission.guide_transport import (  # noqa: E402
+    GUIDE_PROFILES,
+    parse_guide_profiles,
+    profile_metadata,
+)
 
 CHANNEL_CONFIGS = {
     "awgn": {"channel": "awgn", "bit_depth": None},
@@ -137,6 +142,25 @@ QUALITY_GATE = {"psnr_drop_db": 0.5, "ssim_drop": 0.01, "lpips_rise": 0.02}
 # if it additionally has zero non-finite frames (checked in
 # _pareto_frontier) — "정상" int16 in the task sense, not merely "int16".
 BASELINE_PREFERENCE = ["fixed_float32", "fixed_int16", "skem_float32", "skem_int16"]
+GUIDE_PROFILE_SEPARATOR = "__"
+
+
+def _experiment_config_name(base_config: str, guide_profile: str, *, explicit: bool) -> str:
+    return (
+        f"{base_config}{GUIDE_PROFILE_SEPARATOR}{guide_profile}"
+        if explicit else base_config
+    )
+
+
+def _split_experiment_config(config_name: str) -> tuple[str, str, str]:
+    if GUIDE_PROFILE_SEPARATOR in config_name:
+        base_config, guide_profile = config_name.rsplit(GUIDE_PROFILE_SEPARATOR, 1)
+    else:
+        base_config, guide_profile = config_name, "baseline"
+    selector, channel = base_config.split("_", 1)
+    if guide_profile not in GUIDE_PROFILES:
+        raise ValueError(f"unknown guide profile in config {config_name!r}")
+    return selector, channel, guide_profile
 
 
 def _load_manifest_reader():
@@ -149,8 +173,20 @@ def _load_manifest_reader():
     return mod.read_manifest
 
 
-def _run_effect_summarizer(output_root: Path) -> None:
+def _run_effect_summarizer(output_root: Path, *, guide_ablation: bool = False) -> None:
     """Write effect tables before the final manifest hashes its artifacts."""
+    if guide_ablation:
+        spec = importlib.util.spec_from_file_location(
+            "_txred_summarize_guide_ablation",
+            _REPO_ROOT / "scripts" / "summarize_guide_ablation.py",
+        )
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        rc = mod.run(["--run-root", str(output_root)])
+        if rc not in (0, 4):
+            raise RuntimeError(f"guide ablation summarizer exited with status {rc}")
+        return
     spec = importlib.util.spec_from_file_location(
         "_txred_summarize_transmission_normalization",
         _REPO_ROOT / "scripts" / "summarize_transmission_normalization.py",
@@ -227,6 +263,11 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--skip-source-size-report", action="store_true",
                     help="Skip source_size_report.csv (exact source MP4 sizes only).")
     p.add_argument("--granularity", default="per_tensor", choices=["per_tensor", "per_channel"])
+    p.add_argument(
+        "--guide-profiles", default="baseline",
+        help="Comma-separated edge/uncertainty transport profiles. Multiple profiles "
+             "expand every base --configs entry into independent experiment configs.",
+    )
     p.add_argument("--no-lpips", action="store_true")
     # accounting estimates (labeled proxy; omit for "unavailable")
     p.add_argument("--bits-per-symbol", type=float, default=None,
@@ -686,7 +727,7 @@ def _run_temporal_pipeline(
     frames, models, cfg, keyframe_extractor, captions=None, *, channel_kind="awgn",
     bit_depth=None, granularity="per_tensor", video_key="", config_name="",
     selected_keyframes=None, log_fn=None, digital_step_policy="fixed_reference",
-    base_seed=None,
+    base_seed=None, guide_profile="baseline",
 ):
     """Reconstruct *frames* via TemporalPipeline.
 
@@ -720,6 +761,8 @@ def _run_temporal_pipeline(
     transmitted_bundles = {}
     transmitted_semantic_packets = {}
     quantization_diagnostics: List[Dict[str, Any]] = []
+    receiver_guide_cache: Dict[str, object] = {}
+    selector_name, _channel_name, _ = _split_experiment_config(config_name)
 
     def reconstruct_fn(frame, run_cfg):
         resolved_cfg = run_cfg if run_cfg is not None else cfg
@@ -736,15 +779,24 @@ def _run_temporal_pipeline(
             if channel_kind == "awgn":
                 return _reconstruct_with_cfg(frame, models, resolved_cfg)
             frame_quantization_diagnostics: List[Dict[str, Any]] = []
+            guide_transmission_ordinal = len(transmitted_bundles)
             data, n_elements = encode_frame_to_bundle_bytes(
                 frame, models, resolved_cfg, bit_depth=bit_depth,
                 granularity=granularity, keyframe_index=index,
-                manifest={"video": video_key, "config": config_name},
+                # Human-readable experiment labels do not belong on the wire:
+                # their different lengths would masquerade as rate savings.
+                manifest={
+                    "video": video_key,
+                    "selector_code": 0 if selector_name == "fixed" else 1,
+                    "channel_bit_depth": bit_depth,
+                },
                 selected_keyframes=selected_keyframes,
                 caption_override=(captions[index] if captions and index < len(captions) else None),
                 semantic_packet=transmitted_semantic_packets.get(index),
                 include_quantization_error_metadata=(digital_step_policy == "quant_nmse"),
                 quantization_diagnostics=frame_quantization_diagnostics,
+                guide_profile=guide_profile,
+                guide_transmission_ordinal=guide_transmission_ordinal,
             )
             for diagnostic in frame_quantization_diagnostics:
                 quantization_diagnostics.append({
@@ -760,6 +812,7 @@ def _run_temporal_pipeline(
             transmitted_bundles[index] = (data, n_elements)
             return reconstruct_frame_from_bundle_bytes(
                 data, models, resolved_cfg, digital_step_policy=digital_step_policy,
+                receiver_guide_cache=receiver_guide_cache,
             )
         except NonFiniteError as exc:
             exc.context.update({"video": video_key, "config": config_name, "frame_index": index})
@@ -848,7 +901,7 @@ def _run_temporal_pipeline(
 def _shadow_measure_frame(
     frames, index, models, cfg, channel_kind, bit_depth, granularity,
     video_key, config_name, selected_keyframes=None, caption_override=None,
-    semantic_packet=None,
+    semantic_packet=None, guide_profile="baseline", guide_transmission_ordinal=0,
 ):
     """Build the analog baseline's digital side-information envelope.
 
@@ -858,13 +911,20 @@ def _shadow_measure_frame(
     from sgdjscc_lab.transmission.packet_bundle import parse_bundle
     from sgdjscc_lab.transmission.receiver_runtime import encode_frame_to_bundle_bytes
 
+    selector_name, _channel_name, _profile_name = _split_experiment_config(config_name)
     data, n_elements = encode_frame_to_bundle_bytes(
         frames[index], models, cfg, bit_depth=bit_depth, granularity=granularity,
-        keyframe_index=index, manifest={"video": video_key, "config": config_name},
+        keyframe_index=index, manifest={
+            "video": video_key,
+            "selector_code": 0 if selector_name == "fixed" else 1,
+            "channel_bit_depth": bit_depth,
+        },
         selected_keyframes=selected_keyframes,
         visual_is_analog=(channel_kind == "awgn"),
         caption_override=caption_override,
         semantic_packet=semantic_packet,
+        guide_profile=guide_profile,
+        guide_transmission_ordinal=guide_transmission_ordinal,
     )
     return parse_bundle(data), data, n_elements
 
@@ -877,10 +937,20 @@ def run(argv=None) -> int:
     args = _parse_args(argv)
     output_root = Path(args.output_root)
 
-    configs = [c for c in args.configs.split(",") if c]
-    for c in configs:
+    base_configs = [c for c in args.configs.split(",") if c]
+    for c in base_configs:
         if c not in ALL_CONFIGS:
             raise ValueError(f"unknown config {c!r}; expected one of {ALL_CONFIGS}")
+    guide_profiles = parse_guide_profiles(args.guide_profiles)
+    explicit_guide_profile = not (
+        len(guide_profiles) == 1 and guide_profiles[0].name == "baseline"
+    )
+    if explicit_guide_profile and any(name.endswith("_awgn") for name in base_configs):
+        raise ValueError("guide-profile ablations require digital configs; remove AWGN")
+    configs = [
+        _experiment_config_name(base, profile.name, explicit=explicit_guide_profile)
+        for base in base_configs for profile in guide_profiles
+    ]
     if args.psss_backend == "real" and not args.psss_model_id:
         raise ValueError("--psss-backend real requires --psss-model-id.")
     if args.digital_step_policy != "fixed_reference" and not args.ablation_label:
@@ -895,10 +965,12 @@ def run(argv=None) -> int:
         )
     if args.match_actual_transmissions:
         fixed_channels = {
-            name.split("_", 1)[1] for name in configs if name.startswith("fixed_")
+            _split_experiment_config(name)[1]
+            for name in configs if name.startswith("fixed_")
         }
         skem_channels = {
-            name.split("_", 1)[1] for name in configs if name.startswith("skem_")
+            _split_experiment_config(name)[1]
+            for name in configs if name.startswith("skem_")
         }
         if fixed_channels != skem_channels or not fixed_channels or "awgn" in fixed_channels:
             raise ValueError(
@@ -1034,7 +1106,7 @@ def run(argv=None) -> int:
             # Derive this from the full run config, not only pending pairs: a
             # partial resume may have just fixed or just SKEM left, while its
             # selector plan must remain the same paired plan as the original.
-            requested_selectors = {name.split("_", 1)[0] for name in configs}
+            requested_selectors = {_split_experiment_config(name)[0] for name in configs}
             if args.match_actual_transmissions:
                 matched_plan_row, fixed_result, skem_result = _build_actual_transmission_plan(
                     video_key, frames, captions, models, cfg, args,
@@ -1141,7 +1213,9 @@ def run(argv=None) -> int:
                 if (video_key, config_name) in failed_pair_keys and not args.retry_failed:
                     log(f"resume: [{video_key}][{config_name}] previously failed, skipping")
                     continue
-                sel_name, ch_name = config_name.split("_", 1)
+                sel_name, ch_name, guide_profile_name = _split_experiment_config(config_name)
+                guide_profile_spec = GUIDE_PROFILES[guide_profile_name]
+                guide_meta = profile_metadata(guide_profile_spec)
                 channel_kind = "awgn" if ch_name == "awgn" else "digital_packet"
                 bit_depth = CHANNEL_CONFIGS[ch_name]["bit_depth"]
 
@@ -1155,7 +1229,8 @@ def run(argv=None) -> int:
                         return selection_result
 
                 log(f"[{video_key}][{config_name}] running TemporalPipeline over {len(frames)} frames "
-                    f"(selector={sel_name}, channel={ch_name}, psss_backend_kind={sel.psss_backend_kind})")
+                    f"(selector={sel_name}, channel={ch_name}, guide={guide_profile_name}, "
+                    f"psss_backend_kind={sel.psss_backend_kind})")
 
                 _set_channel(models, channel_kind, bit_depth, args.granularity)
                 start = time.time()
@@ -1169,7 +1244,7 @@ def run(argv=None) -> int:
                         granularity=args.granularity, video_key=video_key,
                         config_name=config_name, selected_keyframes=sel.keyframe_indices,
                         log_fn=log, digital_step_policy=args.digital_step_policy,
-                        base_seed=int(args.seed),
+                        base_seed=int(args.seed), guide_profile=guide_profile_name,
                     )
                 except NonFiniteError as exc:
                     failed_pairs = [
@@ -1255,6 +1330,7 @@ def run(argv=None) -> int:
                             f"[{video_key}][{config_name}] planned vs actual visual-transmission "
                             f"schedule mismatch: planned={expected_indices}, actual={actual_indices}"
                         )
+                transmitting_ordinal = 0
                 for rec in records:
                     visual_transmitted = rec.decision in TRANSMITTING_DECISIONS
                     semantic_packet = transmitted_semantic_packets.get(rec.index)
@@ -1268,7 +1344,9 @@ def run(argv=None) -> int:
                         bundle = build_side_info_bundle(
                             keyframe_index=rec.index,
                             manifest={
-                                "video": video_key, "config": config_name,
+                                "video": video_key,
+                                "selector_code": 0 if sel_name == "fixed" else 1,
+                                "channel_bit_depth": bit_depth,
                                 "decision": rec.decision,
                                 "selected_keyframes": sel.keyframe_indices,
                             },
@@ -1285,6 +1363,8 @@ def run(argv=None) -> int:
                                 captions[rec.index] if captions and rec.index < len(captions) else None
                             ),
                             semantic_packet=semantic_packet,
+                            guide_profile=guide_profile_name,
+                            guide_transmission_ordinal=transmitting_ordinal,
                         )
                     else:
                         if rec.index not in transmitted_bundles:
@@ -1294,6 +1374,8 @@ def run(argv=None) -> int:
                         serialized, n_elements = transmitted_bundles[rec.index]
                         from sgdjscc_lab.transmission.packet_bundle import parse_bundle
                         bundle = parse_bundle(serialized)
+                    if visual_transmitted:
+                        transmitting_ordinal += 1
                     from sgdjscc_lab.transmission.byte_accounting import measure_frame_transmission
 
                     measurement = measure_frame_transmission(
@@ -1342,7 +1424,13 @@ def run(argv=None) -> int:
                         "total_bundle_bytes": bundle.total_exact_bytes(),
                         "video": video_key, "config": config_name, "frame_index": rec.index,
                         "bit_depth": bit_depth if bit_depth is not None else "",
+                        **guide_meta,
                     }
+                    guide_actions_value = (bundle.get("manifest") and json.loads(
+                        bundle.get("manifest").data.decode("utf-8")
+                    ).get("guide_actions", ["", ""]))
+                    breakdown_rows["edge_action"] = guide_actions_value[0]
+                    breakdown_rows["uncertainty_action"] = guide_actions_value[1]
                     packet_rows.append(breakdown_rows)
 
                 n = max(len(video_psnr), 1)
@@ -1373,6 +1461,7 @@ def run(argv=None) -> int:
                     "ablation_label": (
                         args.ablation_label if channel_kind == "digital_packet" else ""
                     ),
+                    **guide_meta,
                     "n_frames_total": len(frames), "n_transmitting_frames": len(transmitting),
                     "n_keyframes_selected": n_kf_in_gop, "n_nan_or_inf_frames": 0,
                     "fixed_selector_kind": fixed_selector_kind,
@@ -1459,7 +1548,7 @@ def run(argv=None) -> int:
     _write_csv(output_root / "source_size_report.csv", source_size_rows)
 
     _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, baseline_info, failed_pairs)
-    _run_effect_summarizer(output_root)
+    _run_effect_summarizer(output_root, guide_ablation=explicit_guide_profile)
     _write_manifest(
         args, output_root, cfg, per_video_rows, failed_pairs,
         signature, phase="final",
@@ -1547,6 +1636,9 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
             "code_rate": args.code_rate,
         },
         "configs": sorted(c for c in args.configs.split(",") if c),
+        "guide_profiles": [
+            profile.name for profile in parse_guide_profiles(args.guide_profiles)
+        ],
         "device": args.device,
         "physical_cuda_device": os.environ.get("SGDJSCC_PHYSICAL_CUDA_DEVICE", args.device),
         "digital_step_policy": args.digital_step_policy,
@@ -1636,6 +1728,9 @@ def _write_manifest(
     )
     extra: Dict[str, Any] = {
         "configs_run": args.configs.split(","),
+        "guide_profiles": [
+            profile.name for profile in parse_guide_profiles(args.guide_profiles)
+        ],
         "phase": phase,
         "run_status": run_status,
         "run_signature": signature,
@@ -1697,6 +1792,9 @@ _ARTIFACT_HASH_FILES = (
     "quantization_diagnostics.csv", "quantization_effect.csv",
     "selector_effect.csv", "quantization_effect_ablation.csv",
     "selector_effect_ablation.csv", "normalization_effect_summary.json",
+    "guide_ablation_effect.csv", "guide_component_bytes.csv",
+    "guide_pareto_frontier.csv", "guide_ablation_validation.json",
+    "GUIDE_ABLATION_REPORT.md",
     "summary.json", "README.md",
 )
 
@@ -1723,6 +1821,8 @@ _PER_VIDEO_INT_FIELDS = (
     "n_nan_or_inf_frames", "n_quality_frames", "latent_elements_total",
     "source_packet_bits_total", "total_bundle_bytes",
     "matched_rate_target_n_transmitting_frames", "selected_psss_max_segment_length",
+    "edge_bit_depth", "uncertainty_bit_depth", "edge_downsample",
+    "uncertainty_downsample", "edge_stride", "uncertainty_stride",
 )
 _PER_VIDEO_FLOAT_FIELDS = (
     "valid_frame_ratio", "mean_psnr", "mean_ssim", "total_elapsed_s",
@@ -1732,7 +1832,9 @@ _PER_VIDEO_OPTIONAL_FLOAT_FIELDS = (
     "mean_lpips", "analog_channel_symbols_total", "digital_side_information_bytes_total",
     "fixed_reference_snr_db", "selected_psss_threshold",
 )
-_PER_VIDEO_BOOL_FIELDS = ("analog_no_wire_bytes", "visual_transport_complete")
+_PER_VIDEO_BOOL_FIELDS = (
+    "analog_no_wire_bytes", "visual_transport_complete", "edge_omit", "uncertainty_omit",
+)
 _PER_VIDEO_OPTIONAL_BOOL_FIELDS = (
     "keyframe_count_matched", "matched_rate_plan_exact",
 )  # "" means "not applicable", never coerced to False
@@ -1852,6 +1954,17 @@ def _aggregate(
             "selector": rows[0]["selector"],
             "channel": rows[0]["channel"],
             "bit_depth": rows[0]["bit_depth"],
+            "guide_profile": rows[0].get("guide_profile", "baseline"),
+            "guide_family": rows[0].get("guide_family", "baseline"),
+            "guide_stage": rows[0].get("guide_stage", "baseline"),
+            "edge_bit_depth": rows[0].get("edge_bit_depth", 8),
+            "uncertainty_bit_depth": rows[0].get("uncertainty_bit_depth", 8),
+            "edge_downsample": rows[0].get("edge_downsample", 1),
+            "uncertainty_downsample": rows[0].get("uncertainty_downsample", 1),
+            "edge_stride": rows[0].get("edge_stride", 1),
+            "uncertainty_stride": rows[0].get("uncertainty_stride", 1),
+            "edge_omit": rows[0].get("edge_omit", False),
+            "uncertainty_omit": rows[0].get("uncertainty_omit", False),
             "psss_backend_kind": rows[0]["psss_backend_kind"],
             "digital_step_policy": rows[0].get("digital_step_policy", ""),
             "fixed_reference_snr_db": rows[0].get("fixed_reference_snr_db", ""),
@@ -2077,6 +2190,9 @@ def _write_readme_and_summary(output_root, args, per_video_rows, pareto_rows, ba
     summary = {
         "output_root": str(output_root),
         "configs_run": args.configs.split(","),
+        "guide_profiles": [
+            profile.name for profile in parse_guide_profiles(args.guide_profiles)
+        ],
         "n_videos": len({r["video"] for r in per_video_rows}),
         "n_failed_pairs": len(failed_pairs),
         "run_status": "completed_with_failures" if failed_pairs else "completed",

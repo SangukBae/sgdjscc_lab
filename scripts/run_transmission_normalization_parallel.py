@@ -50,6 +50,9 @@ PARENT_ARTIFACTS = (
     "quantization_effect.csv", "selector_effect.csv",
     "quantization_effect_ablation.csv", "selector_effect_ablation.csv",
     "normalization_effect_summary.json", "summary.json", "README.md",
+    "guide_ablation_effect.csv", "guide_component_bytes.csv",
+    "guide_pareto_frontier.csv", "guide_ablation_validation.json",
+    "GUIDE_ABLATION_REPORT.md",
 )
 
 
@@ -80,6 +83,7 @@ def _parse_args(argv=None) -> argparse.Namespace:
     )
     parser.add_argument("--fixed-reference-snr-db", type=float, default=10.0)
     parser.add_argument("--ablation-label", default=None)
+    parser.add_argument("--guide-profiles", default="baseline")
     parser.add_argument("--psss-backend", default="proxy", choices=("mock", "proxy", "real"))
     parser.add_argument("--psss-model-id", default=None)
     parser.add_argument("--psss-device", default="cpu")
@@ -177,6 +181,9 @@ def _plan(args: argparse.Namespace, devices: Sequence[str], videos: Sequence[Dic
             "digital_step_policy": args.digital_step_policy,
             "fixed_reference_snr_db": args.fixed_reference_snr_db,
             "ablation_label": args.ablation_label,
+            "guide_profiles": [
+                item for item in args.guide_profiles.split(",") if item
+            ],
             "psss_backend": args.psss_backend,
             "psss_model_id": args.psss_model_id,
             "psss_device": args.psss_device,
@@ -228,6 +235,7 @@ def _worker_command(
         "--seed", str(args.seed),
         "--digital-step-policy", args.digital_step_policy,
         "--fixed-reference-snr-db", str(args.fixed_reference_snr_db),
+        "--guide-profiles", args.guide_profiles,
         "--psss-backend", args.psss_backend,
         "--psss-device", args.psss_device,
         "--psss-dtype", args.psss_dtype,
@@ -304,7 +312,19 @@ def merge_worker_outputs(
     driver._write_csv(output_root / "pareto_frontier.csv", pareto_rows)
     rate_rows = driver._compute_rate_matching(per_video_rows)
     driver._write_csv(output_root / "rate_matching.csv", rate_rows)
-    summarizer.run(["--run-root", str(output_root)])
+    guide_profiles = plan.get("settings", {}).get("guide_profiles", ["baseline"])
+    guide_ablation = guide_profiles != ["baseline"]
+    guide_validation = None
+    if guide_ablation:
+        guide_summarizer = _load_script(
+            "_txnorm_parallel_guide_summarizer", "summarize_guide_ablation.py"
+        )
+        guide_summarizer.run(["--run-root", str(output_root)])
+        validation_path = output_root / "guide_ablation_validation.json"
+        if validation_path.is_file():
+            guide_validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    else:
+        summarizer.run(["--run-root", str(output_root)])
 
     failed_pairs = merged["failed_pairs.csv"]
     matched_rate_validation = None
@@ -319,6 +339,9 @@ def merge_worker_outputs(
         "completed_validation_failed"
         if matched_rate_validation is not None
         and not matched_rate_validation["validation_passed"] else
+        "completed_validation_failed"
+        if guide_validation is not None
+        and not guide_validation["validation_passed"] else
         "completed"
     )
     summary = {
@@ -335,6 +358,7 @@ def merge_worker_outputs(
         ),
         "worker_statuses": list(worker_statuses),
         "matched_rate_validation": matched_rate_validation,
+        "guide_ablation_validation": guide_validation,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
     _atomic_json(output_root / "summary.json", summary)
@@ -346,6 +370,7 @@ def merge_worker_outputs(
   - 완료 pair: {len(per_video_rows)}개
   - 실패 pair: {len(failed_pairs)}개
   - exact matched-rate 검증: {"해당 없음" if matched_rate_validation is None else ("PASS" if matched_rate_validation["validation_passed"] else "FAIL — matched_rate_validation.json 확인")}
+  - edge·uncertainty ablation 검증: {"해당 없음" if guide_validation is None else ("PASS" if guide_validation["validation_passed"] else "FAIL — guide_ablation_validation.json 확인")}
 - 안전성
   - worker별 독립 디렉터리: `workers/worker_NN/`
   - 공용 CSV 동시 쓰기 없음

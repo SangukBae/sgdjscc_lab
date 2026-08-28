@@ -33,7 +33,7 @@ fixed–SKEM exact matched-rate 재평가는 완료됐다. proxy SKEM이 10/10 �
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
-| 1 | edge·uncertainty 전송량 절감 | int4 packet의 90.90% 구성요소를 선택 전송·양자화·해상도 축소로 ablation |
+| 1 | edge·uncertainty 전송량 절감 | **실행 준비 완료** — 16-profile·3-GPU harness를 full 실행하고 품질 gate 내 최소-byte 후보를 확정·registry 보존 |
 | 2 | 통합 평가 harness·복원 정책 비교 | Rate·품질·SRS·할루시네이션·시간축·전체 지연을 paired row로 기록하고 VAE-direct/few-step/full diffusion operating point를 비교 |
 | 3 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
 | 4 | 동적 예산 controller | 채널·uncertainty·verifier 위험도로 전송량과 복원 연산량을 결정하고 feedback/retransmission byte·RTT 포함 |

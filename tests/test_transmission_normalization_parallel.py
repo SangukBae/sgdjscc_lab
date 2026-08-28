@@ -185,6 +185,43 @@ def test_fixed_skem_wrapper_locks_exact_matched_rate_scope(tmp_path):
         assert "--match-fixed-keyframes" not in command
 
 
+def test_edge_uncertainty_wrapper_locks_full_three_gpu_protocol(tmp_path):
+    env = os.environ.copy()
+    env.update({
+        "PYTHON_BIN": sys.executable,
+        "SGDJSCC_GIT_COMMIT": "a" * 40,
+        "SGDJSCC_GIT_DIRTY": "false",
+        "SGDJSCC_GIT_BRANCH": "main",
+    })
+    result = subprocess.run(
+        [
+            "bash", "scripts/run_edge_uncertainty_ablation_10db.sh",
+            "--dry-run", "--max-frames", "2", "--output-root", str(tmp_path / "out"),
+            "--fixed-reference-snr-db", "60", "--configs", "fixed_float32",
+            "--guide-profiles", "baseline",
+        ],
+        cwd=str(_ROOT), env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    settings = payload["plan"]["settings"]
+    assert settings["configs"] == "fixed_int4"
+    assert settings["fixed_reference_snr_db"] == 10.0
+    assert settings["match_fixed_keyframes"] is False
+    assert settings["skip_keyframe_sweep"] is True
+    assert settings["skip_source_size_report"] is True
+    profiles = settings["guide_profiles"]
+    assert profiles[0] == "baseline"
+    assert len(profiles) == 16
+    assert len([name for name in profiles if name.startswith("edge_")]) == 5
+    assert len([name for name in profiles if name.startswith("uncertainty_")]) == 5
+    assert len([name for name in profiles if name.startswith("combined_")]) == 5
+    assert payload["plan"]["devices"] == ["cuda:0", "cuda:1", "cuda:2"]
+    for command in payload["commands"]:
+        assert command[command.index("--guide-profiles") + 1] == ",".join(profiles)
+        assert command[command.index("--configs") + 1] == "fixed_int4"
+
+
 def test_single_worker_shell_binds_negative_threshold_csv_to_option(tmp_path):
     env = os.environ.copy()
     env.update({

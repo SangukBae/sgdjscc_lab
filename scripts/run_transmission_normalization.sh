@@ -42,6 +42,7 @@ SEED="${SEED:-2025}"
 DIGITAL_STEP_POLICY="${DIGITAL_STEP_POLICY:-fixed_reference}"
 FIXED_REFERENCE_SNR_DB="${FIXED_REFERENCE_SNR_DB:-10}"
 ABLATION_LABEL="${ABLATION_LABEL:-}"
+GUIDE_PROFILES="${GUIDE_PROFILES:-baseline}"
 PSSS_BACKEND="${PSSS_BACKEND:-proxy}"
 PSSS_MODEL_ID="${PSSS_MODEL_ID:-}"
 PSSS_DEVICE="${PSSS_DEVICE:-cpu}"
@@ -88,6 +89,7 @@ Usage: run_transmission_normalization.sh [options]
                                Anything but fixed_reference REQUIRES --ablation-label.
   --fixed-reference-snr-db DB  Decoder reference SNR for fixed_reference (default: 10).
   --ablation-label LABEL       Required when --digital-step-policy != fixed_reference.
+  --guide-profiles CSV         Edge/uncertainty transport profiles (default: baseline).
   --psss-backend NAME           mock | proxy (default) | real -- see --psss-model-id.
   --psss-model-id ID            HF causal-LM/VLM id, required for --psss-backend real.
   --psss-device DEVICE          Device for the PSSS backend (default: cpu).
@@ -121,6 +123,7 @@ while [ $# -gt 0 ]; do
     --digital-step-policy) DIGITAL_STEP_POLICY="$2"; shift 2 ;;
     --fixed-reference-snr-db) FIXED_REFERENCE_SNR_DB="$2"; shift 2 ;;
     --ablation-label) ABLATION_LABEL="$2"; shift 2 ;;
+    --guide-profiles) GUIDE_PROFILES="$2"; shift 2 ;;
     --psss-backend) PSSS_BACKEND="$2"; shift 2 ;;
     --psss-model-id) PSSS_MODEL_ID="$2"; shift 2 ;;
     --psss-device) PSSS_DEVICE="$2"; shift 2 ;;
@@ -290,6 +293,7 @@ SWEEP_CMD=("$PYTHON_BIN" scripts/run_transmission_reduction_eval.py
   --seed "$SEED"
   --digital-step-policy "$DIGITAL_STEP_POLICY"
   --fixed-reference-snr-db "$FIXED_REFERENCE_SNR_DB"
+  --guide-profiles "$GUIDE_PROFILES"
   --psss-backend "$PSSS_BACKEND"
   --psss-device "$PSSS_DEVICE"
   --psss-dtype "$PSSS_DTYPE"

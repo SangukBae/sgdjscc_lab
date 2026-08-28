@@ -56,6 +56,8 @@ def encode_frame_to_bundle_bytes(
     semantic_packet: Optional[Dict[str, Any]] = None,
     include_quantization_error_metadata: bool = False,
     quantization_diagnostics: Optional[list[Dict[str, Any]]] = None,
+    guide_profile: str = "baseline",
+    guide_transmission_ordinal: int = 0,
 ) -> Tuple[bytes, int]:
     """Sender: encode *frame* and return its complete serialized wire bundle."""
     import torch
@@ -65,6 +67,10 @@ def encode_frame_to_bundle_bytes(
         _extract_semantic_guidance,
     )
     from sgdjscc_lab.transmission.packet_bundle import build_frame_bundle, serialize_bundle
+    from sgdjscc_lab.transmission.guide_transport import (
+        GUIDE_PROFILES,
+        prepare_guides_for_transport,
+    )
     from sgdjscc_lab.utils.preprocessing import prepare_patches
 
     patches, patch_meta = prepare_patches(frame)
@@ -77,11 +83,25 @@ def encode_frame_to_bundle_bytes(
         )
         encode_features, _encode_features_std = _encode_latent(models.jscc_model, patches)
 
+    if guide_profile not in GUIDE_PROFILES:
+        raise ValueError(f"unknown guide_profile={guide_profile!r}")
+    resolved_guide_profile = GUIDE_PROFILES[guide_profile]
+    edge_wire, uncertainty_wire, guide_action_codes = prepare_guides_for_transport(
+        canny_data.detach().cpu() if canny_data is not None else None,
+        canny_uncertainty.detach().cpu() if canny_uncertainty is not None else None,
+        resolved_guide_profile,
+        guide_transmission_ordinal,
+    )
+
     frame_manifest = dict(manifest or {})
     frame_manifest.update({
         "patch_layout": _manifest_patch_layout(patch_meta),
         "n_patches": n_patches,
         "selected_keyframes": [int(x) for x in (selected_keyframes or [])],
+        # Two one-digit codes are always present, so profile-name length can
+        # never create a false byte saving.  0=transmit, 1=receiver-cache
+        # reuse, 2=zero map; packet item presence carries tensor shape/bits.
+        "guide_actions": list(guide_action_codes),
     })
     bundle = build_frame_bundle(
         visual_latent_patches=None if visual_is_analog else encode_features.detach().cpu(),
@@ -94,11 +114,10 @@ def encode_frame_to_bundle_bytes(
             [str(caption_override)] * n_patches
             if caption_override is not None else _caption_list(gt_text, n_patches)
         ),
-        edge_tensor=(canny_data.detach().cpu() if canny_data is not None else None),
-        edge_uncertainty_tensor=(
-            canny_uncertainty.detach().cpu() if canny_uncertainty is not None else None
-        ),
-        edge_bit_depth=8,
+        edge_tensor=edge_wire,
+        edge_uncertainty_tensor=uncertainty_wire,
+        edge_bit_depth=resolved_guide_profile.edge_bit_depth,
+        uncertainty_bit_depth=resolved_guide_profile.uncertainty_bit_depth,
         keyframe_index=keyframe_index,
         manifest=frame_manifest,
         semantic_packet=semantic_packet,
@@ -108,7 +127,13 @@ def encode_frame_to_bundle_bytes(
     return serialize_bundle(bundle), int(encode_features.numel())
 
 
-def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg, digital_step_policy: str = "bitdepth_proxy"):
+def reconstruct_frame_from_bundle_bytes(
+    data: bytes,
+    models,
+    cfg,
+    digital_step_policy: str = "bitdepth_proxy",
+    receiver_guide_cache: Optional[Dict[str, object]] = None,
+):
     """Receiver: reconstruct a full frame using only serialized bundle bytes.
 
     ``digital_step_policy`` selects how the diffusion decoder step is derived
@@ -129,6 +154,7 @@ def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg, digital_step_p
         _preprocess_soft_edge,
     )
     from sgdjscc_lab.transmission.packet_bundle import decode_frame_bundle
+    from sgdjscc_lab.transmission.guide_transport import resolve_received_guides
     from sgdjscc_lab.utils.preprocessing import merge_patches
 
     if str(cfg.get("mask_method", "none")) != "none":
@@ -179,6 +205,13 @@ def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg, digital_step_p
 
     edge = decoded.get("edge")
     edge_uncertainty = decoded.get("edge_uncertainty")
+    default_actions = [0 if edge is not None else 2, 0 if edge_uncertainty is not None else 2]
+    edge, edge_uncertainty = resolve_received_guides(
+        edge,
+        edge_uncertainty,
+        manifest.get("guide_actions", default_actions),
+        receiver_guide_cache,
+    )
     if edge is not None and edge.shape[0] != len(visual_latents):
         raise ValueError("edge patch count does not match visual patch count")
     if edge_uncertainty is not None and edge_uncertainty.shape[0] != len(visual_latents):
@@ -202,6 +235,8 @@ def reconstruct_frame_from_bundle_bytes(data: bytes, models, cfg, digital_step_p
                 edge_uncertainty[i:i + 1].to(device)
                 if edge_uncertainty is not None else None
             )
+            if edge_i is None and unc_i is not None:
+                edge_i = torch.zeros_like(unc_i)
             if edge_i is not None and unc_i is None:
                 unc_i = torch.zeros_like(edge_i)
             soft_edge, soft_uncertainty = _preprocess_soft_edge(

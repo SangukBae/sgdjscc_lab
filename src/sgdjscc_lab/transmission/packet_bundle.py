@@ -268,6 +268,7 @@ def build_frame_bundle(
     keyframe_index: int,
     manifest: Dict[str, Any],
     edge_uncertainty_tensor=None,    # torch.Tensor or None
+    uncertainty_bit_depth: Optional[int] = None,
     semantic_packet: Optional[Dict[str, Any]] = None,
     compress_metadata: bool = True,
     include_quantization_error_metadata: bool = False,
@@ -343,8 +344,13 @@ def build_frame_bundle(
         items.append(BundleItem(name="edge", kind="wire_packet", data=edge_data))
 
     if edge_uncertainty_tensor is not None:
+        resolved_uncertainty_bit_depth = (
+            edge_bit_depth if uncertainty_bit_depth is None else uncertainty_bit_depth
+        )
         q_unc = quantize_tensor(
-            edge_uncertainty_tensor, bit_depth=edge_bit_depth, granularity="per_tensor"
+            edge_uncertainty_tensor,
+            bit_depth=resolved_uncertainty_bit_depth,
+            granularity="per_tensor",
         )
         unc_packet = WirePacket(
             bit_depth=q_unc.bit_depth, granularity=q_unc.granularity,

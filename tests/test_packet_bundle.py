@@ -244,6 +244,23 @@ class TestExactByteAccounting:
         assert decoded["manifest"]["selected_keyframes"] == [0, 12]
         assert decoded["semantic_packet"]["objects"] == ["person"]
 
+    def test_edge_and_uncertainty_can_use_independent_bit_depths(self):
+        from sgdjscc_lab.transmission.wire_packet import parse as parse_wire_packet
+
+        visual = torch.randn(1, 16, 16, 16)
+        edge = torch.rand(1, 11, 128, 128)
+        uncertainty = torch.rand_like(edge)
+        bundle = build_frame_bundle(
+            visual_latent_patches=visual, visual_is_analog=False, visual_bit_depth=4,
+            visual_granularity="per_tensor", visual_channel_dim=1,
+            visual_channel_symbols=visual.numel(), caption=["x"],
+            edge_tensor=edge, edge_uncertainty_tensor=uncertainty,
+            edge_bit_depth=4, uncertainty_bit_depth=8,
+            keyframe_index=0, manifest={"guide_actions": [0, 0]},
+        )
+        assert parse_wire_packet(bundle.get("edge").data).bit_depth == 4
+        assert parse_wire_packet(bundle.get("edge_uncertainty").data).bit_depth == 8
+
     def test_visual_free_side_info_bundle_round_trip_and_exact_size(self):
         bundle = build_side_info_bundle(
             keyframe_index=1,

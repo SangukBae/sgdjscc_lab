@@ -97,7 +97,10 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     재검증해야 한다. 상세: [실험 결과](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md).
 - **10dB fixed_int4 packet의 90.90%가 edge·uncertainty**
   - visual latent는 5.89%라 추가 bit-depth 축소 효과가 제한적이다.
-  - 다음 전송량 절감 대상은 edge/uncertainty 압축·선택 전송이다.
+  - q4·1/2·1/4 해상도·reuse2·omit의 성분별 독립 ablation과 결합 후보를 실행하는
+    3-GPU harness는 준비됐지만 full 결과는 아직 없다.
+  - `reuse2`는 같은 영상에서 이전에 수신한 guide shape가 유지된다는 조건을 검증하며,
+    해상도/patch layout이 바뀌어 cache shape가 맞지 않으면 조용히 보간하지 않고 실패해야 한다.
 
 ## 채널·저지연
 

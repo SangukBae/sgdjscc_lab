@@ -7,7 +7,10 @@ import torch
 from omegaconf import OmegaConf
 
 from sgdjscc_lab.transmission.packet_bundle import build_frame_bundle, serialize_bundle
-from sgdjscc_lab.transmission.receiver_runtime import reconstruct_frame_from_bundle_bytes
+from sgdjscc_lab.transmission.receiver_runtime import (
+    encode_frame_to_bundle_bytes,
+    reconstruct_frame_from_bundle_bytes,
+)
 
 
 class _Jscc:
@@ -58,7 +61,7 @@ def test_receiver_api_has_no_source_frame_parameter():
     # object or frame), so it does not violate the "receiver only sees
     # bytes" boundary this test guards.
     assert list(inspect.signature(reconstruct_frame_from_bundle_bytes).parameters) == [
-        "data", "models", "cfg", "digital_step_policy"
+        "data", "models", "cfg", "digital_step_policy", "receiver_guide_cache"
     ]
 
 
@@ -142,3 +145,39 @@ def test_receiver_marks_serialized_edge_as_already_received(monkeypatch):
     monkeypatch.setattr(infer, "_decode_diffusion", fake_decode)
     reconstruct_frame_from_bundle_bytes(_data(), _Models(), _cfg())
     assert captured["edge_already_received"] is True
+
+
+def test_sender_applies_guide_profile_without_putting_human_label_on_wire(monkeypatch):
+    import sgdjscc_lab.pipelines.infer_pipeline as infer
+    import sgdjscc_lab.utils.preprocessing as preprocessing
+    from sgdjscc_lab.transmission.packet_bundle import decode_frame_bundle, parse_bundle
+    from sgdjscc_lab.transmission.wire_packet import parse as parse_wire_packet
+
+    monkeypatch.setattr(
+        preprocessing, "prepare_patches",
+        lambda _frame: (torch.zeros(1, 3, 128, 128), (128, 128, [(0, 0)])),
+    )
+    monkeypatch.setattr(
+        infer, "_extract_semantic_guidance",
+        lambda patches, models, cfg, device: (
+            [["x"]], torch.rand(1, 11, 128, 128), torch.rand(1, 11, 128, 128),
+        ),
+    )
+    monkeypatch.setattr(
+        infer, "_encode_latent",
+        lambda jscc, patches: (torch.ones(1, 16, 16, 16), torch.zeros(1)),
+    )
+
+    data, _ = encode_frame_to_bundle_bytes(
+        torch.zeros(1, 3, 128, 128), _Models(), _cfg(), bit_depth=4,
+        granularity="per_tensor", keyframe_index=0,
+        manifest={"video": "v1", "selector_code": 0, "channel_bit_depth": 4},
+        guide_profile="edge_q4", guide_transmission_ordinal=0,
+    )
+    bundle = parse_bundle(data)
+    decoded = decode_frame_bundle(data)
+    assert decoded["manifest"]["guide_actions"] == [0, 0]
+    assert "guide_profile" not in decoded["manifest"]
+    assert "config" not in decoded["manifest"]
+    assert parse_wire_packet(bundle.get("edge").data).bit_depth == 4
+    assert parse_wire_packet(bundle.get("edge_uncertainty").data).bit_depth == 8
