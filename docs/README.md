@@ -12,6 +12,7 @@
 
 | 목적 | 기준 문서 |
 |---|---|
+| 다음 채팅에서 전체 상황 인계 | **[current/next_chat_handoff.md](./current/next_chat_handoff.md)** — 검증·잠정 결론·다음 작업 요약 |
 | 다음 구현 작업과 우선순위 | **[current/roadmap.md](./current/roadmap.md)** — 메인 작업 문서 |
 | 실제 완료·PoC·미구현 판단 | [current/status.md](./current/status.md) |
 | 알려진 제약 확인 | [current/open_issues.md](./current/open_issues.md) |
@@ -38,6 +39,7 @@
 
 | 문서 | 내용 |
 |---|---|
+| [current/next_chat_handoff.md](./current/next_chat_handoff.md) | 다음 채팅용 전체 검증·잠정 모델·후속 작업 인계 요약 |
 | [current/status.md](./current/status.md) | 기능별 현재 구현 상태 — 완료/PoC/스캐폴드 구분 |
 | [current/roadmap.md](./current/roadmap.md) | 연구 목표 기준 향후 계획, 일정, ETRI 협의 필요사항 |
 | [current/open_issues.md](./current/open_issues.md) | 알려진 한계·기술 부채 |
