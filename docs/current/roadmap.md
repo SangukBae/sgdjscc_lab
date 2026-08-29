@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-28
+updated: 2026-08-29
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 6d6c4ed
+source_commit: 5a8f2aa
 supersedes:
 ---
 
@@ -27,20 +27,20 @@ supersedes:
 
 ## 권장 실행 순서
 
-fixed–SKEM exact matched-rate와 edge·uncertainty 16-profile 재평가는 완료됐다.
-`combined_ds4`가 시험 후보 중 byte 최소였지만 digital uncertainty bypass와 매우 약한
-edge 민감도가 확인돼 최종 운영점 확정 전 작은 경로 검증이 필요하다. 아래는 두 결과를
-반영한 다음 실행 순서다.
+통합 120-pair 개발평가까지 완료됐다. guide는 `candidate_both_omit`이 full50에서
+semantic 지표를 유지하면서 baseline byte를 90.843% 줄였다. decoder는 few10이 평균
+gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-direct는 SSIM gate를
+실패했다. 따라서 guide 후보와 decoder 후보를 분리해 다음 순서로 진행한다.
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
 | 완료 | edge·uncertainty 전송량 절감 1차 | 16-profile·3-GPU full 완료·registry 보존. `combined_ds4` 조건부 최소 후보, uncertainty bypass 확인 |
-| 준비 완료 | guide 빈 조합 + 통합 평가 harness | `edge_ds4+uncertainty_omit`·양쪽 omit, full50/few10/VAE-direct 120-pair 3-GPU 실행기와 real ensemble provenance·paired CI 검증 구현 |
-| 1 | 통합 full 실행·분석 | Rate·품질·semantic·hallucination·시간축·전체 지연 결과로 held-out 진입 후보를 결정 |
-| 2 | guide 경로 후속 | full 결과에 따라 uncertainty 제거/조건화 계약과 ControlNet off/scale sensitivity 결정 |
+| 완료 | guide 빈 조합 + 통합 평가 | 120/120 pair·real ensemble·paired CI 완료. both-omit guide와 few10 decoder를 개발셋 잠정 후보로 결정 |
+| 1 | 별도 held-out 준비·실행 | 미사용 영상에서 `full50+both-omit` 대 `few10+both-omit` paired 비교, hallucination CI 포함 전 gate 통과 여부 판정 |
+| 2 | guide Tx/Rx 계약 정리 | reliable-digital 기본 packet에서 미사용 uncertainty와 무감도 edge 처리 결정; 필요 시 ControlNet off/scale sensitivity 보조 실험 |
 | 3 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
 | 4 | 동적 예산 controller | 채널·uncertainty·verifier 위험도로 전송량과 복원 연산량을 결정하고 feedback/retransmission byte·RTT 포함 |
-| 5 | 별도 held-out 최종 검증·문서 마감 | paired 통계·confidence interval, 최종 operating point, 표·그래프·재현성 registry 확정 |
+| 5 | 최종 문서 마감 | held-out 결과로 최종 operating point, 표·그래프·재현성 registry 확정 |
 
 - 역할 분리
   - 평가 harness: hyperparameter 조합 반복 실행
@@ -94,11 +94,10 @@ edge 민감도가 확인돼 최종 운영점 확정 전 작은 경로 검증이 
   - exact matched-rate에서 proxy `skem_int4`는 fixed와 동일 schedule·품질로 수렴했다.
     raw 100 byte/video 차이도 manifest label 길이뿐이며 padding 후 동률이므로 운영점은
     `fixed_int4`를 유지한다.
-  - edge·uncertainty 1차 ablation에서 `combined_ds4`는 baseline 대비 85.11% byte를
-    줄이며 pixel quality gate를 통과했다. 그러나 uncertainty는 reliable-digital
-    decoder에서 소비되지 않고 edge 영향도 수치적으로 매우 작아 조건부 후보다.
-    혼합 omit/downsample과 semantic·temporal 지표를 통과하기 전 최종 운영점으로
-    확정하지 않는다.
+  - 통합 개발평가에서 `candidate_both_omit`은 full50 기준 semantic 지표를 유지하며
+    baseline 대비 90.843% byte를 줄였다. `few10 + both-omit`은 평균 gate를 통과하고
+    reconstruction 시간을 63.486% 줄였으나 hallucination/additional-object CI 상한이
+    margin을 넘어 별도 held-out 전까지 잠정 후보다.
 - 근사
   - 물리 channel symbol·FEC는 proxy
 - 목표
@@ -144,14 +143,15 @@ edge 민감도가 확인돼 최종 운영점 확정 전 작은 경로 검증이 
   - 10dB decoder-step full 검증(3 core condition×100프레임) 및 raw output 원격–로컬 SHA 대조
   - 10dB fixed 양자화 10영상×6설정 full 재평가, 4-bit 운영점 확정 및 결과 registry 고정
   - fixed_int4 edge·uncertainty 16-profile 3-GPU full ablation, 160/160 pair와 byte accounting 검증 및 결과 registry 고정
+  - 통합 semantic·hallucination·temporal 120-pair 3-GPU full 평가와 개발셋 잠정 후보 선정
 - 근거: [status.md](./status.md)
 - 남은 일정
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|
 | 9월 | 공정 selector 비교 기반 확정 | **완료** — proxy SKEM null 결과, `fixed_int4` 유지 |
-| 10월 | guide 경로 확정 + verifier 폐루프 | mixed guide 후보·ControlNet sensitivity, 통합 평가 row, verifier candidate action 실제 sampler 반영 |
-| 11월 | 동적 제어 + 최종 정리 | 예산 controller ablation, 별도 held-out 최종 검증, 비교 프로토콜·최종 보고서 |
+| 10월 | held-out + guide 경로 확정 | both-omit full50/few10 paired 검증, hallucination CI 판정, Tx/Rx guide 계약 |
+| 11월 | 폐루프·동적 제어 + 최종 정리 | verifier sampler 배선, 예산 controller ablation, 최종 operating point·보고서 |
 
 ## 신규 연구 아이템 확장 가능성
 

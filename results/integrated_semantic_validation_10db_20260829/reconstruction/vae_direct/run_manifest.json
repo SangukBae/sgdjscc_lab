@@ -1,0 +1,186 @@
+{
+  "schema_version": 2,
+  "run_id": "vae_direct",
+  "generated_at": "2026-08-28T11:32:56.697970+00:00",
+  "git": {
+    "commit": "5a8f2aa357925776b3c472aebbc0a3967ae17001",
+    "dirty": false,
+    "branch": "main"
+  },
+  "command": {
+    "text": "scripts/run_transmission_normalization_parallel.py --devices cuda:0,cuda:1,cuda:2 --dataset-root /home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval --configs fixed_int4 --guide-profiles baseline,combined_ds4,candidate_edge_ds4_uncertainty_omit,candidate_both_omit --decoder-mode vae_direct --diffusion-step 50 --digital-step-policy fixed_reference --fixed-reference-snr-db 10 --seed 2025 --no-match-fixed-keyframes --skip-keyframe-sweep --skip-source-size-report --output-root /home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/integrated_semantic_validation_10db_20260828_093017/reconstruction/vae_direct",
+    "argv": [
+      "scripts/run_transmission_normalization_parallel.py",
+      "--devices",
+      "cuda:0,cuda:1,cuda:2",
+      "--dataset-root",
+      "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+      "--configs",
+      "fixed_int4",
+      "--guide-profiles",
+      "baseline,combined_ds4,candidate_edge_ds4_uncertainty_omit,candidate_both_omit",
+      "--decoder-mode",
+      "vae_direct",
+      "--diffusion-step",
+      "50",
+      "--digital-step-policy",
+      "fixed_reference",
+      "--fixed-reference-snr-db",
+      "10",
+      "--seed",
+      "2025",
+      "--no-match-fixed-keyframes",
+      "--skip-keyframe-sweep",
+      "--skip-source-size-report",
+      "--output-root",
+      "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/integrated_semantic_validation_10db_20260828_093017/reconstruction/vae_direct"
+    ],
+    "source": "captured"
+  },
+  "seed": 2025,
+  "resolved_config": {
+    "status": "unknown",
+    "resolved": "unknown",
+    "config_source": null
+  },
+  "dataset": {
+    "ref": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+    "hash": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c"
+  },
+  "checkpoints": {
+    "status": "unknown",
+    "items": {}
+  },
+  "environment": {
+    "python_version": "unknown",
+    "platform": "unknown",
+    "torch_version": "unknown",
+    "cuda_available": "unknown",
+    "cuda_version": "unknown",
+    "gpu_name": "unknown"
+  },
+  "evaluator_versions": {},
+  "original_artifact_paths": {},
+  "artifacts": {},
+  "accounting": {
+    "exact_fields": [
+      "worker packet bytes",
+      "merged bytes/video",
+      "merged bytes/frame"
+    ],
+    "proxy_fields": [
+      "estimated channel symbols",
+      "estimated FEC wire bytes"
+    ]
+  },
+  "nan_or_failure_counts": {
+    "n_failed_pairs": 0
+  },
+  "extra": {
+    "run_status": "completed",
+    "parallel_plan": {
+      "schema_version": 1,
+      "git": {
+        "commit": "5a8f2aa357925776b3c472aebbc0a3967ae17001",
+        "dirty": false,
+        "branch": "main"
+      },
+      "dataset_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+      "dataset_manifest_sha256": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c",
+      "devices": [
+        "cuda:0",
+        "cuda:1",
+        "cuda:2"
+      ],
+      "assignments": [
+        {
+          "device": "cuda:0",
+          "videos": [
+            "01_person_walk",
+            "04_person_car",
+            "07_person_enter",
+            "10_busy_sidewalk"
+          ],
+          "estimated_frames": 400,
+          "worker_id": "worker_00"
+        },
+        {
+          "device": "cuda:1",
+          "videos": [
+            "02_car_pass",
+            "05_camera_pan_person",
+            "08_car_exit"
+          ],
+          "estimated_frames": 300,
+          "worker_id": "worker_01"
+        },
+        {
+          "device": "cuda:2",
+          "videos": [
+            "03_dog_walk",
+            "06_handheld_sign",
+            "09_scene_cut_chair_car"
+          ],
+          "estimated_frames": 300,
+          "worker_id": "worker_02"
+        }
+      ],
+      "settings": {
+        "configs": "fixed_int4",
+        "max_frames": null,
+        "seed": 2025,
+        "digital_step_policy": "fixed_reference",
+        "fixed_reference_snr_db": 10.0,
+        "ablation_label": null,
+        "guide_profiles": [
+          "baseline",
+          "combined_ds4",
+          "candidate_edge_ds4_uncertainty_omit",
+          "candidate_both_omit"
+        ],
+        "decoder_mode": "vae_direct",
+        "diffusion_step": 50,
+        "psss_backend": "proxy",
+        "psss_model_id": null,
+        "psss_device": "cpu",
+        "psss_dtype": "fp32",
+        "psss_threshold": null,
+        "psss_max_segment_length": null,
+        "use_scene_detector": false,
+        "match_fixed_keyframes": false,
+        "match_actual_transmissions": false,
+        "matched_rate_thresholds": "-0.95,-0.9,-0.85,-0.8,-0.75,-0.7,-0.65,-0.6,-0.55,-0.5,-0.45,-0.4,-0.35,-0.3,-0.25,-0.2,-0.15,-0.1,-0.05,0.0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,0.999999",
+        "matched_rate_max_segment_lengths": "8,10,12,14,16,20,24,32,48,64,100",
+        "skip_keyframe_sweep": true,
+        "skip_source_size_report": true
+      }
+    },
+    "worker_manifest_sha256": {
+      "workers/worker_00": "ccd86923d3e98e13065792c9eb87dadc39d1ba28475ecd6b534d7abb09ce207a",
+      "workers/worker_01": "b798186221115d3ca6cb2c4c3e1906adcded8c89805e70c0e9c10b219a5ea73b",
+      "workers/worker_02": "2ecc6a0ecec6ca16e31f605f40c8177221ff56efe344fc5b89e74e06d50a3427"
+    },
+    "output_artifact_sha256": {
+      "parallel_plan.json": "5caf761811cbd3c2f2ecaf88022d160f3009fc11b0ce65ddcf62eefd59ebbdf0",
+      "parallel_worker_status.json": "5085181fe6ba297ab6f63c30dd77f87655f95bf032c7b96550eae38e79dab9a7",
+      "per_video_metrics.csv": "d328814baf5b7086a8b26ec154453abfc6083ef5db950fb7e3b62a53a4f50a18",
+      "aggregate.csv": "0eeb087baf5e0c8a3ac70ce15e48e31fff6936d76797617191a0c8563048a646",
+      "pareto_frontier.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "rate_matching.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matched_rate_plan.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "keyframe_selection.csv": "1a5bd3c4d895298c31c0a581bc727110dd82ec421f0cc27aac69dd5870ac8ba4",
+      "packet_components.csv": "0cea29381fa6174ad3fb37e99694cbdcd32e471024040d96f2e678bda90aacd9",
+      "keyframe_sweep.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "failed_pairs.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "source_size_report.csv": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "quantization_diagnostics.csv": "be17a30ae63e126433713172153081637a1715bf3b025b718ba14fdca7f19563",
+      "summary.json": "4abfb97309bdad870cd8f66363d59fb5dffeac3d5a0494c9dd0b1bbd07d66fdb",
+      "README.md": "fcc0f4effb79c3d4a167b9b291eefea89f83d19f25ba481d2a06aa2c88d450fd",
+      "guide_ablation_effect.csv": "e99fc9d5171ffcfbf6fc4d4370522dfe4292d2dc3ec3c1d05e474813492c12e1",
+      "guide_component_bytes.csv": "d35ee62bdeb190f3a7c02b4bea00fd79b2d454b3ffbec8a4b0ae898247792b24",
+      "guide_pareto_frontier.csv": "b0a8d95d19dbd8010af2b2322b2daac7b62b6e5da2220dd0f8fb201d54bac4d7",
+      "guide_ablation_validation.json": "e90b9fa666b35e3759f10fc16df0ae31bd744a1e29b87bc4ad3b1903f64ae3e8",
+      "GUIDE_ABLATION_REPORT.md": "2c783d1b22269ed4b4e01cbfd36e629276cb8535a8fcb0ae4763fe99196d4bc1"
+    }
+  }
+}

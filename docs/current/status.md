@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-28
+updated: 2026-08-29
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 6d6c4ed
+source_commit: 5a8f2aa
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -162,8 +162,8 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 | 10dB 양자화 재평가 실행 환경 | **3-GPU full 실행·원격 회수·결과 registry 고정 완료** — fixed selector에서 AWGN 참고 + float32/int16/int8/int6/int4 비교, seed 2025. 원격·로컬 13,144개 파일/1,210,877,488 bytes와 전 파일 SHA-256 일치. worker `cuda:0/1/2` provenance 및 10dB plan/signature/resolved-config 계약 확인 |
 | fixed–SKEM exact matched-rate 재평가 | **3-GPU full 실행·결과 registry 고정 완료** — 100/100 pair, 50/50 rate row, 실패·NaN/Inf 0; actual transmitting count exact, raw byte 최대 차이 0.004953%, padding 후 effective byte exact. 단, proxy SKEM은 10/10 영상에서 fixed와 keyframe/transmitting index가 같아 품질 차이도 정확히 0이었다. SKEM 우위가 아니라 fixed schedule로 수렴한 null 결과이며 운영점은 `fixed_int4` 유지 — [실험](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md), [보존 결과](../../results/fixed_skem_matched_rate_10db_20260828/README.md) |
 | edge·uncertainty 전송 절감 ablation | **16-profile·3-GPU full 실행·결과 registry 고정 완료** — 160/160 pair, 실패·NaN/Inf 0. 시험한 후보 중 `combined_ds4`가 356,824.7 bytes/video로 `fixed_int4` baseline 대비 85.11% 절감했고 pixel quality gate를 통과했다. 단, uncertainty-only 5종은 모든 영상에서 지표가 baseline과 정확히 같았으며 reliable-digital decoder가 uncertainty를 소비하지 않는 경로가 확인됐다. edge 영향도 수치적으로 매우 작아 혼합 omit/downsample과 semantic·시간축 검증 전까지 조건부 후보로만 유지 — [실험](../experiments/2026-08-28_edge_uncertainty_ablation_10db.md), [보존 결과](../../results/edge_uncertainty_ablation_10db_20260828/README.md) |
-| 통합 semantic·hallucination·temporal 평가 | **3-GPU 실행 준비 완료, full 검증 대기** — 4 guide profile(`baseline`, `combined_ds4`, edge-ds4+uncertainty-omit, both-omit) × 3 decoder policy(full50/few10/VAE-direct) × 10영상 = 120 pair. 실제 CLIP·OWLv2·VQA 전원 기여를 fail-closed로 확인하고 closed-world preservation/open-world hallucination/PTC·SFR·SDI, pixel·byte·elapsed time, paired bootstrap CI를 한 표로 통합 — [준비 문서](../experiments/2026-08-28_integrated_semantic_validation_preparation.md) |
-| float32 VAE-direct 후보 | **pixel fidelity·receiver decode 지연 신호 확인, 운영 정책 미확정** — stage 5의 20프레임에서 50-step diffusion 대비 PSNR `35.146→36.736`, SSIM `0.9366→0.9474`, LPIPS `0.1202→0.0735`, harness latency `6170→48.6ms`. sender·bundle 전체 지연과 semantic·할루시네이션·시간축 평가는 아직 없음 — [full 실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md) |
+| 통합 semantic·hallucination·temporal 평가 | **3-GPU full 완료·결과 registry 고정** — 4 guide × 3 decoder × 10영상의 120/120 pair, 총 12,000 frame, 실패·non-finite 0. CLIP·OWLv2·VQA가 각각 47,744건 기여했다. 평균 gate의 개발셋 잠정 후보는 `few10 + both-omit`: 219,459.7 bytes/video(-90.843%), 39.454s/video(-63.486%), PSNR -0.2435dB, SSIM -0.00188, LPIPS +0.01558. 단, hallucination/additional-object CI 상한 0.0525/0.0570이 margin 0.05를 넘어 최종 운영점은 held-out 전까지 보류 — [결과](../experiments/2026-08-29_integrated_semantic_validation_10db.md), [보존 결과](../../results/integrated_semantic_validation_10db_20260829/README.md) |
+| VAE-direct 후보 | **통합 개발평가에서 strict SSIM gate 실패** — both-omit에서 23.4885s/video로 full50보다 4.60배 빠르고 PSNR·LPIPS는 개선됐지만 SSIM 하락 0.01129가 margin 0.01을 넘었다. primary held-out 후보에서는 제외하고 탐색적 비교로 유지 — [통합 결과](../experiments/2026-08-29_integrated_semantic_validation_10db.md) |
 | Importance-aware / 채널 신호 연동 bit allocation | 미착수 — [roadmap.md](./roadmap.md) §3 |
 
 ### 학습 CLI

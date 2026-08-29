@@ -1,0 +1,120 @@
+{
+  "backend_evidence_counts": {
+    "clip": 47744,
+    "owlv2": 47744,
+    "vqa": 47744
+  },
+  "baseline": {
+    "decoder_policy": "full50",
+    "guide_profile": "baseline"
+  },
+  "guide_profiles": [
+    "baseline",
+    "combined_ds4",
+    "candidate_edge_ds4_uncertainty_omit",
+    "candidate_both_omit"
+  ],
+  "interpretation": "Development-set provisional screening only. Paired 95% bootstrap CIs are reported; the later held-out run must confirm the final operating point.",
+  "n_completed_pairs": 120,
+  "n_expected_pairs": 120,
+  "n_videos": 10,
+  "policies": [
+    "full50",
+    "few10",
+    "vae_direct"
+  ],
+  "run_status": "completed",
+  "screening_margins": {
+    "closed_ptc_drop": 0.05,
+    "closed_sdi_abs_change": 0.01,
+    "closed_severity_rise": 0.05,
+    "closed_sfr_rise": 0.05,
+    "lpips_rise": 0.02,
+    "open_additional_per_frame_rise": 0.05,
+    "open_hallucination_rise": 0.05,
+    "psnr_drop_db": 0.5,
+    "ssim_drop": 0.01
+  },
+  "selected_operating_point": {
+    "closed_ptc_drop": 0.00129999999999999,
+    "closed_ptc_drop_ci95_high": 0.014799999999999735,
+    "closed_ptc_drop_ci95_low": -0.010999999999999687,
+    "closed_ptc_drop_margin": 0.05,
+    "closed_sdi_abs_change": 0.00026078369087782554,
+    "closed_sdi_abs_change_ci95_high": 0.00043236354467310204,
+    "closed_sdi_abs_change_ci95_low": 8.920383708254894e-05,
+    "closed_sdi_abs_change_margin": 0.01,
+    "closed_severity_rise": 0.0014999999999999957,
+    "closed_severity_rise_ci95_high": 0.014700000000000027,
+    "closed_severity_rise_ci95_low": -0.010800000000000054,
+    "closed_severity_rise_margin": 0.05,
+    "closed_sfr_rise": 0.0,
+    "closed_sfr_rise_ci95_high": 0.0,
+    "closed_sfr_rise_ci95_low": 0.0,
+    "closed_sfr_rise_margin": 0.05,
+    "decoder_policy": "few10",
+    "guide_profile": "candidate_both_omit",
+    "lpips_rise": 0.015583140864968304,
+    "lpips_rise_ci95_high": 0.019441631436347966,
+    "lpips_rise_ci95_low": 0.01217845162004232,
+    "lpips_rise_margin": 0.02,
+    "mean_total_bundle_bytes": 219459.7,
+    "mean_total_elapsed_s": 39.454,
+    "n_videos": 10,
+    "open_additional_per_frame_rise": 0.020999999999999998,
+    "open_additional_per_frame_rise_ci95_high": 0.056999999999999995,
+    "open_additional_per_frame_rise_ci95_low": 0.0,
+    "open_additional_per_frame_rise_margin": 0.05,
+    "open_hallucination_rise": 0.019500000000000007,
+    "open_hallucination_rise_ci95_high": 0.05250000000000001,
+    "open_hallucination_rise_ci95_low": 0.0,
+    "open_hallucination_rise_margin": 0.05,
+    "psnr_drop_db": 0.24351156234741184,
+    "psnr_drop_db_ci95_high": 0.38135971641540467,
+    "psnr_drop_db_ci95_low": 0.14749182510376002,
+    "psnr_drop_db_margin": 0.5,
+    "screening_gate_passed": true,
+    "selected_operating_point": true,
+    "ssim_drop": 0.001882451683282832,
+    "ssim_drop_ci95_high": 0.0040456801652907996,
+    "ssim_drop_ci95_low": -0.00036702546477321296,
+    "ssim_drop_margin": 0.01
+  },
+  "validation_passed": true,
+  "worker_summaries": [
+    {
+      "n_pairs": 48,
+      "physical_cuda_device": "cuda:0",
+      "status": "completed",
+      "videos": [
+        "01_person_walk",
+        "04_person_car",
+        "07_person_enter",
+        "10_busy_sidewalk"
+      ],
+      "worker_id": "worker_00"
+    },
+    {
+      "n_pairs": 36,
+      "physical_cuda_device": "cuda:1",
+      "status": "completed",
+      "videos": [
+        "02_car_pass",
+        "05_camera_pan_person",
+        "08_car_exit"
+      ],
+      "worker_id": "worker_01"
+    },
+    {
+      "n_pairs": 36,
+      "physical_cuda_device": "cuda:2",
+      "status": "completed",
+      "videos": [
+        "03_dog_walk",
+        "06_handheld_sign",
+        "09_scene_cut_chair_car"
+      ],
+      "worker_id": "worker_02"
+    }
+  ]
+}

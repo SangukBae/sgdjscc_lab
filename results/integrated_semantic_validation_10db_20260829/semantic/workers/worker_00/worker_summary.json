@@ -1,0 +1,12 @@
+{
+  "n_pairs": 48,
+  "physical_cuda_device": "cuda:0",
+  "status": "completed",
+  "videos": [
+    "01_person_walk",
+    "04_person_car",
+    "07_person_enter",
+    "10_busy_sidewalk"
+  ],
+  "worker_id": "worker_00"
+}

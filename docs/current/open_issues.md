@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-28
+updated: 2026-08-29
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 6d6c4ed
+source_commit: 5a8f2aa
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -55,10 +55,15 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   - 현재 `PTC`/`SFR`/`SDI`는 packet/object 판정에 의존하는 지표뿐이다.
 - **`eta_th`(PSSS 임계값)의 CBR 캘리브레이션 없음**
   - 논문 실험값(0.35)을 그대로 쓸 뿐, 이 데이터셋/모델 조합에서 목표 CBR에 맞춰 보정하지 않았다.
-- **통합 평가 계약은 문서만 확정**
-  - feedback/retransmission byte, regeneration 지연, retry 수를 한 row에 자동 기록하는 harness 배선은 아직 없다.
-- **paired 통계·별도 held-out 영상 결과 없음**
-  - 현재 10영상 결과에는 정책별 paired difference, 95% 신뢰구간, 별도 영상 split 재검증이 없다.
+- **통합 개발평가는 완료됐지만 폐루프 accounting은 미완**
+  - pixel·semantic·hallucination·temporal·bundle byte·reconstruction elapsed의 120-pair
+    통합과 paired 95% CI는 완료됐다. feedback/retransmission byte, regeneration 지연,
+    retry 수를 같은 row에 기록하는 폐루프 accounting은 아직 없다.
+- **별도 held-out 영상 결과 없음**
+  - 개발 10영상에서 `few10 + both-omit`이 평균 gate를 통과했지만 open hallucination과
+    additional-object CI 상한 0.0525/0.0570이 margin 0.05를 넘는다. 증가는
+    `01_person_walk`, `02_car_pass`에 집중돼 최종 일반화 판정에는 미사용 영상의 paired
+    검증이 필요하다.
 
 ## 전송량
 
@@ -83,10 +88,11 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     4개 bit-depth가 모두 품질 허용 기준을 통과했고 `fixed_int4`가 최소 bit-depth로 선택됐다.
   - [full 실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md),
     [진단 프로토콜](../protocols/float32_digital_diagnostics.md).
-- **VAE-direct의 semantic·시간축 operating point 검증이 없다**
-  - 20프레임에서 pixel fidelity와 receiver decode latency는 50-step diffusion보다 우수했지만,
-    sender·bundle 전체 지연, semantic fidelity, 할루시네이션, 시간축 지표는 비교하지 않았다.
-  - 따라서 VAE-direct/few-step/full diffusion 중 최종 정책은 아직 확정할 수 없다.
+- **VAE-direct는 통합 개발평가의 strict SSIM gate를 실패했다**
+  - both-omit에서 23.4885s/video로 full50보다 4.60배 빠르고 PSNR·LPIPS 및 semantic
+    지표는 양호했지만, 평균 SSIM 하락 0.01129가 사전 margin 0.01을 넘었다.
+  - threshold를 사후 변경하지 않으며 primary held-out 후보에서는 제외한다. few10도
+    hallucination CI 경고가 있어 최종 decoder 정책은 아직 확정할 수 없다.
 - **proxy SKEM exact-rate 보정이 fixed schedule로 퇴화**
   - 10영상×10설정 full 결과는 actual transmitting count와 effective byte를 정확히
     맞췄지만, 10/10 영상에서 fixed/SKEM keyframe·transmitting index가 같았다.
@@ -109,14 +115,13 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     달리 구조적 bypass는 아니지만, pixel metric만 보면 사실상 무감도에 가깝다.
   - ControlNet off/scale sensitivity와 SRS·hallucination·temporal 지표를 확인하기 전
     guide가 불필요하다고 일반화하면 안 된다.
-- **guide ablation의 최소-byte 조합 탐색이 닫히지 않았다**
-  - `combined_ds4`는 시험한 16개 중 356,824.7 bytes/video(-85.11%)로 최소였지만,
-    `edge_ds4 + uncertainty_omit`과 `edge_omit + uncertainty_omit`은 실행하지 않았다.
-  - 따라서 자동 Pareto 선택은 조건부 후보이며 최종 운영점이 아니다. 상세:
-    [실험 결과](../experiments/2026-08-28_edge_uncertainty_ablation_10db.md).
-  - 두 빈 조합은 통합 120-pair 실행 격자에 추가됐지만 아직 GPU 결과가 없다.
-    실제 CLIP·OWLv2·VQA semantic/hallucination/temporal gate와 paired CI가 통과하기
-    전에는 해결된 이슈로 닫지 않는다. [준비 문서](../experiments/2026-08-28_integrated_semantic_validation_preparation.md).
+- **guide 최소-byte 조합은 개발셋에서 닫혔지만 Tx/Rx 계약 정리가 남았다**
+  - 통합 120-pair에서 `edge_ds4 + uncertainty_omit`과 `edge_omit + uncertainty_omit`을
+    실행했다. both-omit은 219,459.7 bytes/video(-90.843%)이고 full50 baseline 대비
+    pixel 변화가 수치 오차 수준이며 closed/open semantic 지표 차이는 0이었다.
+  - 이는 현재 reliable-digital checkpoint/config의 개발 결과다. packet schema에서
+    uncertainty/edge를 기본 제거할지, 향후 decoder 조건으로 다시 연결할지 결정하고
+    held-out에서 확인하기 전 다른 채널·checkpoint로 일반화하면 안 된다.
 
 ## 채널·저지연
 

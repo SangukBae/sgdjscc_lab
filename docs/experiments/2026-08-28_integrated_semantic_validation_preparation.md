@@ -76,3 +76,12 @@ bash scripts/run_integrated_semantic_validation_10db.sh \
 `integrated_effect.csv`, `integrated_screening_frontier.csv`,
 `integrated_validation.json`, `INTEGRATED_EVALUATION_REPORT.md`,
 `artifact_sha256.json`, `run_manifest.json`이다.
+
+## 완료 결과
+
+120/120 pair full 실행과 원격–로컬 SHA-256 대조가 완료됐다. 개발셋 평균 gate의
+잠정 후보는 `few10 + candidate_both_omit`이며, hallucination CI 경고 때문에 최종
+운영점은 별도 held-out까지 보류한다. 상세 수치와 판정은
+[2026-08-29 결과 문서](./2026-08-29_integrated_semantic_validation_10db.md)와
+[보존 결과](../../results/integrated_semantic_validation_10db_20260829/README.md)를
+기준으로 한다.

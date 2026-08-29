@@ -1,0 +1,147 @@
+{
+  "schema_version": 2,
+  "run_id": "integrated_semantic_validation_10db_20260828_093017",
+  "generated_at": "2026-08-29T05:38:40.859981+00:00",
+  "git": {
+    "commit": "5a8f2aa357925776b3c472aebbc0a3967ae17001",
+    "dirty": false,
+    "branch": "main"
+  },
+  "command": {
+    "text": "scripts/run_integrated_semantic_validation.py --output-root outputs/integrated_semantic_validation_10db_20260828_093017 --devices cuda:0,cuda:1,cuda:2 --seed 2025",
+    "argv": [
+      "scripts/run_integrated_semantic_validation.py",
+      "--output-root",
+      "outputs/integrated_semantic_validation_10db_20260828_093017",
+      "--devices",
+      "cuda:0,cuda:1,cuda:2",
+      "--seed",
+      "2025"
+    ],
+    "source": "captured"
+  },
+  "seed": 2025,
+  "resolved_config": {
+    "status": "unknown",
+    "resolved": "unknown",
+    "config_source": null
+  },
+  "dataset": {
+    "ref": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+    "hash": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c"
+  },
+  "checkpoints": {
+    "status": "unknown",
+    "items": {}
+  },
+  "environment": {
+    "python_version": "unknown",
+    "platform": "unknown",
+    "torch_version": "unknown",
+    "cuda_available": "unknown",
+    "cuda_version": "unknown",
+    "gpu_name": "unknown"
+  },
+  "evaluator_versions": {},
+  "original_artifact_paths": {},
+  "artifacts": {},
+  "accounting": {
+    "exact_fields": [
+      "serialized bundle bytes",
+      "saved reconstruction PNGs",
+      "paired video rows"
+    ],
+    "proxy_fields": [
+      "CLIP/OWLv2/VQA semantic judgments"
+    ]
+  },
+  "nan_or_failure_counts": {
+    "n_failed_pairs": 0
+  },
+  "extra": {
+    "run_status": "completed",
+    "integrated_plan": {
+      "schema_version": 1,
+      "git": {
+        "commit": "5a8f2aa357925776b3c472aebbc0a3967ae17001",
+        "dirty": false,
+        "branch": "main"
+      },
+      "dataset_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/data/etri_video_eval",
+      "dataset_manifest_sha256": "8e5e192304cfd7582f42cf0087a1ac28ad063003fb20cadbfb751b3dc56f930c",
+      "seed": 2025,
+      "fixed_reference_snr_db": 10.0,
+      "configs": [
+        "fixed_int4"
+      ],
+      "policies": {
+        "full50": {
+          "decoder_mode": "diffusion",
+          "diffusion_step": 50
+        },
+        "few10": {
+          "decoder_mode": "diffusion",
+          "diffusion_step": 10
+        },
+        "vae_direct": {
+          "decoder_mode": "vae_direct",
+          "diffusion_step": 50
+        }
+      },
+      "guide_profiles": [
+        "baseline",
+        "combined_ds4",
+        "candidate_edge_ds4_uncertainty_omit",
+        "candidate_both_omit"
+      ],
+      "assignments": [
+        {
+          "device": "cuda:0",
+          "videos": [
+            "01_person_walk",
+            "04_person_car",
+            "07_person_enter",
+            "10_busy_sidewalk"
+          ],
+          "estimated_frames": 400,
+          "worker_id": "worker_00"
+        },
+        {
+          "device": "cuda:1",
+          "videos": [
+            "02_car_pass",
+            "05_camera_pan_person",
+            "08_car_exit"
+          ],
+          "estimated_frames": 300,
+          "worker_id": "worker_01"
+        },
+        {
+          "device": "cuda:2",
+          "videos": [
+            "03_dog_walk",
+            "06_handheld_sign",
+            "09_scene_cut_chair_car"
+          ],
+          "estimated_frames": 300,
+          "worker_id": "worker_02"
+        }
+      ],
+      "expected_pairs": 120,
+      "max_frames": null
+    },
+    "child_manifest_sha256": {
+      "full50": "2f304e979f975a50d5bbacddb67132412c29f53856a0f3aa5c3a003a2e48bd49",
+      "few10": "1bf3920813661f10c005ae43988a3388ddfc0f6d9042d759eced4a70ef2f8d26",
+      "vae_direct": "1fd966cb0cdda0682f97084fec2c23535008d0e79643225606298ee0d67c3d1e"
+    },
+    "output_artifact_sha256": {
+      "INTEGRATED_EVALUATION_REPORT.md": "0eff008118bdd9835919bfef8a7195e6a308fcab59ca767cf912e2fd1d9d1817",
+      "integrated_effect.csv": "a0edc579fb5bf82c494e45aa118e2e8f5f8c88b6c8ada8c1dc08f8d61bb08bdd",
+      "integrated_per_video.csv": "877e2a7ead47276ec94939ee33e54a13cd681deb7e5160fad4be127439b7ce3f",
+      "integrated_plan.json": "bd7d3522ca1cf4098ff5efcc66d4fa288cbed49bd79a537c479ef852ff2b091d",
+      "integrated_screening_frontier.csv": "a1ec703aa71e0090b619b90cbfc654388828343ef692da9b14c1520acb553170",
+      "integrated_validation.json": "7d8f11d0fd24628cc867a77dfd2e2026f7ec2481b7f0c70a30fa014f44f34f5e"
+    }
+  }
+}

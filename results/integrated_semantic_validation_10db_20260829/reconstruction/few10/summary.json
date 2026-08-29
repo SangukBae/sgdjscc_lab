@@ -1,0 +1,172 @@
+{
+  "devices": [
+    "cuda:0",
+    "cuda:1",
+    "cuda:2"
+  ],
+  "generated_at": "2026-08-28T11:00:01",
+  "guide_ablation_validation": {
+    "checks": {
+      "all_profiles_known": true,
+      "all_rows_finite_and_complete": true,
+      "all_video_profile_pairs_present": true,
+      "baseline_fixed_int4": true,
+      "expected_profiles_present": true,
+      "fixed_reference_snr_exactly_10db": true,
+      "guide_actions_match_profile_and_item_presence": true,
+      "no_failed_pairs": true,
+      "one_baseline_aggregate_row": true,
+      "packet_component_bytes_reconcile": true,
+      "three_gpu_worker_provenance": true
+    },
+    "expected_profiles": [
+      "baseline",
+      "combined_ds4",
+      "candidate_edge_ds4_uncertainty_omit",
+      "candidate_both_omit"
+    ],
+    "failed_checks": [],
+    "fixed_reference_snr_db_values": [
+      10.0
+    ],
+    "n_expected_pairs": 40,
+    "n_expected_videos": 10,
+    "n_failed_pairs": 0,
+    "n_observed_pairs": 40,
+    "observed_profiles": [
+      "baseline",
+      "candidate_both_omit",
+      "candidate_edge_ds4_uncertainty_omit",
+      "combined_ds4"
+    ],
+    "parallel_provenance": {
+      "applicable": true,
+      "passed": true,
+      "planned_devices": [
+        "cuda:0",
+        "cuda:1",
+        "cuda:2"
+      ],
+      "worker_manifests": [
+        {
+          "git": {
+            "branch": "main",
+            "commit": "5a8f2aa357925776b3c472aebbc0a3967ae17001",
+            "dirty": false
+          },
+          "planned_device": "cuda:0",
+          "recorded_device": "cuda:0",
+          "worker_id": "worker_00"
+        },
+        {
+          "git": {
+            "branch": "main",
+            "commit": "5a8f2aa357925776b3c472aebbc0a3967ae17001",
+            "dirty": false
+          },
+          "planned_device": "cuda:1",
+          "recorded_device": "cuda:1",
+          "worker_id": "worker_01"
+        },
+        {
+          "git": {
+            "branch": "main",
+            "commit": "5a8f2aa357925776b3c472aebbc0a3967ae17001",
+            "dirty": false
+          },
+          "planned_device": "cuda:2",
+          "recorded_device": "cuda:2",
+          "worker_id": "worker_02"
+        }
+      ],
+      "worker_statuses": [
+        {
+          "device": "cuda:0",
+          "returncode": 0,
+          "videos": [
+            "01_person_walk",
+            "04_person_car",
+            "07_person_enter",
+            "10_busy_sidewalk"
+          ],
+          "worker_id": "worker_00"
+        },
+        {
+          "device": "cuda:1",
+          "returncode": 0,
+          "videos": [
+            "02_car_pass",
+            "05_camera_pan_person",
+            "08_car_exit"
+          ],
+          "worker_id": "worker_01"
+        },
+        {
+          "device": "cuda:2",
+          "returncode": 0,
+          "videos": [
+            "03_dog_walk",
+            "06_handheld_sign",
+            "09_scene_cut_chair_car"
+          ],
+          "worker_id": "worker_02"
+        }
+      ]
+    },
+    "quality_gate": {
+      "lpips_rise": 0.02,
+      "psnr_drop_db": 0.5,
+      "ssim_drop": 0.01
+    },
+    "run_root": "/home/wilco/SangukBae/Semantic/sgdjscc_lab/outputs/integrated_semantic_validation_10db_20260828_093017/reconstruction/few10",
+    "schema_version": 1,
+    "selected_minimum_bytes_in_gate": "candidate_both_omit",
+    "validation_passed": true
+  },
+  "matched_rate_validation": null,
+  "n_completed_pairs": 40,
+  "n_expected_videos": 10,
+  "n_failed_pairs": 0,
+  "n_workers": 3,
+  "parallel": true,
+  "pareto_baseline": {
+    "baseline_config": null,
+    "baseline_is_analog": false,
+    "baseline_valid": false
+  },
+  "pareto_selected": null,
+  "run_status": "completed",
+  "worker_statuses": [
+    {
+      "device": "cuda:0",
+      "returncode": 0,
+      "videos": [
+        "01_person_walk",
+        "04_person_car",
+        "07_person_enter",
+        "10_busy_sidewalk"
+      ],
+      "worker_id": "worker_00"
+    },
+    {
+      "device": "cuda:1",
+      "returncode": 0,
+      "videos": [
+        "02_car_pass",
+        "05_camera_pan_person",
+        "08_car_exit"
+      ],
+      "worker_id": "worker_01"
+    },
+    {
+      "device": "cuda:2",
+      "returncode": 0,
+      "videos": [
+        "03_dog_walk",
+        "06_handheld_sign",
+        "09_scene_cut_chair_car"
+      ],
+      "worker_id": "worker_02"
+    }
+  ]
+}
