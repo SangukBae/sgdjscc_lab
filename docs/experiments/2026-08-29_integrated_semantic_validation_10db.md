@@ -65,6 +65,13 @@ pixel·closed semantic gate와 함께 open hallucination/additional-object CI �
 margin 안에 들어올 때만 확정한다. VAE-direct는 primary 후보가 아니라 탐색적
 비교로 유지한다.
 
+2026-08-29 작업 순서 결정에 따라, 별도 held-out 데이터셋을 당장 만들 수 없는 동안
+이 최종 검증은 **데이터 준비 시점까지 연기**한다. 현재 결과를 최종 통과로 간주하지
+않고 `few10 + candidate_both_omit`을 개발셋 잠정 후보로 동결한다. 그동안
+both-omit opt-in Tx/Rx 계약, verifier의 실제 sampler 배선, 동적 전송 예산 controller를
+먼저 구현한다. 상세 순서는 [roadmap](../current/roadmap.md#held-out-연기-결정-2026-08-29)을
+따른다.
+
 상세한 실행 계약은
 [준비 문서](./2026-08-28_integrated_semantic_validation_preparation.md), 원시 수치와
 checksum은 [보존 결과](../../results/integrated_semantic_validation_10db_20260829/README.md)를

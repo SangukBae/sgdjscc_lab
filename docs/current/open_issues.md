@@ -64,6 +64,9 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     additional-object CI 상한 0.0525/0.0570이 margin 0.05를 넘는다. 증가는
     `01_person_walk`, `02_car_pass`에 집중돼 최종 일반화 판정에는 미사용 영상의 paired
     검증이 필요하다.
+  - 2026-08-29 기준 별도 데이터셋을 즉시 만들 수 없어 검증을 데이터 준비 시점까지
+    연기했다. 취소 또는 통과로 간주하지 않으며, 그동안 `few10 + both-omit`은 opt-in
+    개발 후보로만 유지하고 최종 operating point라는 표현을 사용하지 않는다.
 
 ## 전송량
 

@@ -30,16 +30,27 @@ supersedes:
 통합 120-pair 개발평가까지 완료됐다. guide는 `candidate_both_omit`이 full50에서
 semantic 지표를 유지하면서 baseline byte를 90.843% 줄였다. decoder는 few10이 평균
 gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-direct는 SSIM gate를
-실패했다. 따라서 guide 후보와 decoder 후보를 분리해 다음 순서로 진행한다.
+실패했다. 별도 held-out 데이터셋을 당장 만들 수 없어 최종 검증은 명시적으로
+연기하고, guide 계약과 폐루프 구현을 먼저 진행한다.
+
+### held-out 연기 결정 (2026-08-29)
+
+- 별도 held-out 최종 검증은 취소하지 않고 **데이터셋 준비 시점까지 연기**한다.
+- `few10 + candidate_both_omit`은 계속 개발셋 잠정 후보로만 유지한다.
+- held-out 전에는 최종 operating point나 일반화 성능으로 표기하지 않는다.
+- 기존 10영상으로 threshold를 추가 튜닝하지 않으며 baseline 경로를 보존한다.
+- 새로운 독립 영상이 준비되면 `full50+baseline`, `full50+both-omit`,
+  `few10+both-omit`을 같은 10dB 조건에서 paired 재검증한다.
 
 | 순서 | 작업 | 완료 조건 |
 |---:|---|---|
 | 완료 | edge·uncertainty 전송량 절감 1차 | 16-profile·3-GPU full 완료·registry 보존. `combined_ds4` 조건부 최소 후보, uncertainty bypass 확인 |
 | 완료 | guide 빈 조합 + 통합 평가 | 120/120 pair·real ensemble·paired CI 완료. both-omit guide와 few10 decoder를 개발셋 잠정 후보로 결정 |
-| 1 | 별도 held-out 준비·실행 | 미사용 영상에서 `full50+both-omit` 대 `few10+both-omit` paired 비교, hallucination CI 포함 전 gate 통과 여부 판정 |
-| 2 | guide Tx/Rx 계약 정리 | reliable-digital 기본 packet에서 미사용 uncertainty와 무감도 edge 처리 결정; 필요 시 ControlNet off/scale sensitivity 보조 실험 |
-| 3 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단 조건 구현 |
+| 1 | guide Tx/Rx 계약 정리 | both-omit을 opt-in 정책으로 명시하고 baseline·manifest·packet accounting·resume 계약 보존 |
+| 2 | verifier→sampler 배선 | 실제 prompt 반영, retry·중단·fallback 조건 구현 및 추가 지연/시도 횟수 기록 |
+| 3 | verifier 폐루프 ablation | OFF·로그 전용·retry/stop·prompt 제어 조건의 품질·hallucination·지연 비교 |
 | 4 | 동적 예산 controller | 채널·uncertainty·verifier 위험도로 전송량과 복원 연산량을 결정하고 feedback/retransmission byte·RTT 포함 |
+| 연기 | 별도 held-out 최종 검증 | 새 독립 데이터셋 준비 후 3조건 paired 검증; hallucination CI 포함 전 gate 통과 여부 판정 |
 | 5 | 최종 문서 마감 | held-out 결과로 최종 operating point, 표·그래프·재현성 registry 확정 |
 
 - 역할 분리
@@ -150,8 +161,9 @@ gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-dire
 | 시기 | 초점 | 산출물 |
 |---|---|---|
 | 9월 | 공정 selector 비교 기반 확정 | **완료** — proxy SKEM null 결과, `fixed_int4` 유지 |
-| 10월 | held-out + guide 경로 확정 | both-omit full50/few10 paired 검증, hallucination CI 판정, Tx/Rx guide 계약 |
-| 11월 | 폐루프·동적 제어 + 최종 정리 | verifier sampler 배선, 예산 controller ablation, 최종 operating point·보고서 |
+| 10월 | guide 경로 + verifier 폐루프 | both-omit opt-in Tx/Rx 계약, verifier sampler 배선과 ablation |
+| 11월 | 동적 제어 | 예산 controller ablation과 feedback/retransmission accounting |
+| 데이터 준비 후 | held-out + 최종 정리 | 독립 영상 paired 검증, 최종 operating point·보고서 |
 
 ## 신규 연구 아이템 확장 가능성
 
