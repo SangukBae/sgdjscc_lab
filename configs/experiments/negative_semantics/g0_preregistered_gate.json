@@ -1,0 +1,77 @@
+{
+  "gate_id": "negative_semantics_g0_v1",
+  "protocol_version": "1.0.0",
+  "preregistered_at": "2026-09-02",
+  "status": "NOT_PASSED",
+  "eligible_to_start_g1": false,
+  "required_checks": [
+    "protocol_frozen",
+    "five_split_lists_frozen",
+    "manifest_detached_hash_matches",
+    "assigned_file_hashes_match",
+    "split_video_ids_disjoint",
+    "event_and_ontology_contract_present",
+    "pilot_has_30_to_50_human_verified_independent_events",
+    "heldout_is_nonempty_and_source_disjoint",
+    "assigned_source_licenses_approved",
+    "reproducible_acquisition_and_environment_recorded"
+  ],
+  "frozen_thresholds": {
+    "pilot_independent_events_min": 30,
+    "pilot_independent_events_max": 50,
+    "generation_seeds": [2025, 2026, 2027],
+    "rate_budget_caps_bytes_per_source_frame": [2048, 4096, 8192, 16384],
+    "quality_noninferiority": {
+      "psnr_drop_db": 0.5,
+      "ssim_drop": 0.01,
+      "lpips_rise": 0.02
+    },
+    "safety_noninferiority": {
+      "false_suppression_rise": 0.015,
+      "object_recall_drop": 0.02,
+      "reappearance_identity_drop": 0.05
+    },
+    "primary_improvement": {
+      "h_add_paired_difference": -0.01,
+      "ghost_survival_auc_paired_difference": -0.05
+    },
+    "bootstrap_iterations": 5000,
+    "confidence_level": 0.95
+  },
+  "frozen_artifacts": {
+    "protocol": "configs/experiments/negative_semantics/g0_protocol.yaml",
+    "protocol_sha256": "4fafaaa717b1554ba22b85fb674e790b33d498d2a6dbeef96f37ead5b116485c",
+    "split_manifest": "data/negative_semantics/g0/dataset_split_manifest.json",
+    "split_manifest_sha256": "f4f04b5612d65a9b5004c11da14e50f492c382e3d6228a7ede1efee44e786481",
+    "ontology_manifest": "data/negative_semantics/g0/ontology_manifest.json",
+    "ontology_sha256": "6b7f7b11d5319bb6dce9dcaa8ce5dbc2c83735d0fedb78140ee69f1c8fa374f1",
+    "event_schema": "data/negative_semantics/g0/event_schema.schema.json",
+    "event_schema_sha256": "14883e18b7f59679ace554e1067fcc423a236488c345ea451ff231676dfc6708",
+    "event_annotations": [
+      {
+        "path": "data/negative_semantics/g0/etri_legacy_event_annotations.jsonl",
+        "sha256": "8f824758cf1dd883f3d7792ba1e2db98e6dd7eb538a26fc3b3a50aa3725d08e8"
+      }
+    ],
+    "environment": "environments/sgdjscc-py39-cu118.yml",
+    "environment_sha256": "25118b1a10c51f13e2210354aaeb9f234f659614ed79a65a31e9e8e99fff0983"
+  },
+  "observed_at_freeze": {
+    "pilot_videos": 0,
+    "pilot_human_verified_events": 0,
+    "pilot_independent_event_clusters": 0,
+    "development_videos": 10,
+    "validation_videos": 0,
+    "heldout_test_videos": 0,
+    "legacy_derived_events": 5,
+    "legacy_derived_independent_clusters": 3,
+    "assigned_source_licenses_approved": false
+  },
+  "blocking_reasons": [
+    "Pilot has zero human-verified independent events; 30 to 50 are required.",
+    "Train, Validation, and Held-out Test video lists are empty.",
+    "No source-disjoint Held-out Test bytes or hashes are present.",
+    "Written usage authority for the ETRI assets and institutional acceptance for external dataset terms are not recorded."
+  ],
+  "amendment_policy": "Do not overwrite this decision. Add a dated, versioned amendment after data acquisition and rerun the audit before G1."
+}

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.sgdjscc-lab/negative-semantics/event-v1.schema.json",
+  "title": "Negative semantic event annotation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "split",
+    "source_id",
+    "video_id",
+    "scene_epoch",
+    "independence_cluster_id",
+    "entity_id",
+    "concept_id",
+    "event_type",
+    "start_frame",
+    "end_frame",
+    "state_before",
+    "state_after",
+    "visibility_before",
+    "visibility_after",
+    "annotation_source",
+    "human_verified",
+    "human_verification"
+  ],
+  "properties": {
+    "event_id": {"type": "string", "minLength": 1},
+    "split": {"enum": ["pilot", "train", "development", "validation", "heldout_test"]},
+    "source_id": {"type": "string", "minLength": 1},
+    "video_id": {"type": "string", "minLength": 1},
+    "scene_epoch": {"type": "integer", "minimum": 0},
+    "independence_cluster_id": {"type": "string", "minLength": 1},
+    "entity_id": {"type": ["string", "null"]},
+    "concept_id": {"type": ["string", "null"]},
+    "event_type": {"enum": ["ENTER", "EXIT", "OCCLUDE", "REAPPEAR", "SCENE_CUT"]},
+    "start_frame": {"type": "integer", "minimum": 0},
+    "end_frame": {"type": "integer", "minimum": 0},
+    "state_before": {"enum": ["present", "confirmed_absent", "unknown"]},
+    "state_after": {"enum": ["present", "confirmed_absent", "unknown"]},
+    "visibility_before": {"enum": ["visible", "partial", "occluded", "out_of_frame", "not_applicable", "unknown"]},
+    "visibility_after": {"enum": ["visible", "partial", "occluded", "out_of_frame", "not_applicable", "unknown"]},
+    "annotation_source": {"type": "string", "minLength": 1},
+    "human_verified": {"type": "boolean"},
+    "human_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "annotator_ids", "adjudicator_id"],
+      "properties": {
+        "status": {"enum": ["not_reviewed", "agreed", "adjudicated", "rejected"]},
+        "annotator_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "adjudicator_id": {"type": ["string", "null"]}
+      }
+    },
+    "notes": {"type": "string"}
+  }
+}

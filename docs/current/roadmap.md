@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-08-29
+updated: 2026-09-02
 owner: ETRI SGD-JSCC 연구팀
 source_commit: 5a8f2aa
 supersedes:
@@ -20,12 +20,33 @@ supersedes:
   - 한계·기술 부채: [open_issues.md](./open_issues.md)
   - 목표 정의: [system.md](../architecture/system.md)
 
+## 공식 논문 연구선 (2026-09-02)
+
+[negative semantic paper plan](./negative_semantic_paper_plan.md)을 활성 논문 실행 기준으로
+등록했다. 이전 [paper writing notes](../reference/paper_writing_notes.md)는 reliability-layer
+연구선의 historical artifact이며 현재 논문의 claim 경계가 아니다.
+
+G0 v1의 프로토콜·분할 형식·지표·margin은 동결했지만 gate는 **`NOT_PASSED`**다. 다음
+우선순위는 코드 G1이 아니라 데이터 G0 해소다.
+
+| 순서 | G0 후속 작업 | 완료 조건 |
+|---:|---|---|
+| 1 | 데이터 사용 권한 확정 | ETRI provenance/사용 범위와 YouTube-VOS 기관 약관 승인 기록 |
+| 2 | 외부 split materialize | Pilot/Train/Validation video ID·바이트·SHA-256 고정 |
+| 3 | Pilot event annotation | 두 명 독립 검수+adjudication으로 30~50개 독립 cluster 확보 |
+| 4 | Held-out 봉인 | DAVIS 또는 승인된 대체 source의 video ID·SHA-256을 이전 split과 source-disjoint로 고정 |
+| 5 | G0 재감사 | `audit_negative_semantics_g0.py --require-pass` exit 0, 새 versioned amendment 기록 |
+
+상세 동결값과 사람 annotation 규칙은
+[G0 기록](../experiments/2026-09-02_negative_semantics_g0_protocol.md)에 있다. 위 5단계가
+끝나기 전에는 G1 현상 실험을 논문 evidence로 등록하지 않는다.
+
 - 관리 규칙
   - 메인 계획: 이 문서
   - 구현 완료 후: [status.md](./status.md)로 이동
   - 검증 완료 후: 날짜 기반 `docs/experiments/` 문서 추가
 
-## 권장 실행 순서
+## 기존 backbone 개선선의 권장 실행 순서
 
 통합 120-pair 개발평가까지 완료됐다. guide는 `candidate_both_omit`이 full50에서
 semantic 지표를 유지하면서 baseline byte를 90.843% 줄였다. decoder는 few10이 평균

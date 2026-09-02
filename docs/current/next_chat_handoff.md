@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-08-29
+updated: 2026-09-02
 owner: ETRI SGD-JSCC 연구팀
 source_commit: 7089b24
 ---
@@ -8,6 +8,22 @@ source_commit: 7089b24
 > [← 문서 색인](../README.md)
 
 # 다음 채팅용 연구개발 인계 요약
+
+## 2026-09-02 최우선 변경
+
+- 활성 논문 연구선은
+  [negative semantic paper plan](./negative_semantic_paper_plan.md)이다. 이전
+  `paper_writing_notes.md`는 superseded historical artifact다.
+- G0 v1 방법론 계약과 ETRI 10영상 입력/GT SHA-256은 동결했다.
+- G0 자동 감사는 7/10 통과지만 최종 판정은 **`NOT_PASSED`**다.
+- 차단 항목: Pilot human-verified event 0/30~50, held-out 0개, source license 승인 미기록.
+- 다음 행동은 외부 dataset 사용 승인→split ID/hash 고정→두 명+adjudicator Pilot 주석→
+  held-out 봉인→`python scripts/audit_negative_semantics_g0.py --repo-root . --require-pass`다.
+- G0 통과 전에는 G1 논문 evidence, negative packet/RSM/joint allocator 구현으로 넘어가지 않는다.
+- 통합 요약기는 이후 평균/CI candidate를 분리하고 baseline을 후보에서 제외한다.
+  Development role의 `validation_passed`는 `null`이며, Validation manifest가 명시된
+  실행에서만 CI 기반 bool이다. 2026-08-29 결과 파일은 역사적 무결성을 위해 변경하지 않았다.
+- 근거: [G0 protocol 기록](../experiments/2026-09-02_negative_semantics_g0_protocol.md)
 
 ## 프로젝트 기준
 

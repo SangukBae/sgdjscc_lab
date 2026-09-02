@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-08-29
+updated: 2026-09-02
 owner: ETRI SGD-JSCC 연구팀
 source_commit: 5a8f2aa
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
@@ -143,6 +143,23 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - **대규모 영상 학습 데이터셋 없음**
   - 현재 영상 자산은 ETRI 10-영상 평가셋 (`data/etri_video_eval/`, GT는 10개 영상의 수작업 검증 샘플)뿐이다.
   - temporal SRS/flicker/drift의 baseline 분별력 검증에는 실제 모션이 있는 더 큰 영상 데이터셋이 필요하다.
+- **negative-semantics G0 데이터 gate 미통과**
+  - ETRI 10영상은 반복 개발 이력 때문에 전부 Development only로 고정했다.
+  - 현재 Pilot/Train/Validation/Held-out 목록은 비어 있고, Pilot human-verified 독립
+    event는 0/30~50이다. 기존 GT에서 유도한 5 event/3 cluster는 사람 검수 전이라
+    gate에 세지 않는다.
+  - source-disjoint held-out과 외부 byte hash가 없고, ETRI 사용 권한 및 공개 데이터
+    약관 승인 기록도 없다. 따라서 G1 논문 evidence를 시작할 수 없다.
+  - 근거와 해소 순서: [G0 protocol 기록](../experiments/2026-09-02_negative_semantics_g0_protocol.md)
+
+## 결과 판정 의미
+
+- **개발 요약기의 과거 `validation_passed`가 평균 gate만 반영함**
+  - 2026-08-29 결과 JSON은 point mean을 기준으로 true였지만 hallucination CI 상한은
+    margin을 넘었다. 해당 결과는 historical artifact로 보존하고 재작성하지 않는다.
+  - 이후 요약기는 `run_integrity_passed`, mean screening, CI screening을 분리하고
+    baseline 자체를 후보에서 제외한다. Development role에서는
+    `validation_passed=null`이며 Validation manifest가 명시된 실행에서만 CI 기반 bool이다.
 
 ## 논문 정합성
 

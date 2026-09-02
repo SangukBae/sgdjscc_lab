@@ -67,10 +67,76 @@ def test_integrated_summary_requires_complete_grid_and_selects_smallest_passing_
         }), encoding="utf-8")
 
     validation = mod.summarize(tmp_path)
-    assert validation["validation_passed"] is True
+    assert validation["run_integrity_passed"] is True
+    assert validation["development_mean_screening_passed"] is True
+    assert validation["development_ci_screening_passed"] is True
+    assert validation["dataset_role"] == "development"
+    assert validation["dataset_role_inferred"] is True
+    assert validation["screening_passed_for_declared_role"] is True
+    assert validation["validation_passed"] is None
+    assert validation["heldout_test_passed"] is None
     assert validation["n_completed_pairs"] == 24
     selected = validation["selected_operating_point"]
     assert selected["decoder_policy"] == "vae_direct"
     assert selected["guide_profile"] == "candidate_both_omit"
     assert selected["mean_total_bundle_bytes"] == 200
     assert (tmp_path / "artifact_sha256.json").is_file()
+
+    plan = json.loads((tmp_path / "integrated_plan.json").read_text(encoding="utf-8"))
+    plan["dataset_role"] = "validation"
+    (tmp_path / "integrated_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+    validation = mod.summarize(tmp_path)
+    assert validation["dataset_role"] == "validation"
+    assert validation["dataset_role_inferred"] is False
+    assert validation["validation_passed"] is True
+    assert validation["heldout_test_passed"] is None
+
+
+def test_integrated_summary_rejects_point_mean_only_candidate(tmp_path):
+    mod = load_summarizer()
+    videos = ["v1", "v2"]
+    assignments = [
+        {"worker_id": "worker_00", "device": "cuda:0", "videos": ["v1"]},
+        {"worker_id": "worker_01", "device": "cuda:1", "videos": ["v2"]},
+    ]
+    (tmp_path / "integrated_plan.json").write_text(
+        json.dumps({"assignments": assignments}), encoding="utf-8"
+    )
+    for assignment in assignments:
+        video = assignment["videos"][0]
+        rows = []
+        for policy in mod.POLICIES:
+            for profile in mod.PROFILES:
+                is_reference = (policy, profile) == mod.BASELINE
+                # For every non-reference point, the two-video mean rise is 0.04
+                # (within 0.05) but its bootstrap upper endpoint is 0.09.
+                open_rate = 0.01 if is_reference else (0.10 if video == "v1" else 0.0)
+                rows.append({
+                    "video": video, "decoder_policy": policy, "guide_profile": profile,
+                    "n_frames": 100, "mean_psnr": 30, "mean_ssim": 0.9,
+                    "mean_lpips": 0.1, "total_bundle_bytes": 100,
+                    "total_elapsed_s": 1, "closed_n_items": 100,
+                    "closed_mean_severity": 0.1, "closed_ptc": 0.9,
+                    "closed_sfr": 0.01, "closed_sdi": 0.0,
+                    "open_temporal_hallucination_rate": open_rate,
+                    "open_total_additional_objects": 1,
+                    "closed_backend_clip": 2, "closed_backend_owlv2": 2,
+                    "closed_backend_vqa": 2, "open_backend_clip": 2,
+                    "open_backend_owlv2": 2, "open_backend_vqa": 2,
+                })
+        worker_root = tmp_path / "semantic" / "workers" / assignment["worker_id"]
+        write_csv(worker_root / "integrated_semantic_rows.csv", rows)
+        (worker_root / "worker_summary.json").write_text(json.dumps({
+            "status": "completed", "worker_id": assignment["worker_id"],
+            "n_pairs": len(rows),
+        }), encoding="utf-8")
+
+    validation = mod.summarize(tmp_path)
+    assert validation["run_integrity_passed"] is True
+    assert validation["development_mean_screening_passed"] is True
+    assert validation["development_ci_screening_passed"] is False
+    assert validation["screening_passed_for_declared_role"] is False
+    assert validation["validation_passed"] is None
+    assert validation["run_status"] == "completed_mean_candidate_only"
+    assert validation["mean_screening_candidate"] is not None
+    assert validation["selected_development_candidate"] is None

@@ -1,14 +1,19 @@
 ---
-status: draft
-updated: 2026-08-26
+status: superseded
+updated: 2026-09-02
 owner: ETRI SGD-JSCC 연구팀
 source_commit: d0d3bfb
-supersedes:
+superseded_by: docs/current/negative_semantic_paper_plan.md
 ---
 
 > [← 문서 색인](../README.md)
 
 # 논문 작성 보조 노트 (내부용)
+
+> **Historical artifact.** 이 문서는 2026-09-02부터 활성 논문 계획이 아니다.
+> “새 JSCC 전송 알고리즘을 주장하지 않는다”는 아래 범위는 이전 reliability-layer
+> 연구선에만 해당한다. 현재 연구선과 주장 경계는
+> [negative semantic paper plan](../current/negative_semantic_paper_plan.md)을 따른다.
 
 - 문서 성격
   - 논문 작성용 내부 draft

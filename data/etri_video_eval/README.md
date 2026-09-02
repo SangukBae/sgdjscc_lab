@@ -26,6 +26,10 @@ captions/   no-models 검증용 선택적 캡션
   [OWLv2/VQA 보정 실험](../../docs/experiments/2026-07-28_owlv2_vqa_calibration.md)을
   참고한다.
 
+- negative-semantics 논문에서는 반복 개발에 이미 사용된 10개 영상을 전부
+  **Development only**로 취급한다. 정확한 목록·SHA-256과 G0 제한은
+  [G0 split manifest](../negative_semantics/g0/dataset_split_manifest.json)를 따른다.
+
 ## 영상 규격
 
 - `processed/`의 영상은 모두 MP4(H.264, `yuv420p`), 512×256, 10fps, 10초,

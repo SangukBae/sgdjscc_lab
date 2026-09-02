@@ -14,6 +14,7 @@
 |---|---|
 | 다음 채팅에서 전체 상황 인계 | **[current/next_chat_handoff.md](./current/next_chat_handoff.md)** — 검증·잠정 결론·다음 작업 요약 |
 | 다음 구현 작업과 우선순위 | **[current/roadmap.md](./current/roadmap.md)** — 메인 작업 문서 |
+| negative-semantics 논문 단일 실행 기준 | **[current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md)** — G0~G11 gate와 claim 경계 |
 | 실제 완료·PoC·미구현 판단 | [current/status.md](./current/status.md) |
 | 알려진 제약 확인 | [current/open_issues.md](./current/open_issues.md) |
 | 지표·평가 설계 | [architecture/metrics.md](./architecture/metrics.md) |
@@ -43,6 +44,7 @@
 | [current/status.md](./current/status.md) | 기능별 현재 구현 상태 — 완료/PoC/스캐폴드 구분 |
 | [current/roadmap.md](./current/roadmap.md) | 연구 목표 기준 향후 계획, 일정, ETRI 협의 필요사항 |
 | [current/open_issues.md](./current/open_issues.md) | 알려진 한계·기술 부채 |
+| [current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md) | 활성 논문 연구선; G0 v1 동결, 현재 `NOT_PASSED` |
 
 ## 2. 장기 시스템 설계 (`architecture/`)
 
@@ -90,6 +92,7 @@
 | [experiments/2026-08-28_edge_uncertainty_ablation_preparation.md](./experiments/2026-08-28_edge_uncertainty_ablation_preparation.md) | 위 full ablation의 실행 전 profile·wire-accounting 계약 |
 | [experiments/2026-08-28_integrated_semantic_validation_preparation.md](./experiments/2026-08-28_integrated_semantic_validation_preparation.md) | 4 guide × 3 decoder × 10영상 통합 semantic·hallucination·temporal 3-GPU 검증 프로토콜 |
 | [experiments/2026-08-29_integrated_semantic_validation_10db.md](./experiments/2026-08-29_integrated_semantic_validation_10db.md) | 120-pair 통합 개발평가; both-omit guide, few10 잠정 후보, hallucination CI 경고 |
+| [experiments/2026-09-02_negative_semantics_g0_protocol.md](./experiments/2026-09-02_negative_semantics_g0_protocol.md) | negative-semantics G0 방법론 동결과 데이터 감사; 7/10 통과, gate `NOT_PASSED` |
 
 ## 5. 참조 문서 (`reference/`)
 
@@ -97,7 +100,7 @@
 |---|---|
 | [reference/paper_alignment.md](./reference/paper_alignment.md) | 논문 정합성, `paper_mode`, 하이퍼파라미터 출처, 충실도 분류 |
 | [reference/framework_file_roles.md](./reference/framework_file_roles.md) | 파일별 실행 흐름과 역할 지도 |
-| [reference/paper_writing_notes.md](./reference/paper_writing_notes.md) | 논문 작성용 내부 메모(draft) |
+| [reference/paper_writing_notes.md](./reference/paper_writing_notes.md) | 이전 reliability-layer 연구선 메모(superseded; 역사 참고용) |
 
 ## 6. 발표·보고 자료 (`reports/`)
 

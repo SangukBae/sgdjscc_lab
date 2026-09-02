@@ -15,6 +15,13 @@ checkpoints/
 /data/etri_video_eval/raw/
 /data/etri_video_eval/processed/
 /data/etri_video_eval/frames/
+!/data/negative_semantics/
+/data/negative_semantics/*
+!/data/negative_semantics/g0/
+!/data/negative_semantics/g0/README.md
+!/data/negative_semantics/g0/*.json
+!/data/negative_semantics/g0/*.jsonl
+!/data/negative_semantics/g0/*.sha256
 
 # Runtime artifacts
 outputs/

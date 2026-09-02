@@ -1,6 +1,6 @@
 ---
 status: active
-updated: 2026-08-29
+updated: 2026-09-02
 owner: ETRI SGD-JSCC 연구팀
 source_commit: 5a8f2aa
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
@@ -19,6 +19,25 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   - 한계·기술 부채: [open_issues.md](./open_issues.md)
   - 실험 근거: `docs/experiments/`
   - 과거 구현 순서: [etri_implementation_log.md](../archive/etri_implementation_log.md)
+
+## 활성 논문 연구선과 G0
+
+- 기준 계획: [negative_semantic_paper_plan.md](./negative_semantic_paper_plan.md)
+- 2026-09-02 완료: Full Track·TMM primary venue·rate/compute accounting·4개 byte
+  budget·ontology/state/event schema·metric/margin·독립 human evaluator 계약 동결
+- 데이터 manifest: 기존 ETRI 10영상 전부 Development only, 입력 MP4와 GT의 SHA-256 기록
+- 자동 감사: 10개 조건 중 7개 통과
+- 현재 gate: **`G0_NOT_PASSED`** — Pilot human-verified 독립 event 0/30~50,
+  source-disjoint Held-out 0개, source license 승인 기록 없음
+- 구현 경계: negative packet codec, RSM, joint allocator, sampler의 object-level negative
+  control은 아직 미구현이며 G0 통과 전에 G1 evidence 생산을 시작하지 않는다.
+- 근거: [2026-09-02 G0 기록](../experiments/2026-09-02_negative_semantics_g0_protocol.md)
+
+통합 개발 요약기는 이후 실행부터 `run_integrity_passed`, point-mean candidate,
+CI-screening candidate를 별도 필드로 기록하고 reference baseline 자체를 후보 선택에서
+제외한다. Development role에서는 `validation_passed=null`이며, manifest가 Validation을
+명시한 경우에만 모든 paired CI 상한 통과 여부를 기록한다. 2026-08-29 보존 결과는
+historical artifact이므로 재작성하지 않았다.
 
 ## 핵심 연구 문제별 대응 현황
 

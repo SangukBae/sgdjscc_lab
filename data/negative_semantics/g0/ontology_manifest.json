@@ -1,0 +1,27 @@
+{
+  "ontology_id": "negative_semantics_core_v1",
+  "version": "1.0.0",
+  "frozen_at": "2026-09-02",
+  "state_values": [
+    "present",
+    "confirmed_absent",
+    "unknown"
+  ],
+  "unknown_policy": "An unlabeled class, detector miss, ambiguous crop, or out-of-scope interval is unknown, never confirmed_absent.",
+  "concepts": [
+    {"concept_id": "person", "label": "person", "aliases": ["pedestrian", "people"]},
+    {"concept_id": "car", "label": "car", "aliases": ["automobile"]},
+    {"concept_id": "truck", "label": "truck", "aliases": ["lorry"]},
+    {"concept_id": "bus", "label": "bus", "aliases": []},
+    {"concept_id": "bicycle", "label": "bicycle", "aliases": ["bike"]},
+    {"concept_id": "motorcycle", "label": "motorcycle", "aliases": ["motorbike"]},
+    {"concept_id": "dog", "label": "dog", "aliases": []},
+    {"concept_id": "cat", "label": "cat", "aliases": []},
+    {"concept_id": "bird", "label": "bird", "aliases": []},
+    {"concept_id": "chair", "label": "chair", "aliases": ["seat"]},
+    {"concept_id": "traffic_sign", "label": "traffic sign", "aliases": ["road sign"]},
+    {"concept_id": "ball", "label": "ball", "aliases": []}
+  ],
+  "mapping_policy": "Dataset-native categories must be mapped in a versioned file. No many-to-one mapping may be changed after validation opens.",
+  "sha256_note": "The G0 auditor reports this file hash; changes require a protocol amendment and ontology version bump."
+}

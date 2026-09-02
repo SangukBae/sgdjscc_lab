@@ -1,0 +1,168 @@
+{
+  "manifest_id": "negative_semantics_g0_split_v1",
+  "version": "1.0.0",
+  "frozen_at": "2026-09-02",
+  "hash_algorithm": "sha256",
+  "split_lists_frozen": true,
+  "empty_split_policy": "An empty list is an explicit blocked split, not an implicit or randomly sampled split.",
+  "leakage_policy": {
+    "unit": "video_id",
+    "heldout_source_disjoint": true,
+    "legacy_source_id": "etri_internal_legacy_v1",
+    "rule": "A video appears in exactly one split. A held-out source_id appears in no earlier split."
+  },
+  "splits": {
+    "pilot": [],
+    "train": [],
+    "development": [
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "01_person_walk",
+        "input_path": "data/etri_video_eval/processed/01_person_walk.mp4",
+        "input_sha256": "2291dfb0e9cea96d5e7a3b00f2924a95eeb41f1ba4a170a63c723ef8fbeb21dc",
+        "gt_path": "data/etri_video_eval/gt/01_person_walk.json",
+        "gt_sha256": "4b6f619aae952068055ab33a9ae8121fe0a17c01a45f3e514176f05abcd63a30",
+        "n_frames": 100
+      },
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "02_car_pass",
+        "input_path": "data/etri_video_eval/processed/02_car_pass.mp4",
+        "input_sha256": "0bf6bda0e8318c641c3fe77fd0373d421fd50e13ecf354075a854547645b28aa",
+        "gt_path": "data/etri_video_eval/gt/02_car_pass.json",
+        "gt_sha256": "c7d8a11e1ecd0ac6b9e46f0a0fd5c8fc684d34874b4fc3f712523850edf02243",
+        "n_frames": 100
+      },
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "03_dog_walk",
+        "input_path": "data/etri_video_eval/processed/03_dog_walk.mp4",
+        "input_sha256": "27d041b60d516d4d71f4d64bec0426e2002f9948c02bacf5f835be3d4697bb4a",
+        "gt_path": "data/etri_video_eval/gt/03_dog_walk.json",
+        "gt_sha256": "17679fbe287e01b05e9a98736fbefc3f56e5124bc0c097090b73a28cb9b76984",
+        "n_frames": 100
+      },
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "04_person_car",
+        "input_path": "data/etri_video_eval/processed/04_person_car.mp4",
+        "input_sha256": "4f9e94903a0d970d9406a28c4c6a807d7758b6ed74fe680d147a737687f4d07a",
+        "gt_path": "data/etri_video_eval/gt/04_person_car.json",
+        "gt_sha256": "553bac979407345b6b7977fd2dc918bc590855e4dbc09b298fb106fbfe8cc4f1",
+        "n_frames": 100
+      },
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "05_camera_pan_person",
+        "input_path": "data/etri_video_eval/processed/05_camera_pan_person.mp4",
+        "input_sha256": "ff2383dc8b0bcc03b424b83375644b7884ed8938abaa559d2819a2e0786d60b5",
+        "gt_path": "data/etri_video_eval/gt/05_camera_pan_person.json",
+        "gt_sha256": "d705a721425c70256cbc8e83ab3686b7f15ea9cb405465acfa4104fe30a19ea3",
+        "n_frames": 100
+      },
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "06_handheld_sign",
+        "input_path": "data/etri_video_eval/processed/06_handheld_sign.mp4",
+        "input_sha256": "fbd6085b7bea73c63c2a4a3e1c8b89b9173cea06bbb67a0b400cdc783344aec5",
+        "gt_path": "data/etri_video_eval/gt/06_handheld_sign.json",
+        "gt_sha256": "9b737d291e42e3c951f37d50aaf3892f09ffe326eafdfadc956fc5c506d9002f",
+        "n_frames": 100
+      },
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "07_person_enter",
+        "input_path": "data/etri_video_eval/processed/07_person_enter.mp4",
+        "input_sha256": "d0548d81deca001241516a177f2dfa1e8c155b34008a864cdddabfc2ed58ecc6",
+        "gt_path": "data/etri_video_eval/gt/07_person_enter.json",
+        "gt_sha256": "4642063b3f19f7df1feb5aceed9a098b63a83d3364cc33c6d48c1e02e0219ade",
+        "n_frames": 100
+      },
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "08_car_exit",
+        "input_path": "data/etri_video_eval/processed/08_car_exit.mp4",
+        "input_sha256": "3300be5fbc7cf9cb1fa95127d881d23dfe34128d4a5425b87dc8e7dd5e3f05a6",
+        "gt_path": "data/etri_video_eval/gt/08_car_exit.json",
+        "gt_sha256": "28ab19205839d48f861be8f229ebd2ff9d49e0d025b229719a0d5ac682bbb2a5",
+        "n_frames": 100,
+        "notes": "The filename suggests EXIT, but current GT keeps car present for all frames; no EXIT event is registered."
+      },
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "09_scene_cut_chair_car",
+        "input_path": "data/etri_video_eval/processed/09_scene_cut_chair_car.mp4",
+        "input_sha256": "63bf48cdc0d69d9b2351b1ffeb9e3d2fe6e4d24345602e958a519f801787bb1a",
+        "gt_path": "data/etri_video_eval/gt/09_scene_cut_chair_car.json",
+        "gt_sha256": "2e70c1cdb810c421d5f56e2419541e11cfe669d0582dd71bd71106a85e768168",
+        "n_frames": 100
+      },
+      {
+        "source_id": "etri_internal_legacy_v1",
+        "video_id": "10_busy_sidewalk",
+        "input_path": "data/etri_video_eval/processed/10_busy_sidewalk.mp4",
+        "input_sha256": "4e60e9f2029fd467ef3cbb47f98a4e10bed531a2319a10e4140a5188994268c4",
+        "gt_path": "data/etri_video_eval/gt/10_busy_sidewalk.json",
+        "gt_sha256": "120d67e60f1f9a0ca3e41128e8b12d7f5a91b36ee97551efd075c53e3c5f023b",
+        "n_frames": 100
+      }
+    ],
+    "validation": [],
+    "heldout_test": []
+  },
+  "source_audit": [
+    {
+      "source_id": "etri_internal_legacy_v1",
+      "assigned_splits": ["development"],
+      "license_status": "review_required",
+      "redistribution": "not_authorized_by_this_manifest",
+      "evidence": "Project-provided local assets; a written provenance and usage-authority record is not present in the repository.",
+      "decision": "development_only"
+    },
+    {
+      "source_id": "youtube_vos_2019",
+      "assigned_splits": [],
+      "proposed_splits": ["pilot", "train", "validation"],
+      "license_status": "conditional",
+      "redistribution": "restricted",
+      "official_url": "https://youtube-vos.org/dataset/term/",
+      "evidence": "Official terms state CC BY 4.0 for annotations and non-commercial research use for the data, with organization-level obligations.",
+      "decision": "preferred_after_institutional_acceptance_and_download_audit"
+    },
+    {
+      "source_id": "davis_2017",
+      "assigned_splits": [],
+      "proposed_splits": ["heldout_test"],
+      "license_status": "conditional",
+      "redistribution": "annotations_cc_by_4_0_media_unresolved",
+      "official_url": "https://davischallenge.org/challenge2017/rulesdates.html",
+      "evidence": "Official rules license new annotations under CC BY 4.0; this audit did not find an equally explicit blanket license for all underlying media.",
+      "decision": "preferred_heldout_after_media_rights_review_and_video_id_freeze"
+    },
+    {
+      "source_id": "tao_or_burst",
+      "assigned_splits": [],
+      "proposed_splits": ["heldout_test_backup"],
+      "license_status": "blocked",
+      "redistribution": "source_dependent",
+      "official_url": "https://taodataset.org/",
+      "evidence": "TAO is federated from multiple source datasets; source-specific terms must be audited before assignment.",
+      "decision": "backup_only_after_source_level_license_audit"
+    },
+    {
+      "source_id": "bdd100k",
+      "assigned_splits": [],
+      "proposed_splits": [],
+      "license_status": "blocked",
+      "redistribution": "dataset_terms_not_verified",
+      "official_url": "https://bdd-data.berkeley.edu/",
+      "evidence": "The public code repository license is not sufficient evidence for the video dataset license.",
+      "decision": "not_selected"
+    }
+  ],
+  "selection_decision": {
+    "legacy_development": "All ten ETRI videos remain development-only because they have already been used repeatedly for model and threshold development.",
+    "preferred_acquisition": "YouTube-VOS 2019 for Pilot/Train/Validation and DAVIS 2017 as a source-disjoint Held-out Test.",
+    "current_blocker": "No external video IDs or bytes are present locally, no human-verified Pilot events exist, and required license acceptance records are absent."
+  }
+}

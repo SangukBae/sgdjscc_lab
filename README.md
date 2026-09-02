@@ -36,15 +36,12 @@
 ```bash
 cd /path/to/sgdjscc_lab
 
-conda create -n ptest python=3.9
-conda activate ptest
-conda install pytorch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 \
-    pytorch-cuda=11.8 -c pytorch -c nvidia
-
-pip install -r requirements.txt
-pip install -e .
+conda env create -f environments/sgdjscc-py39-cu118.yml
+conda activate sgdjscc-py39-cu118
 ```
 
+- [Conda environment](./environments/sgdjscc-py39-cu118.yml)는 Python 3.9,
+  PyTorch 2.1, CUDA 11.8과 `requirements.txt`/editable package 설치를 한 번에 정의한다.
 - editable install 후 `sgdjscc-infer`, `sgdjscc-evaluate`, `sgdjscc-evaluate-video`,
   `sgdjscc-train` 명령도 사용할 수 있다.
 

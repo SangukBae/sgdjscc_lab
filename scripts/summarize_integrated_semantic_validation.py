@@ -90,6 +90,11 @@ def _deltas(candidate, baseline):
 
 def summarize(run_root: Path):
     plan = json.loads((run_root / "integrated_plan.json").read_text(encoding="utf-8"))
+    dataset_role = plan.get("dataset_role", "development")
+    if dataset_role not in {"development", "validation", "heldout_test"}:
+        raise ValueError(
+            "integrated_plan.json dataset_role must be development, validation, or heldout_test"
+        )
     expected_videos = sorted(video for a in plan["assignments"] for video in a["videos"])
     rows = []
     worker_summaries = []
@@ -146,7 +151,8 @@ def summarize(run_root: Path):
                 for video in expected_videos
             ]
             row = {"decoder_policy": policy, "guide_profile": profile, "n_videos": len(expected_videos)}
-            gates = []
+            mean_gates = []
+            ci_gates = []
             for index, (name, margin) in enumerate(MARGINS.items()):
                 values = [item[name] for item in pair_deltas]
                 low, high = bootstrap_ci(values, seed=2025 + index)
@@ -155,18 +161,37 @@ def summarize(run_root: Path):
                 row[f"{name}_ci95_low"] = low
                 row[f"{name}_ci95_high"] = high
                 row[f"{name}_margin"] = margin
-                gates.append(value <= margin)
+                mean_gates.append(value <= margin)
+                ci_gates.append(high <= margin)
             candidates = [by_key[(v, policy, profile)] for v in expected_videos]
             row["mean_total_bundle_bytes"] = mean([f(item, "total_bundle_bytes") for item in candidates])
             row["mean_total_elapsed_s"] = mean([f(item, "total_elapsed_s") for item in candidates])
-            row["screening_gate_passed"] = all(gates)
+            row["is_reference"] = (policy, profile) == BASELINE
+            row["mean_screening_gate_passed"] = all(mean_gates)
+            row["ci_screening_gate_passed"] = all(ci_gates)
+            # Keep the old column name, but make its meaning scientifically strict.
+            row["screening_gate_passed"] = row["ci_screening_gate_passed"]
             effects.append(row)
 
-    passing = [row for row in effects if row["screening_gate_passed"]]
+    mean_passing = [
+        row for row in effects
+        if not row["is_reference"] and row["mean_screening_gate_passed"]
+    ]
+    mean_selected = min(
+        mean_passing, key=lambda r: (r["mean_total_bundle_bytes"], r["mean_total_elapsed_s"])
+    ) if mean_passing else None
+    passing = [
+        row for row in effects
+        if not row["is_reference"] and row["ci_screening_gate_passed"]
+    ]
     selected = min(
         passing, key=lambda r: (r["mean_total_bundle_bytes"], r["mean_total_elapsed_s"])
     ) if passing else None
     for row in effects:
+        row["selected_mean_screening_candidate"] = bool(mean_selected is row)
+        row["selected_development_candidate"] = bool(selected is row)
+        # Deprecated compatibility field. It now marks only a CI-passing
+        # development candidate and must not be described as a final point.
         row["selected_operating_point"] = bool(selected is row)
     write_csv(run_root / "integrated_effect.csv", effects)
     write_csv(run_root / "integrated_screening_frontier.csv", sorted(
@@ -174,17 +199,33 @@ def summarize(run_root: Path):
     ))
 
     validation = {
-        "validation_passed": bool(selected),
-        "run_status": "completed" if selected else "completed_no_candidate_in_budget",
+        "dataset_role": dataset_role,
+        "dataset_role_inferred": "dataset_role" not in plan,
+        "run_integrity_passed": True,
+        "development_mean_screening_passed": bool(mean_selected),
+        "development_ci_screening_passed": bool(selected),
+        "screening_passed_for_declared_role": bool(selected),
+        "validation_passed": bool(selected) if dataset_role == "validation" else None,
+        "heldout_test_passed": bool(selected) if dataset_role == "heldout_test" else None,
+        "run_status": (
+            "completed_ci_candidate_found" if selected
+            else "completed_mean_candidate_only" if mean_selected
+            else "completed_no_candidate_in_budget"
+        ),
         "n_expected_pairs": len(expected_keys), "n_completed_pairs": len(rows),
         "n_videos": len(expected_videos), "policies": list(POLICIES),
         "guide_profiles": list(PROFILES), "baseline": {"decoder_policy": BASELINE[0], "guide_profile": BASELINE[1]},
         "screening_margins": MARGINS, "backend_evidence_counts": backend_totals,
         "worker_summaries": worker_summaries,
+        "mean_screening_candidate": mean_selected,
+        "selected_development_candidate": selected,
         "selected_operating_point": selected,
+        "selected_operating_point_deprecated": True,
         "interpretation": (
-            "Development-set provisional screening only. Paired 95% bootstrap CIs are reported; "
-            "the later held-out run must confirm the final operating point."
+            "Every selected candidate requires all paired 95% bootstrap CI upper bounds to meet "
+            "their preregistered margins. validation_passed is null outside a declared validation "
+            "split, and heldout_test_passed is null outside heldout_test. A point-mean-only "
+            "development candidate is reported separately."
         ),
     }
     (run_root / "integrated_validation.json").write_text(
@@ -193,17 +234,21 @@ def summarize(run_root: Path):
     report = f"""# Integrated semantic · hallucination · temporal evaluation
 
 - status: `{validation['run_status']}`
+- declared dataset role: `{dataset_role}`{' (inferred for legacy plan)' if validation['dataset_role_inferred'] else ''}
 - coverage: {len(rows)}/{len(expected_keys)} video-policy-profile pairs, 100 frames each
 - fixed condition: fixed selector, int4 digital packet, fixed-reference SNR 10 dB, seed 2025
 - baseline: `full50 + baseline`
 - presence ensemble: CLIP + OWLv2 + VQA; evidence {backend_totals}
 - closed-world preservation: GT vocabulary filter
 - open-world hallucination: non-object noise filter without GT vocabulary restriction
-- selected development operating point: `{None if selected is None else selected['decoder_policy'] + ' + ' + selected['guide_profile']}`
+- point-mean screening candidate: `{None if mean_selected is None else mean_selected['decoder_policy'] + ' + ' + mean_selected['guide_profile']}`
+- CI-passing development candidate: `{None if selected is None else selected['decoder_policy'] + ' + ' + selected['guide_profile']}`
 
-The screening margins are provisional development gates, not a final claim.
-Every effect is paired by video and includes a 95% bootstrap confidence interval
-in `integrated_effect.csv`. A separate held-out validation remains required.
+`run_integrity_passed` records successful coverage and metric checks.
+`screening_passed_for_declared_role` requires every paired 95% bootstrap CI upper
+bound in `integrated_effect.csv` to meet its margin. `validation_passed` and
+`heldout_test_passed` are null when that split role was not declared, so a
+development run cannot masquerade as validation or final held-out evidence.
 """
     (run_root / "INTEGRATED_EVALUATION_REPORT.md").write_text(report, encoding="utf-8")
     hashes = {}
@@ -226,7 +271,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     validation = summarize(Path(args.run_root).resolve())
     print(json.dumps(validation, indent=2, ensure_ascii=False))
-    return 0 if validation["validation_passed"] else 4
+    return 0 if validation["screening_passed_for_declared_role"] else 4
 
 
 if __name__ == "__main__":
