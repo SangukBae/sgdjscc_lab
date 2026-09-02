@@ -92,7 +92,8 @@
 | [experiments/2026-08-28_edge_uncertainty_ablation_preparation.md](./experiments/2026-08-28_edge_uncertainty_ablation_preparation.md) | 위 full ablation의 실행 전 profile·wire-accounting 계약 |
 | [experiments/2026-08-28_integrated_semantic_validation_preparation.md](./experiments/2026-08-28_integrated_semantic_validation_preparation.md) | 4 guide × 3 decoder × 10영상 통합 semantic·hallucination·temporal 3-GPU 검증 프로토콜 |
 | [experiments/2026-08-29_integrated_semantic_validation_10db.md](./experiments/2026-08-29_integrated_semantic_validation_10db.md) | 120-pair 통합 개발평가; both-omit guide, few10 잠정 후보, hallucination CI 경고 |
-| [experiments/2026-09-02_negative_semantics_g0_protocol.md](./experiments/2026-09-02_negative_semantics_g0_protocol.md) | negative-semantics G0 방법론 동결과 데이터 감사; 7/10 통과, gate `NOT_PASSED` |
+| [experiments/2026-09-02_negative_semantics_g0_protocol.md](./experiments/2026-09-02_negative_semantics_g0_protocol.md) | negative-semantics G0 v1.0 역사 기록; 7/10 통과 시점 |
+| [experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md](./experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md) | 공식 데이터·split·hash·승인·held-out 봉인 완료; 12/13, 사람 검수 대기 |
 
 ## 5. 참조 문서 (`reference/`)
 

@@ -1,8 +1,10 @@
 # Frozen G0 contract for the negative-semantics paper track.
-protocol_id: negative_semantics_g0_v1
-protocol_version: 1.0.0
+protocol_id: negative_semantics_g0_v1_1
+protocol_version: 1.1.0
 frozen_at: "2026-09-02"
 freeze_status: frozen
+supersedes_protocol_version: 1.0.0
+amendment_record: docs/experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md
 amendment_policy: >-
   Any change after this file is committed requires a version bump, a dated
   amendment record, and must occur before the affected split is opened.
@@ -22,8 +24,22 @@ data:
   split_manifest_sha256: data/negative_semantics/g0/dataset_split_manifest.sha256
   event_annotations:
     - data/negative_semantics/g0/etri_legacy_event_annotations.jsonl
+    - data/negative_semantics/g0/youtube_vos_pilot_event_candidates.jsonl
   event_schema: data/negative_semantics/g0/event_schema.schema.json
   ontology_manifest: data/negative_semantics/g0/ontology_manifest.json
+  category_mapping: data/negative_semantics/g0/youtube_vos_category_mapping.json
+  data_use_approval: data/negative_semantics/g0/data_use_approval.json
+  heldout_seal: data/negative_semantics/g0/heldout_seal.json
+  acquisition:
+    youtube_vos_train_archive: data/external/youtube_vos_2019/archives/train.tar
+    youtube_vos_valid_archive: data/external/youtube_vos_2019/archives/valid.tar
+    davis_trainval_archive: data/external/davis_2017/archives/DAVIS-2017-trainval-480p.zip
+  fixed_split_counts:
+    pilot: 33
+    train: 3471
+    development: 10
+    validation: 474
+    heldout_test: 30
   pilot_independent_event_range: [30, 50]
   final_min_independent_videos: 50
   final_min_verified_events: 100
@@ -31,7 +47,13 @@ data:
   split_opening_order: [pilot, train, development, validation, heldout_test]
   heldout_policy: >-
     Held-out test source IDs must be disjoint from every earlier split and from
-    etri_internal_legacy_v1. Test is opened once after method and thresholds freeze.
+    etri_internal_legacy_v1. DAVIS 2017 val is sealed at G0 and opened once only
+    after method choices, thresholds, budgets, and validation operating point freeze.
+  pilot_selection: >-
+    Select one core-ontology mid-video first-appearance candidate from each of
+    the first 33 eligible lexicographically sorted YouTube-VOS 2019 valid video
+    IDs. Alternate identity playback ENTER and deterministic time-reverse EXIT;
+    count at most one independence cluster per native video.
 
 rate_accounting:
   primary_unit: total_wire_bytes_per_source_frame
@@ -145,5 +167,7 @@ gates:
   pass_requires:
     - 30_to_50_human_verified_independent_pilot_events
     - nonempty_source_disjoint_heldout_test
+    - sealed_heldout_test
     - approved_license_for_every_assigned_source
+    - recorded_project_data_use_approval
     - reproducible_acquisition_and_hashes

@@ -22,6 +22,11 @@ PREREGISTRATION = Path(
 )
 PROTOCOL = Path("configs/experiments/negative_semantics/g0_protocol.yaml")
 ENVIRONMENT = Path("environments/sgdjscc-py39-cu118.yml")
+APPROVAL = BASE / "data_use_approval.json"
+MAPPING = BASE / "youtube_vos_category_mapping.json"
+HELDOUT_SEAL = BASE / "heldout_seal.json"
+PREPARATION_SCRIPT = Path("scripts/prepare_negative_semantics_g0.py")
+REVIEW_COMPILER = Path("scripts/compile_negative_semantics_pilot_reviews.py")
 
 
 def sha256_file(path: Path) -> str:
@@ -30,6 +35,26 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_tree(path: Path) -> str:
+    """Match the tree-hash algorithm used by the G0 preparation script."""
+    digest = hashlib.sha256()
+    files = sorted(item for item in path.rglob("*") if item.is_file())
+    for item in files:
+        digest.update(item.relative_to(path).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(sha256_file(item).encode("ascii"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def sha256_artifact(path: Path) -> Optional[str]:
+    if path.is_file():
+        return sha256_file(path)
+    if path.is_dir():
+        return sha256_tree(path)
+    return None
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -68,6 +93,7 @@ def audit(repo_root: Path) -> Dict[str, Any]:
     manifest = load_json(root / MANIFEST)
     prereg = load_json(root / PREREGISTRATION)
     ontology = load_json(root / ONTOLOGY)
+    mapping = load_json(root / MAPPING)
     schema = load_json(root / EVENT_SCHEMA)
     protocol_text = (root / PROTOCOL).read_text(encoding="utf-8")
     expected_protocol_hash = prereg["frozen_artifacts"]["protocol_sha256"]
@@ -77,7 +103,7 @@ def audit(repo_root: Path) -> Dict[str, Any]:
     checks.append(_check(
         "protocol_frozen",
         "freeze_status: frozen" in protocol_text
-        and "protocol_version: 1.0.0" in protocol_text
+        and f"protocol_version: {prereg['protocol_version']}" in protocol_text
         and actual_protocol_hash == expected_protocol_hash,
         protocol=str(PROTOCOL),
         actual_sha256=actual_protocol_hash,
@@ -120,14 +146,15 @@ def audit(repo_root: Path) -> Dict[str, Any]:
                 })
                 continue
             path = root / relative
-            if not path.is_file():
+            actual = sha256_artifact(path)
+            if actual is None:
                 hash_failures.append({
                     "split": split,
                     "video_id": str(entry.get("video_id")),
                     "path": relative,
-                    "reason": "file missing",
+                    "reason": "artifact missing",
                 })
-            elif sha256_file(path) != expected:
+            elif actual != expected:
                 hash_failures.append({
                     "split": split,
                     "video_id": str(entry.get("video_id")),
@@ -139,6 +166,35 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         not hash_failures,
         assigned_video_count=len(assigned),
         failures=hash_failures,
+    ))
+
+    acquisition_failures: List[Dict[str, str]] = []
+    acquisition = manifest.get("acquisition_artifacts", [])
+    for item in acquisition:
+        relative = item.get("archive_path")
+        expected = item.get("archive_sha256")
+        path = root / str(relative)
+        if not relative or not expected:
+            acquisition_failures.append({
+                "path": str(relative), "reason": "missing archive path or hash"
+            })
+        elif not path.is_file():
+            acquisition_failures.append({
+                "path": str(relative), "reason": "archive missing"
+            })
+        elif path.stat().st_size != item.get("archive_size_bytes"):
+            acquisition_failures.append({
+                "path": str(relative), "reason": "archive size mismatch"
+            })
+        elif sha256_file(path) != expected:
+            acquisition_failures.append({
+                "path": str(relative), "reason": "archive sha256 mismatch"
+            })
+    checks.append(_check(
+        "acquisition_archives_match",
+        len(acquisition) >= 3 and not acquisition_failures,
+        acquisition_artifact_count=len(acquisition),
+        failures=acquisition_failures,
     ))
 
     seen_video: Dict[str, str] = {}
@@ -169,8 +225,8 @@ def audit(repo_root: Path) -> Dict[str, Any]:
     concepts = {item.get("concept_id") for item in ontology.get("concepts", [])}
     schema_types = set(schema.get("properties", {}).get("event_type", {}).get("enum", []))
     required_event_fields = set(schema.get("required", []))
-    assigned_video_keys = {
-        (split, entry.get("source_id"), entry.get("video_id"))
+    assigned_video_entries = {
+        (split, entry.get("source_id"), entry.get("video_id")): entry
         for split, entry in assigned
     }
     event_errors: List[str] = []
@@ -194,19 +250,27 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         elif row["end_frame"] < row["start_frame"]:
             event_errors.append(f"row {index}: end_frame precedes start_frame")
         key = (row.get("split"), row.get("source_id"), row.get("video_id"))
-        if key not in assigned_video_keys:
+        if key not in assigned_video_entries:
             event_errors.append(f"row {index}: event does not map to an assigned video")
+        elif row.get("playback_transform") is not None and row.get(
+            "playback_transform"
+        ) != assigned_video_entries[key].get("playback_transform"):
+            event_errors.append(f"row {index}: playback transform conflicts with split")
         verification = row.get("human_verification", {})
         if row.get("human_verified") is True and verification.get("status") not in {"agreed", "adjudicated"}:
             event_errors.append(f"row {index}: human_verified conflicts with verification status")
 
     actual_ontology_hash = sha256_file(root / ONTOLOGY)
     actual_schema_hash = sha256_file(root / EVENT_SCHEMA)
+    actual_mapping_hash = sha256_file(root / MAPPING)
+    mapped_concepts = set(mapping.get("category_to_concept", {}).values())
     contract_ok = (
         states == {"present", "confirmed_absent", "unknown"}
         and schema_types == EVENT_TYPES
+        and mapped_concepts <= concepts
         and actual_ontology_hash == prereg["frozen_artifacts"]["ontology_sha256"]
         and actual_schema_hash == prereg["frozen_artifacts"]["event_schema_sha256"]
+        and actual_mapping_hash == prereg["frozen_artifacts"]["category_mapping_sha256"]
         and not annotation_hash_failures
         and not event_errors
     )
@@ -217,6 +281,8 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         event_types=sorted(schema_types),
         ontology_sha256=actual_ontology_hash,
         event_schema_sha256=actual_schema_hash,
+        category_mapping_sha256=actual_mapping_hash,
+        mapped_concepts=sorted(mapped_concepts),
         event_row_count=len(event_rows),
         event_errors=event_errors,
         annotation_hash_failures=annotation_hash_failures,
@@ -260,6 +326,24 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         conflicting_sources=sorted(str(item) for item in heldout_sources & earlier_sources),
     ))
 
+    heldout_seal = load_json(root / HELDOUT_SEAL)
+    actual_seal_hash = sha256_file(root / HELDOUT_SEAL)
+    expected_seal_hash = prereg["frozen_artifacts"]["heldout_seal_sha256"]
+    seal_ok = (
+        actual_seal_hash == expected_seal_hash
+        and heldout_seal.get("split_manifest_sha256") == actual_manifest_hash
+        and heldout_seal.get("video_count") == len(heldout)
+        and heldout_seal.get("opened_for_method_development") is False
+    )
+    checks.append(_check(
+        "heldout_seal_matches",
+        seal_ok,
+        seal=str(HELDOUT_SEAL),
+        actual_sha256=actual_seal_hash,
+        preregistered_sha256=expected_seal_hash,
+        opened_for_method_development=heldout_seal.get("opened_for_method_development"),
+    ))
+
     source_status = {
         item["source_id"]: item.get("license_status")
         for item in manifest.get("source_audit", [])
@@ -277,13 +361,39 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         unapproved=unapproved,
     ))
 
+    expected_approval_hash = prereg["frozen_artifacts"]["data_use_approval_sha256"]
+    approval = load_json(root / APPROVAL)
+    actual_approval_hash = sha256_file(root / APPROVAL)
+    approved_sources = set(approval.get("scope", {}).get("sources", []))
+    approval_ok = (
+        approval.get("status") == "approved"
+        and set(assigned_sources) <= approved_sources
+        and actual_approval_hash == expected_approval_hash
+        and approval.get("scope", {}).get("raw_media_redistribution") is False
+    )
+    checks.append(_check(
+        "data_use_approval_recorded",
+        approval_ok,
+        approval=str(APPROVAL),
+        actual_sha256=actual_approval_hash,
+        preregistered_sha256=expected_approval_hash,
+        approved_sources=sorted(approved_sources),
+    ))
+
     expected_environment_hash = prereg["frozen_artifacts"]["environment_sha256"]
     actual_environment_hash = (
         sha256_file(root / ENVIRONMENT) if (root / ENVIRONMENT).is_file() else None
     )
+    actual_preparation_hash = sha256_file(root / PREPARATION_SCRIPT)
+    actual_review_compiler_hash = sha256_file(root / REVIEW_COMPILER)
+    expected_preparation_hash = prereg["frozen_artifacts"]["preparation_script_sha256"]
+    expected_review_compiler_hash = prereg["frozen_artifacts"]["review_compiler_sha256"]
     reproducible = (
         actual_environment_hash == expected_environment_hash
+        and actual_preparation_hash == expected_preparation_hash
+        and actual_review_compiler_hash == expected_review_compiler_hash
         and not hash_failures
+        and not acquisition_failures
         and not annotation_hash_failures
         and all(entry.get("input_path") and entry.get("input_sha256") for _, entry in assigned)
     )
@@ -293,6 +403,12 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         environment=str(ENVIRONMENT),
         actual_environment_sha256=actual_environment_hash,
         preregistered_environment_sha256=expected_environment_hash,
+        preparation_script=str(PREPARATION_SCRIPT),
+        actual_preparation_script_sha256=actual_preparation_hash,
+        preregistered_preparation_script_sha256=expected_preparation_hash,
+        review_compiler=str(REVIEW_COMPILER),
+        actual_review_compiler_sha256=actual_review_compiler_hash,
+        preregistered_review_compiler_sha256=expected_review_compiler_hash,
         assigned_video_count=len(assigned),
     ))
 

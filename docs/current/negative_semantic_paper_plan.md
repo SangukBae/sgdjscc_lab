@@ -36,10 +36,10 @@ supersedes: docs/reference/paper_writing_notes.md
 `docs/experiments/YYYY-MM-DD_<name>.md`에 결과를 고정하고, 구현 상태는
 [status.md](./status.md)에 반영한다.
 
-2026-09-02에 G0 v1 방법론 계약을 동결했다. 현재 판정은 **`NOT_PASSED`**다. 기존
-ETRI 10영상은 전부 Development로 고정했고, Pilot의 사람 검수 독립 이벤트·외부
-Held-out·라이선스 승인 기록이 없으므로 G1을 시작하지 않는다. 동결값과 감사 근거는
-[G0 기록](../experiments/2026-09-02_negative_semantics_g0_protocol.md)을 따른다.
+2026-09-02에 G0 v1.1 방법론·데이터 계약을 동결했다. 현재 판정은 **`NOT_PASSED`**다.
+Pilot 33 / Train 3,471 / Development 10 / Validation 474 / DAVIS Held-out 30과 사용
+승인·hash·seal은 확보했다. 남은 조건은 Pilot 33개에 대한 실제 두 명 독립 검수와
+불일치 adjudication이다. 근거는 [G0 v1.1 기록](../experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md)을 따른다.
 
 ### 0.1 연구 분기
 
@@ -514,7 +514,7 @@ held-out reconstruction을 predictor 학습에 사용하지 않는다.
 | Validation | threshold·operating point 선택 | 제한된 선택만 허용 |
 | Held-out Test | 최종 paired evaluation | 한 번만 개봉, 재튜닝 금지 |
 
-기존 ETRI 10영상은 Pilot/Development 자산이다. 최종 test에 재사용하지 않는다.
+기존 ETRI 10영상은 Development 전용 자산이다. Pilot이나 최종 test에 재사용하지 않는다.
 
 ### 8.2 공개 데이터 후보
 
@@ -724,19 +724,19 @@ G0 Pilot에서 실제 failure 분포를 확인한 뒤 본실험 전에 동결한
 
 ## 11. 단계별 실행 계획과 gate
 
-아래 gate 중 G0의 rate·metric·margin·annotation 규칙은 2026-09-02 v1에서 동결했다.
-Pilot 데이터 미확보 때문에 G0는 아직 통과하지 않았다. 동결값을 바꿔야 한다면 G1 전에
+아래 gate 중 G0의 rate·metric·margin·annotation 규칙과 실제 split은 2026-09-02
+v1.1에서 동결했다. Pilot 사람 검수 미완료 때문에 G0는 아직 통과하지 않았다. 동결값을 바꿔야 한다면 G1 전에
 versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
 
 ### G0. Protocol freeze와 데이터 audit
 
-**현재 판정: `NOT_PASSED` (2026-09-02)**
+**현재 판정: `NOT_PASSED`, 자동 감사 12/13 (2026-09-02 v1.1)**
 
 - 완료: Full Track, TMM primary venue, wire-byte rate 단위, 4개 budget, metric/margin,
-  ontology/state/event schema, human evaluation 규칙, ETRI 10영상 목록·SHA-256 동결
-- 감사 통과: 10개 조건 중 7개
-- 차단: Pilot human-verified 독립 이벤트 0/30~50, Held-out 0개, source license 승인 미기록
-- 근거: [G0 protocol freeze 기록](../experiments/2026-09-02_negative_semantics_g0_protocol.md)
+  ontology/state/event schema, 실제 5-way split·공식 archive·영상별 tree hash·사용 승인·Held-out seal
+- 감사 통과: 13개 조건 중 12개
+- 차단: Pilot 기계 후보는 33개지만 human-verified 독립 이벤트는 0/30~50
+- 근거: [G0 v1.1 acquisition 기록](../experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md)
 - 강제 검사: `python scripts/audit_negative_semantics_g0.py --repo-root . --require-pass`
 
 **작업**

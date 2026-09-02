@@ -140,17 +140,17 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 ## 데이터
 
-- **대규모 영상 학습 데이터셋 없음**
-  - 현재 영상 자산은 ETRI 10-영상 평가셋 (`data/etri_video_eval/`, GT는 10개 영상의 수작업 검증 샘플)뿐이다.
-  - temporal SRS/flicker/drift의 baseline 분별력 검증에는 실제 모션이 있는 더 큰 영상 데이터셋이 필요하다.
+- **대규모 외부 영상은 취득했지만 학습 적합성 검증은 아직 없음**
+  - YouTube-VOS 2019 train 3,471개와 valid 507개를 취득·해시 고정했다.
+  - 이 사실은 RSM/allocator 학습이 수행됐거나 temporal metric 분별력이 검증됐다는 뜻이 아니다.
 - **negative-semantics G0 데이터 gate 미통과**
   - ETRI 10영상은 반복 개발 이력 때문에 전부 Development only로 고정했다.
-  - 현재 Pilot/Train/Validation/Held-out 목록은 비어 있고, Pilot human-verified 독립
-    event는 0/30~50이다. 기존 GT에서 유도한 5 event/3 cluster는 사람 검수 전이라
-    gate에 세지 않는다.
-  - source-disjoint held-out과 외부 byte hash가 없고, ETRI 사용 권한 및 공개 데이터
-    약관 승인 기록도 없다. 따라서 G1 논문 evidence를 시작할 수 없다.
-  - 근거와 해소 순서: [G0 protocol 기록](../experiments/2026-09-02_negative_semantics_g0_protocol.md)
+  - Pilot 33 / Train 3,471 / Development 10 / Validation 474 / DAVIS Held-out 30을
+    실제 바이트와 hash로 동결했고 사용 승인·Held-out seal도 기록했다.
+  - Pilot 기계 후보 33개(ENTER 17, 시간역전 EXIT 16)는 모두 `human_verified=false`다.
+    두 명 독립 검수와 불일치 adjudication 전에는 0/30~50으로 센다.
+  - 따라서 유일한 G0 차단 조건은 사람 검수이며, 완료 전 G1 논문 evidence를 시작할 수 없다.
+  - 근거와 해소 순서: [G0 v1.1 기록](../experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md)
 
 ## 결과 판정 의미
 

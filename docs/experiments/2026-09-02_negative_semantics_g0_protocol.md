@@ -1,5 +1,5 @@
 ---
-status: completed_protocol_freeze_gate_not_passed
+status: historical_artifact_superseded_by_v1_1
 updated: 2026-09-02
 owner: ETRI SGD-JSCC 연구팀
 source_commit: 74d72a2
@@ -10,6 +10,9 @@ gate: G0_NOT_PASSED
 > [← 문서 색인](../README.md) ·
 > [논문 연구 계획](../current/negative_semantic_paper_plan.md) ·
 > [동결 config](../../configs/experiments/negative_semantics/g0_protocol.yaml)
+
+> Historical artifact: 이 문서는 v1.0 감사 시점을 보존한다. 현재 상태는
+> [v1.1 acquisition amendment](./2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md)를 따른다.
 
 # Negative semantics G0 protocol freeze와 데이터 감사
 

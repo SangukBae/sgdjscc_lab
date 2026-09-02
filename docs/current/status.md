@@ -23,15 +23,18 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ## 활성 논문 연구선과 G0
 
 - 기준 계획: [negative_semantic_paper_plan.md](./negative_semantic_paper_plan.md)
-- 2026-09-02 완료: Full Track·TMM primary venue·rate/compute accounting·4개 byte
-  budget·ontology/state/event schema·metric/margin·독립 human evaluator 계약 동결
-- 데이터 manifest: 기존 ETRI 10영상 전부 Development only, 입력 MP4와 GT의 SHA-256 기록
-- 자동 감사: 10개 조건 중 7개 통과
-- 현재 gate: **`G0_NOT_PASSED`** — Pilot human-verified 독립 event 0/30~50,
-  source-disjoint Held-out 0개, source license 승인 기록 없음
+- 2026-09-02 v1.1 완료: 공식 YouTube-VOS 2019 train/valid와 DAVIS 2017 trainval
+  취득·archive SHA-256·영상별 tree hash·사용 승인 기록 동결
+- 데이터 manifest: Pilot 33 / Train 3,471 / Development 10 / Validation 474 /
+  source-disjoint Held-out 30, 총 4,018개 영상
+- Pilot 준비: 서로 다른 YouTube-VOS 영상의 후보 33개(ENTER 17, 통제된 시간역전
+  EXIT 16)와 두 annotator+adjudicator 검수 패키지 생성
+- 자동 감사: 13개 조건 중 12개 통과
+- 현재 gate: **`G0_NOT_PASSED`** — 유일한 차단 조건은 Pilot human-verified 독립
+  event 0/30~50. 기계 후보는 사람 판정으로 세지 않는다.
 - 구현 경계: negative packet codec, RSM, joint allocator, sampler의 object-level negative
   control은 아직 미구현이며 G0 통과 전에 G1 evidence 생산을 시작하지 않는다.
-- 근거: [2026-09-02 G0 기록](../experiments/2026-09-02_negative_semantics_g0_protocol.md)
+- 근거: [G0 v1.1 acquisition amendment](../experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md)
 
 통합 개발 요약기는 이후 실행부터 `run_integrity_passed`, point-mean candidate,
 CI-screening candidate를 별도 필드로 기록하고 reference baseline 자체를 후보 선택에서

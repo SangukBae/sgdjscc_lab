@@ -1,0 +1,180 @@
+{
+  "audit_completed": true,
+  "checks": [
+    {
+      "check_id": "protocol_frozen",
+      "evidence": {
+        "actual_sha256": "a1173d3516e1e733d65ff0c2c44427a6c563d3f1d8389184a90c7df434b1930c",
+        "preregistered_sha256": "a1173d3516e1e733d65ff0c2c44427a6c563d3f1d8389184a90c7df434b1930c",
+        "protocol": "configs/experiments/negative_semantics/g0_protocol.yaml"
+      },
+      "passed": true
+    },
+    {
+      "check_id": "five_split_lists_frozen",
+      "evidence": {
+        "splits": [
+          "pilot",
+          "train",
+          "development",
+          "validation",
+          "heldout_test"
+        ]
+      },
+      "passed": true
+    },
+    {
+      "check_id": "manifest_detached_hash_matches",
+      "evidence": {
+        "actual_sha256": "d559d011a982f0f65bc21e1b2b850105d2efcf2a0f90039521ad865c1037b2ee",
+        "detached_sha256": "d559d011a982f0f65bc21e1b2b850105d2efcf2a0f90039521ad865c1037b2ee",
+        "preregistered_sha256": "d559d011a982f0f65bc21e1b2b850105d2efcf2a0f90039521ad865c1037b2ee"
+      },
+      "passed": true
+    },
+    {
+      "check_id": "assigned_file_hashes_match",
+      "evidence": {
+        "assigned_video_count": 4018,
+        "failures": []
+      },
+      "passed": true
+    },
+    {
+      "check_id": "acquisition_archives_match",
+      "evidence": {
+        "acquisition_artifact_count": 3,
+        "failures": []
+      },
+      "passed": true
+    },
+    {
+      "check_id": "split_video_ids_disjoint",
+      "evidence": {
+        "duplicates": []
+      },
+      "passed": true
+    },
+    {
+      "check_id": "event_and_ontology_contract_present",
+      "evidence": {
+        "annotation_hash_failures": [],
+        "category_mapping_sha256": "3415e0545de93287d8a5b7731d8dc37a4468d2d9e2b14a59ba727a059faa7f99",
+        "event_errors": [],
+        "event_row_count": 38,
+        "event_schema_sha256": "a25dffe1824f4da8b43094750a1fa379dd65159d0e3315597520950ca3bacb32",
+        "event_types": [
+          "ENTER",
+          "EXIT",
+          "OCCLUDE",
+          "REAPPEAR",
+          "SCENE_CUT"
+        ],
+        "mapped_concepts": [
+          "ball",
+          "bicycle",
+          "bird",
+          "bus",
+          "car",
+          "cat",
+          "chair",
+          "dog",
+          "motorcycle",
+          "person",
+          "traffic_sign",
+          "truck"
+        ],
+        "ontology_sha256": "6b7f7b11d5319bb6dce9dcaa8ce5dbc2c83735d0fedb78140ee69f1c8fa374f1",
+        "ontology_states": [
+          "confirmed_absent",
+          "present",
+          "unknown"
+        ]
+      },
+      "passed": true
+    },
+    {
+      "check_id": "pilot_has_30_to_50_human_verified_independent_events",
+      "evidence": {
+        "annotation_hash_failures": [],
+        "human_verified_event_rows": 0,
+        "independent_event_clusters": 0,
+        "required_range": [
+          30,
+          50
+        ]
+      },
+      "passed": false
+    },
+    {
+      "check_id": "heldout_is_nonempty_and_source_disjoint",
+      "evidence": {
+        "conflicting_sources": [],
+        "heldout_sources": [
+          "davis_2017"
+        ],
+        "heldout_video_count": 30
+      },
+      "passed": true
+    },
+    {
+      "check_id": "heldout_seal_matches",
+      "evidence": {
+        "actual_sha256": "e4ffca1d62c33af4a22e89ffb459e238f91fd6fda7511a3bc19b3e5d30efab0e",
+        "opened_for_method_development": false,
+        "preregistered_sha256": "e4ffca1d62c33af4a22e89ffb459e238f91fd6fda7511a3bc19b3e5d30efab0e",
+        "seal": "data/negative_semantics/g0/heldout_seal.json"
+      },
+      "passed": true
+    },
+    {
+      "check_id": "assigned_source_licenses_approved",
+      "evidence": {
+        "assigned_sources": [
+          "davis_2017",
+          "etri_internal_legacy_v1",
+          "youtube_vos_2019"
+        ],
+        "unapproved": {}
+      },
+      "passed": true
+    },
+    {
+      "check_id": "data_use_approval_recorded",
+      "evidence": {
+        "actual_sha256": "f0356b9026e7fa8f1d7c7431c109d8cdcefb162d15762d8d0c1362a3040efd81",
+        "approval": "data/negative_semantics/g0/data_use_approval.json",
+        "approved_sources": [
+          "davis_2017",
+          "etri_internal_legacy_v1",
+          "youtube_vos_2019"
+        ],
+        "preregistered_sha256": "f0356b9026e7fa8f1d7c7431c109d8cdcefb162d15762d8d0c1362a3040efd81"
+      },
+      "passed": true
+    },
+    {
+      "check_id": "reproducible_acquisition_and_environment_recorded",
+      "evidence": {
+        "actual_environment_sha256": "25118b1a10c51f13e2210354aaeb9f234f659614ed79a65a31e9e8e99fff0983",
+        "actual_preparation_script_sha256": "e18f367f89be68ac8f2eebeb76e72787b29946367e25fec79fd6384709de73af",
+        "actual_review_compiler_sha256": "cdcb9ff1ea79ef6e891ade536bbb256b524facb01b62df4f3502e428c9ac214c",
+        "assigned_video_count": 4018,
+        "environment": "environments/sgdjscc-py39-cu118.yml",
+        "preparation_script": "scripts/prepare_negative_semantics_g0.py",
+        "preregistered_environment_sha256": "25118b1a10c51f13e2210354aaeb9f234f659614ed79a65a31e9e8e99fff0983",
+        "preregistered_preparation_script_sha256": "e18f367f89be68ac8f2eebeb76e72787b29946367e25fec79fd6384709de73af",
+        "preregistered_review_compiler_sha256": "cdcb9ff1ea79ef6e891ade536bbb256b524facb01b62df4f3502e428c9ac214c",
+        "review_compiler": "scripts/compile_negative_semantics_pilot_reviews.py"
+      },
+      "passed": true
+    }
+  ],
+  "eligible_to_start_g1": false,
+  "gate_id": "negative_semantics_g0_v1_1",
+  "gate_status": "NOT_PASSED",
+  "missing_required_checks": [],
+  "passed_check_count": 12,
+  "protocol_version": "1.1.0",
+  "required_check_count": 13
+}

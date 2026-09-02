@@ -41,6 +41,10 @@
     "visibility_before": {"enum": ["visible", "partial", "occluded", "out_of_frame", "not_applicable", "unknown"]},
     "visibility_after": {"enum": ["visible", "partial", "occluded", "out_of_frame", "not_applicable", "unknown"]},
     "annotation_source": {"type": "string", "minLength": 1},
+    "source_frame_id": {"type": "string", "minLength": 1},
+    "playback_transform": {"enum": ["identity", "time_reverse"]},
+    "native_category": {"type": "string", "minLength": 1},
+    "review_clip_path": {"type": "string", "minLength": 1},
     "human_verified": {"type": "boolean"},
     "human_verification": {
       "type": "object",

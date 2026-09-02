@@ -1,19 +1,22 @@
 {
-  "gate_id": "negative_semantics_g0_v1",
-  "protocol_version": "1.0.0",
+  "gate_id": "negative_semantics_g0_v1_1",
+  "protocol_version": "1.1.0",
   "preregistered_at": "2026-09-02",
-  "status": "NOT_PASSED",
+  "status": "NOT_PASSED_PENDING_HUMAN_REVIEW",
   "eligible_to_start_g1": false,
   "required_checks": [
     "protocol_frozen",
     "five_split_lists_frozen",
     "manifest_detached_hash_matches",
     "assigned_file_hashes_match",
+    "acquisition_archives_match",
     "split_video_ids_disjoint",
     "event_and_ontology_contract_present",
     "pilot_has_30_to_50_human_verified_independent_events",
     "heldout_is_nonempty_and_source_disjoint",
+    "heldout_seal_matches",
     "assigned_source_licenses_approved",
+    "data_use_approval_recorded",
     "reproducible_acquisition_and_environment_recorded"
   ],
   "frozen_thresholds": {
@@ -40,38 +43,52 @@
   },
   "frozen_artifacts": {
     "protocol": "configs/experiments/negative_semantics/g0_protocol.yaml",
-    "protocol_sha256": "4fafaaa717b1554ba22b85fb674e790b33d498d2a6dbeef96f37ead5b116485c",
+    "protocol_sha256": "a1173d3516e1e733d65ff0c2c44427a6c563d3f1d8389184a90c7df434b1930c",
     "split_manifest": "data/negative_semantics/g0/dataset_split_manifest.json",
-    "split_manifest_sha256": "f4f04b5612d65a9b5004c11da14e50f492c382e3d6228a7ede1efee44e786481",
+    "split_manifest_sha256": "d559d011a982f0f65bc21e1b2b850105d2efcf2a0f90039521ad865c1037b2ee",
     "ontology_manifest": "data/negative_semantics/g0/ontology_manifest.json",
     "ontology_sha256": "6b7f7b11d5319bb6dce9dcaa8ce5dbc2c83735d0fedb78140ee69f1c8fa374f1",
     "event_schema": "data/negative_semantics/g0/event_schema.schema.json",
-    "event_schema_sha256": "14883e18b7f59679ace554e1067fcc423a236488c345ea451ff231676dfc6708",
+    "event_schema_sha256": "a25dffe1824f4da8b43094750a1fa379dd65159d0e3315597520950ca3bacb32",
+    "category_mapping": "data/negative_semantics/g0/youtube_vos_category_mapping.json",
+    "category_mapping_sha256": "3415e0545de93287d8a5b7731d8dc37a4468d2d9e2b14a59ba727a059faa7f99",
+    "data_use_approval": "data/negative_semantics/g0/data_use_approval.json",
+    "data_use_approval_sha256": "f0356b9026e7fa8f1d7c7431c109d8cdcefb162d15762d8d0c1362a3040efd81",
+    "heldout_seal": "data/negative_semantics/g0/heldout_seal.json",
+    "heldout_seal_sha256": "e4ffca1d62c33af4a22e89ffb459e238f91fd6fda7511a3bc19b3e5d30efab0e",
     "event_annotations": [
       {
         "path": "data/negative_semantics/g0/etri_legacy_event_annotations.jsonl",
         "sha256": "8f824758cf1dd883f3d7792ba1e2db98e6dd7eb538a26fc3b3a50aa3725d08e8"
+      },
+      {
+        "path": "data/negative_semantics/g0/youtube_vos_pilot_event_candidates.jsonl",
+        "sha256": "44259a7424cbb23527a89b29ddf4e1b9b37540a872e5d25d7b2cd072e70c47eb"
       }
     ],
     "environment": "environments/sgdjscc-py39-cu118.yml",
-    "environment_sha256": "25118b1a10c51f13e2210354aaeb9f234f659614ed79a65a31e9e8e99fff0983"
+    "environment_sha256": "25118b1a10c51f13e2210354aaeb9f234f659614ed79a65a31e9e8e99fff0983",
+    "preparation_script": "scripts/prepare_negative_semantics_g0.py",
+    "preparation_script_sha256": "e18f367f89be68ac8f2eebeb76e72787b29946367e25fec79fd6384709de73af",
+    "review_compiler": "scripts/compile_negative_semantics_pilot_reviews.py",
+    "review_compiler_sha256": "cdcb9ff1ea79ef6e891ade536bbb256b524facb01b62df4f3502e428c9ac214c"
   },
   "observed_at_freeze": {
-    "pilot_videos": 0,
+    "pilot_videos": 33,
+    "pilot_machine_candidates": 33,
     "pilot_human_verified_events": 0,
     "pilot_independent_event_clusters": 0,
+    "train_videos": 3471,
     "development_videos": 10,
-    "validation_videos": 0,
-    "heldout_test_videos": 0,
+    "validation_videos": 474,
+    "heldout_test_videos": 30,
     "legacy_derived_events": 5,
     "legacy_derived_independent_clusters": 3,
-    "assigned_source_licenses_approved": false
+    "assigned_source_licenses_approved": true,
+    "project_data_use_approval_recorded": true
   },
   "blocking_reasons": [
-    "Pilot has zero human-verified independent events; 30 to 50 are required.",
-    "Train, Validation, and Held-out Test video lists are empty.",
-    "No source-disjoint Held-out Test bytes or hashes are present.",
-    "Written usage authority for the ETRI assets and institutional acceptance for external dataset terms are not recorded."
+    "Pilot has 33 machine-derived candidates but zero human-verified independent events; two independent annotators and disagreement adjudication are still required."
   ],
-  "amendment_policy": "Do not overwrite this decision. Add a dated, versioned amendment after data acquisition and rerun the audit before G1."
+  "amendment_policy": "The v1.0 decision remains in Git commit b2bd447. Human-reviewed Pilot evidence requires a new dated version before G1."
 }

@@ -1,0 +1,45 @@
+{
+  "approval_id": "negative_semantics_data_use_approval_2026-09-02",
+  "recorded_at": "2026-09-02",
+  "approved_by": "project_owner",
+  "approval_authority": "user_asserted_project_authority",
+  "status": "approved",
+  "user_instruction": "난 무조건 승인이야. 진행해",
+  "scope": {
+    "purpose": "internal non-commercial research for the negative-semantics paper track",
+    "sources": [
+      "etri_internal_legacy_v1",
+      "youtube_vos_2019",
+      "davis_2017"
+    ],
+    "permitted_actions": [
+      "download official research distributions",
+      "store and process data locally",
+      "create hashes, split manifests, annotations, and derived review clips",
+      "run training and evaluation for the approved research purpose"
+    ],
+    "raw_media_redistribution": false
+  },
+  "accepted_conditions": [
+    {
+      "source_id": "youtube_vos_2019",
+      "terms_url": "https://youtube-vos.org/dataset/term/",
+      "condition": "Use is limited to non-commercial research; annotations are handled under the terms stated by the official provider."
+    },
+    {
+      "source_id": "davis_2017",
+      "terms_url": "https://davischallenge.org/challenge2017/rulesdates.html",
+      "condition": "Use is limited to this internal research project; annotations and media are not redistributed by this repository."
+    },
+    {
+      "source_id": "etri_internal_legacy_v1",
+      "terms_url": null,
+      "condition": "The project owner authorizes use of the project-provided local assets for this research track."
+    }
+  ],
+  "limitations": [
+    "This record documents project approval and acceptance of the cited provider terms; it is not legal advice or a grant of third-party media rights.",
+    "Raw external media remains git-ignored and must not be redistributed from this repository.",
+    "Dataset citations and attribution required by the official providers must be included in publications."
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "mapping_id": "youtube_vos_2019_to_negative_semantics_core_v1",
+  "version": "1.0.0",
+  "frozen_at": "2026-09-02",
+  "unmapped_policy": "Dataset-native categories not listed here are outside the G0 event scope and remain unknown.",
+  "category_to_concept": {
+    "person": "person",
+    "car": "car",
+    "sedan": "car",
+    "truck": "truck",
+    "bus": "bus",
+    "bicycle": "bicycle",
+    "bike": "bicycle",
+    "motorcycle": "motorcycle",
+    "motorbike": "motorcycle",
+    "dog": "dog",
+    "cat": "cat",
+    "bird": "bird",
+    "chair": "chair",
+    "sign": "traffic_sign",
+    "traffic_sign": "traffic_sign",
+    "ball": "ball"
+  }
+}
