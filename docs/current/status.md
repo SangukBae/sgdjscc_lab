@@ -35,6 +35,10 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   정식 결과가 없으므로 아직 `G1_PASSED`는 아니다.
 - G1은 GPU 학습이 아니라 frozen checkpoint 추론·자동 평가다. smoke output은 논문 근거가
   아니며 정식 Pilot 결과만 G1 gate에 사용한다.
+- 첫 formal v1.0 시도는 비정상 overlapping-patch 증가에 따른 RTX 4080 OOM으로 전체
+  무효화했다. v1.1은 resize 후 128-grid padding, 평가 전 padding crop을 동결했고 실제
+  실패 영상 smoke를 통과해 **정식 재실행 가능** 상태다. v1.0에서는 검증된 source-only
+  caption만 명시적 provenance 검사 후 재사용한다.
 - 구현 경계: negative packet codec, RSM, joint allocator, sampler의 object-level negative
   control은 아직 미구현이다. G1은 additional-object 현상 확인이고 Oracle ABSENT 제어는
   통과 후 G2에서 수행한다.

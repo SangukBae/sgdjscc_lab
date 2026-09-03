@@ -1,5 +1,5 @@
 ---
-status: amended_v1_1_pending_smoke
+status: ready_for_formal_run_v1_1
 updated: 2026-09-03
 gate: G1
 evidence_split: OVIS Pilot
@@ -75,8 +75,9 @@ TOKENIZERS_PARALLELISM=false PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 ```
 
 터미널 연결이 끊길 수 있으면 위 명령을 `tmux` 안에서 실행한다. 다른 GPU 작업과 동시에
-실행하지 않는다. 기존 10영상 측정과 이번 smoke를 기준으로 한 예상 시간은 약 5~8시간이지만,
-OVIS 영상 내용과 실제 reuse 횟수에 따라 달라질 수 있다. 진행 중에는 다음 두 명령으로 확인한다.
+실행하지 않는다. v1.0에서 실제 완료된 few10 세 영상은 136 frame에 약 504초가 걸렸다.
+full50과 3 seeds까지 포함한 단일 RTX 4080 전체는 약 24~40시간을 예상해야 하며,
+실제 reuse 횟수에 따라 달라질 수 있다. 진행 중에는 다음 두 명령으로 확인한다.
 
 ```bash
 tail -f outputs/negative_semantics_g1_pilot_rtx4080_v1_1/operator.log
@@ -106,5 +107,7 @@ Pilot 현상 근거일 뿐, method 개선이나 held-out 일반화를 입증하�
   pathological resize dimension을 포함하지 못했다.
 - v1.0 formal attempt: caption/calibration 완료 후 네 번째 영상에서 overlapping-patch
   explosion에 따른 OOM. 전체 run 무효화. [v1.1 amendment](./2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md)
-- v1.1 실제 실패 영상 smoke: 수정 commit 후 재실행 예정
+- v1.1 실제 실패 영상 smoke: commit `16e1e92`, `ovis_valid_1b664206`에서 통과.
+  `512×256`, 8 patch/frame, 2/2 reconstruction, failed pair 0,
+  child `run_status=completed`, top-level `NOT_EVIDENCE`
 - 정식 40영상 × 2 policy × 3 seed: 사용자 장시간 실행 대기

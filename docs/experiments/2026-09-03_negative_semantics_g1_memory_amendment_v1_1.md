@@ -1,5 +1,5 @@
 ---
-status: frozen_amendment
+status: frozen_amendment_smoke_passed
 updated: 2026-09-03
 gate: G1
 supersedes: negative_semantics_g1_v1_0
@@ -46,4 +46,6 @@ sampler step, seed, max-GOP 또는 reuse threshold를 바꾸지 않는다. Held-
 
 새 결과 디렉터리는 `outputs/negative_semantics_g1_pilot_rtx4080_v1_1`이다. 기존
 `outputs/negative_semantics_g1_pilot_rtx4080`에 이어 쓰면 안 된다. v1.1 실패 영상
-2-frame smoke가 통과한 뒤에만 정식 재실행한다.
+2-frame smoke는 commit `16e1e92`에서 통과했다. 입력은 `512×256`, 8 patch/frame였고
+복원 2/2 frame, failed pair 0, child `run_status=completed`였다. smoke는 논문 증거가
+아니지만 동일 OOM 경로의 구조적 수정 검증으로 충분하므로 v1.1 정식 재실행을 허용한다.
