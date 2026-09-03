@@ -27,8 +27,9 @@ supersedes:
 연구선의 historical artifact이며 현재 논문의 claim 경계가 아니다.
 
 G0 v1.2에서 프로토콜·실제 split·아카이브와 영상별 hash·사용 승인·Held-out 봉인을
-완료하고 **`PASSED`**했다. 다음 우선순위는 G1 evaluator calibration과 Oracle ABSENT
-현상 실험이다.
+완료하고 **`PASSED`**했다. G1 evaluator calibration과 3-seed×few10/full50 단일 GPU
+실행기도 구현했다. 다음 우선순위는 정식 OVIS Pilot run을 완료해 additional-object
+현상 gate를 판정하는 것이다. Oracle ABSENT 제어는 G1 통과 뒤 G2에서 수행한다.
 
 | 순서 | G0 후속 작업 | 완료 조건 |
 |---:|---|---|
@@ -37,10 +38,13 @@ G0 v1.2에서 프로토콜·실제 split·아카이브와 영상별 hash·사용
 | 완료 | Pilot event annotation | official GT로 40개 독립 영상, 4 event type 각 10개 확보 |
 | 완료 | Held-out 봉인 | DAVIS val 30개를 이전 split과 source-disjoint로 고정, method 개발 개봉 금지 |
 | 완료 | G0 재감사 | `audit_negative_semantics_g0.py --require-pass` exit 0, v1.2 amendment 기록 |
+| 완료 | G1 실행 준비 | source-only OWLv2 calibration, fixed_int4+both-omit, few10/full50, 3 seeds, resume 계약 구현 |
+| 실행 대기 | G1 정식 GPU run | Pilot 40영상 전체 완료 후 `g1_summary.json` gate 판정; smoke는 근거에서 제외 |
 
 상세 동결값과 자동 annotation 규칙은
 [G0 v1.2 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md)에 있다.
 G1에서는 selector와 독립인 자동 evaluator를 먼저 고정한 뒤 GPU smoke와 정식 paired run을 구분한다.
+명령과 결과 판독은 [G1 실행 준비 기록](../experiments/2026-09-03_negative_semantics_g1_preparation.md)을 따른다.
 
 - 관리 규칙
   - 메인 계획: 이 문서

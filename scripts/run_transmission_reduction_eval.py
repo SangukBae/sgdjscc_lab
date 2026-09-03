@@ -218,6 +218,11 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--device", default="cpu")
     p.add_argument("--max-frames", type=int, default=None,
                     help="Cap frames per video fed to TemporalPipeline (smoke-test knob); default = all.")
+    p.add_argument(
+        "--image-long-side", type=int, default=None,
+        help="Optionally resize image-sequence/video frames so the longest side has this many "
+             "pixels (aspect ratio preserved, no upscale). Recorded in the resume signature.",
+    )
     p.add_argument("--fps", type=float, default=None, help="recon.mp4 output fps; default = source fps.")
     # keyframe selection
     p.add_argument("--psss-threshold", type=float, default=0.35)
@@ -329,12 +334,45 @@ def _parse_args(argv=None) -> argparse.Namespace:
 # Data loading
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _load_frames(video_path: Path, work_dir: Path):
+def _load_frames(video_path: Path, work_dir: Path, image_long_side: Optional[int] = None):
     from sgdjscc_lab.utils.video_io import extract_frames
-    from sgdjscc_lab.io import load_image_as_tensor
+    from sgdjscc_lab.io import list_image_files, load_image_as_tensor
 
-    info = extract_frames(video_path, work_dir)
+    video_path = Path(video_path)
+    if video_path.is_dir():
+        # OVIS and similar official-GT datasets expose the annotated timesteps
+        # as image sequences.  Reading those files directly avoids an MP4
+        # encode/decode round trip and preserves the exact timestep-to-GT
+        # correspondence required by the negative-semantics evaluator.
+        files = list_image_files(video_path)
+        info = {
+            "files": files,
+            "fps": 1.0,
+            "source_kind": "annotated_image_sequence",
+            "source_path": str(video_path.resolve()),
+        }
+    else:
+        info = extract_frames(video_path, work_dir)
+        info.setdefault("source_kind", "video_file")
     tensors = [load_image_as_tensor(f) for f in info["files"]]
+    if image_long_side is not None:
+        if image_long_side < 128:
+            raise ValueError("--image-long-side must be >= 128")
+        import torch.nn.functional as F
+
+        resized = []
+        for tensor in tensors:
+            height, width = tensor.shape[-2:]
+            scale = min(1.0, float(image_long_side) / max(height, width))
+            if scale < 1.0:
+                target = (max(1, round(height * scale)), max(1, round(width * scale)))
+                tensor = F.interpolate(
+                    tensor, size=target, mode="bilinear", align_corners=False, antialias=True
+                )
+            resized.append(tensor)
+        tensors = resized
+        info["image_long_side"] = int(image_long_side)
+        info["resize_rule"] = "aspect_preserving_bilinear_antialias_no_upscale"
     return tensors, info
 
 
@@ -1113,7 +1151,9 @@ def run(argv=None) -> int:
                 continue
             work_dir = output_root / "logs" / f"{video_key}_frames"
             log(f"loading frames for {video_key} ...")
-            frames, info = _load_frames(entry["processed"], work_dir)
+            frames, info = _load_frames(
+                entry["processed"], work_dir, image_long_side=args.image_long_side
+            )
             if args.max_frames is not None:
                 frames = frames[: args.max_frames]
             captions = _load_captions(entry["captions"], len(frames))
@@ -1648,6 +1688,7 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
         "video_keys": sorted(e["key"] for e in entries),
         "video_frame_counts": video_frame_counts,
         "max_frames_cap": args.max_frames,
+        "image_long_side": args.image_long_side,
         "granularity": args.granularity,
         "psss": {
             "backend": args.psss_backend, "model_id": args.psss_model_id,

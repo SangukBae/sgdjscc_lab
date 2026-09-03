@@ -1,0 +1,26 @@
+# G1 reconstruction config. Captions are generated once from source frames by
+# run_negative_semantics_g1.py and supplied through the dataset manifest.
+# Keeping BLIP2 out of the reconstruction process lets the frozen SGD-JSCC
+# diffusion path fit on one 16 GiB RTX 4080 without changing transmitted text.
+_defaults_:
+  - ../../base/channel/awgn
+  - ../../base/model/sgdjscc
+  - ../../base/infer/awgn
+  - ../../base/eval/default
+  - ../../base/video/default
+
+use_text: false
+use_phase4: false
+use_phase5: false
+
+# G1 uses the fixed selector; reuse is disabled so every annotated timestep is
+# reconstructed and can be compared with its official OVIS state.
+keyframe:
+  selector: fixed
+  max_gop: 1
+temporal:
+  reuse_threshold: 0.0
+
+video_io:
+  save_recon_frames: true
+  save_recon_video: true

@@ -30,10 +30,16 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - Pilot: 서로 다른 OVIS 영상 40개에서 official-GT-derived ENTER/EXIT/OCCLUDE/
   REAPPEAR 각 10개; annotated timestep 단위
 - 자동 감사: 13개 조건 중 13개 통과
-- 현재 gate: **`G0_PASSED`** — G1 시작 가능. 단, GPU 학습이나 모델 효과 검증은 아직 아니다.
+- 현재 gate: **`G1_READY_TO_RUN`** — G0는 통과했고 G1 동결 protocol, OVIS 입력,
+  source-only OWLv2 calibration, 3-seed×few10/full50 재개형 단일 GPU 실행기를 준비했다.
+  정식 결과가 없으므로 아직 `G1_PASSED`는 아니다.
+- G1은 GPU 학습이 아니라 frozen checkpoint 추론·자동 평가다. smoke output은 논문 근거가
+  아니며 정식 Pilot 결과만 G1 gate에 사용한다.
 - 구현 경계: negative packet codec, RSM, joint allocator, sampler의 object-level negative
-  control은 아직 미구현이며 G1에서 Oracle ABSENT 현상부터 확인한다.
+  control은 아직 미구현이다. G1은 additional-object 현상 확인이고 Oracle ABSENT 제어는
+  통과 후 G2에서 수행한다.
 - 근거: [G0 v1.2 official-GT amendment](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md)
+- 실행: [G1 준비·동결 절차](../experiments/2026-09-03_negative_semantics_g1_preparation.md)
 
 통합 개발 요약기는 이후 실행부터 `run_integrity_passed`, point-mean candidate,
 CI-screening candidate를 별도 필드로 기록하고 reference baseline 자체를 후보 선택에서
