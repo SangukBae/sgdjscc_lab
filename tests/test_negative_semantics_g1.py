@@ -91,10 +91,24 @@ def test_image_sequence_loader_preserves_order_and_resizes(tmp_path):
     source.mkdir()
     Image.new("RGB", (800, 400), "red").save(source / "img_0000002.jpg")
     Image.new("RGB", (800, 400), "blue").save(source / "img_0000001.jpg")
-    frames, info = module._load_frames(source, tmp_path / "unused", image_long_side=512)
+    frames, info = module._load_frames(
+        source, tmp_path / "unused", image_long_side=512, image_pad_multiple=128
+    )
     assert [path.name for path in info["files"]] == ["img_0000001.jpg", "img_0000002.jpg"]
     assert info["source_kind"] == "annotated_image_sequence"
     assert frames[0].shape[-2:] == (256, 512)
+
+
+def test_image_sequence_loader_pads_pathological_stride_dimension(tmp_path):
+    module = _load_script("run_transmission_reduction_eval.py")
+    source = tmp_path / "frames"
+    source.mkdir()
+    Image.new("RGB", (1280, 630), "red").save(source / "img_0000001.jpg")
+    frames, info = module._load_frames(
+        source, tmp_path / "unused", image_long_side=512, image_pad_multiple=128
+    )
+    assert frames[0].shape[-2:] == (256, 512)
+    assert info["padding_rule"] == "symmetric_constant_zero_extra_pixel_bottom_right"
 
 
 @pytest.mark.skipif(
@@ -132,4 +146,6 @@ def test_g1_protocol_keeps_heldout_sealed_and_freezes_full_matrix():
     assert protocol["reconstruction"]["seeds"] == [2025, 2026, 2027]
     assert protocol["reconstruction"]["fixed_max_gop"] == 16
     assert protocol["reconstruction"]["temporal_reuse_threshold"] == 0.2
+    assert protocol["reconstruction"]["spatial_transform"]["pad_to_multiple"] == 128
+    assert protocol["gate"]["smoke_video_id"] == "ovis_valid_1b664206"
     assert protocol["evaluator"]["selector_model_ids"] == []

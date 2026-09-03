@@ -33,6 +33,7 @@ from sgdjscc_lab.evaluators.negative_semantics import (  # noqa: E402
 
 PROTOCOL_PATH = ROOT / "configs/experiments/negative_semantics/g1_protocol.yaml"
 G1_DATASET = ROOT / "data/negative_semantics/g1/pilot"
+G1_V1_0_PROTOCOL_SHA256 = "b9cd11c0b132ec5e05a6a5f88a15989915b3c99811d8a542af4f968d3ab53e19"
 
 
 def _sha256(path: Path) -> str:
@@ -154,28 +155,107 @@ def _preflight(protocol: Mapping[str, Any], formal: bool) -> Dict[str, Any]:
     }
 
 
+def _resized_size(size: tuple[int, int], long_side: int) -> tuple[int, int]:
+    width, height = size
+    scale = min(1.0, float(long_side) / max(width, height))
+    return max(1, round(width * scale)), max(1, round(height * scale))
+
+
 def _resize_pil(image, long_side: int):
     from PIL import Image
 
+    target = _resized_size(image.size, long_side)
+    if target != image.size:
+        image = image.resize(target, Image.Resampling.BILINEAR)
+    return image
+
+
+def _pad_pil(image, pad_multiple: int):
+    from PIL import Image
+
     width, height = image.size
-    scale = min(1.0, float(long_side) / max(width, height))
-    if scale >= 1.0:
-        return image
-    target = (max(1, round(width * scale)), max(1, round(height * scale)))
-    return image.resize(target, Image.Resampling.BILINEAR)
+    target_width = ((width + pad_multiple - 1) // pad_multiple) * pad_multiple
+    target_height = ((height + pad_multiple - 1) // pad_multiple) * pad_multiple
+    left = (target_width - width) // 2
+    top = (target_height - height) // 2
+    canvas = Image.new("RGB", (target_width, target_height), (0, 0, 0))
+    canvas.paste(image, (left, top))
+    return canvas
 
 
-def _selected_videos(gt_index: Mapping[str, Any], smoke: bool) -> List[str]:
+def _transform_pil(image, long_side: int, pad_multiple: int):
+    return _pad_pil(_resize_pil(image, long_side), pad_multiple)
+
+
+def _selected_videos(
+    protocol: Mapping[str, Any], gt_index: Mapping[str, Any], smoke: bool
+) -> List[str]:
     if not smoke:
         return sorted(gt_index["videos"])
     # Select a frozen-event video (rather than an arbitrary directory) for the
     # structural smoke. The smoke remains explicitly non-evidence.
-    return [sorted(gt_index["events"], key=lambda row: row["event_id"])[0]["video_id"]]
+    video_id = str(protocol["gate"]["smoke_video_id"])
+    if video_id not in gt_index["videos"]:
+        raise RuntimeError(f"frozen smoke video is not in Pilot: {video_id}")
+    return [video_id]
+
+
+def _caption_transform(snapshot: Mapping[str, str], long_side: int) -> Dict[str, Any]:
+    return {
+        "long_side": int(long_side),
+        "rule": "aspect_resize_before_internal_model_padding",
+        "model_revision": snapshot["revision"],
+    }
+
+
+def _adopt_v1_0_captions(
+    prior_run: Path,
+    gt_index: Mapping[str, Any],
+    video_ids: Sequence[str],
+    snapshot: Mapping[str, str],
+    *,
+    long_side: int,
+) -> Dict[str, Any]:
+    """Reuse v1.0 captions, which were generated before the failed model padding stage."""
+    prior_run = Path(prior_run).resolve()
+    spec = _load_json(prior_run / "run_spec.json")
+    status = _load_json(prior_run / "caption_status.json")
+    if spec.get("protocol_sha256") != G1_V1_0_PROTOCOL_SHA256 or spec.get("smoke") is not False:
+        raise SystemExit("caption donor is not the invalidated formal G1 v1.0 run")
+    if spec.get("video_ids") != list(video_ids):
+        raise SystemExit("caption donor video list differs from G1 v1.1")
+    if (
+        status.get("status") != "GENERATED"
+        or int(status.get("video_count", -1)) != len(video_ids)
+        or status.get("model_revision") != snapshot["revision"]
+    ):
+        raise SystemExit("caption donor did not finish the frozen caption stage")
+    transform = _caption_transform(snapshot, long_side)
+    caption_dir = G1_DATASET / "captions"
+    hashes = {}
+    for video_id in video_ids:
+        path = caption_dir / f"{video_id}.txt"
+        expected = len(gt_index["videos"][video_id]["frame_names"])
+        lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+        if len(lines) != expected or any(not line.strip() for line in lines):
+            raise SystemExit(f"caption donor artifact is incomplete for {video_id}")
+        hashes[video_id] = _sha256(path)
+        _atomic_json(caption_dir / f"{video_id}.meta.json", transform)
+    return {
+        "status": "ADOPTED",
+        "reason": "v1.0 captions precede and are independent of the failed internal padding stage",
+        "source_run": str(prior_run),
+        "source_protocol_sha256": spec["protocol_sha256"],
+        "source_git_commit": spec["git_commit"],
+        "model_revision": snapshot["revision"],
+        "video_count": len(video_ids),
+        "caption_sha256": hashes,
+    }
 
 
 def _generate_captions(
     gt_index: Mapping[str, Any], video_ids: Sequence[str], snapshot: Mapping[str, str],
-    *, device: str, long_side: int, max_frames: int | None,
+    *, device: str, long_side: int,
 ) -> Dict[str, Any]:
     import torch
     from PIL import Image
@@ -183,15 +263,21 @@ def _generate_captions(
 
     caption_dir = G1_DATASET / "captions"
     expected = {
-        video_id: min(len(gt_index["videos"][video_id]["frame_names"]), max_frames)
-        if max_frames is not None else len(gt_index["videos"][video_id]["frame_names"])
+        video_id: len(gt_index["videos"][video_id]["frame_names"])
         for video_id in video_ids
     }
     pending = []
+    transform = _caption_transform(snapshot, long_side)
     for video_id in video_ids:
         path = caption_dir / f"{video_id}.txt"
+        metadata_path = caption_dir / f"{video_id}.meta.json"
         lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
-        if len(lines) != expected[video_id] or any(not line.strip() for line in lines):
+        metadata = _load_json(metadata_path) if metadata_path.is_file() else None
+        if (
+            len(lines) != expected[video_id]
+            or any(not line.strip() for line in lines)
+            or metadata != transform
+        ):
             pending.append(video_id)
     if not pending:
         return {"status": "REUSED", "video_count": len(video_ids), "model_revision": snapshot["revision"]}
@@ -206,7 +292,7 @@ def _generate_captions(
         metadata = gt_index["videos"][video_id]
         source_dir = ROOT / metadata["source_path"]
         captions = []
-        for frame_name in metadata["frame_names"][: expected[video_id]]:
+        for frame_name in metadata["frame_names"]:
             with Image.open(source_dir / frame_name) as source:
                 image = _resize_pil(source.convert("RGB"), long_side)
             inputs = processor(images=image, return_tensors="pt").to(device, dtype)
@@ -218,6 +304,7 @@ def _generate_captions(
         temporary = target.with_suffix(".txt.tmp")
         temporary.write_text("\n".join(captions) + "\n", encoding="utf-8")
         os.replace(temporary, target)
+        _atomic_json(caption_dir / f"{video_id}.meta.json", transform)
         print(f"[G1] captions {video_number}/{len(pending)}: {video_id}", flush=True)
     del model, processor
     gc.collect()
@@ -273,6 +360,8 @@ def _score_sequence(
     cache_path: Path,
     *,
     long_side: int | None,
+    pad_multiple: int | None,
+    crop_size: tuple[int, int] | None,
     cache_metadata: Mapping[str, Any],
 ) -> List[Dict[str, Any]]:
     from PIL import Image
@@ -290,8 +379,20 @@ def _score_sequence(
     for index, path in enumerate(frame_paths):
         with Image.open(path) as source:
             image = source.convert("RGB")
+            if crop_size is not None:
+                target_width, target_height = crop_size
+                width, height = image.size
+                if target_width > width or target_height > height:
+                    raise RuntimeError(
+                        f"evaluation crop {crop_size} exceeds image size {image.size}: {path}"
+                    )
+                left = (width - target_width) // 2
+                top = (height - target_height) // 2
+                image = image.crop((left, top, left + target_width, top + target_height))
             if long_side is not None:
                 image = _resize_pil(image, long_side)
+            if pad_multiple is not None:
+                image = _pad_pil(image, pad_multiple)
             scores = scorer.score_image(image)
         rows.append({"frame_index": index, "frame_name": path.name, "scores": scores})
     _atomic_json(cache_path, {
@@ -309,6 +410,7 @@ def _calibrate(
     smoke: bool,
 ) -> Dict[str, Any]:
     evaluator = protocol["evaluator"]
+    spatial = protocol["reconstruction"]["spatial_transform"]
     scorer = _OwlV2Scorer(preflight["evaluator_model"], evaluator["queries"], device)
     rows = []
     try:
@@ -318,10 +420,13 @@ def _calibrate(
             paths = [ROOT / metadata["source_path"] / name for name in names]
             scored = _score_sequence(
                 scorer, paths, run_root / "evaluator/source" / f"{video_id}.json",
-                long_side=int(protocol["reconstruction"]["spatial_transform"]["image_long_side"]),
+                long_side=int(spatial["image_long_side"]),
+                pad_multiple=None,
+                crop_size=None,
                 cache_metadata={
                     "kind": "source", "source_sha256": metadata["source_sha256"],
                     "model_revision": preflight["evaluator_model"]["revision"],
+                    "spatial_transform": spatial,
                 },
             )
             for item in scored:
@@ -391,6 +496,7 @@ def _run_reconstructions(
                 "--fixed-reference-snr-db", str(recon["fixed_reference_snr_db"]),
                 "--fixed-max-gop", str(recon["fixed_max_gop"]),
                 "--image-long-side", str(spatial["image_long_side"]),
+                "--image-pad-multiple", str(spatial["pad_to_multiple"]),
                 "--fps", "1",
                 "--skip-keyframe-sweep", "--skip-source-size-report", "--no-lpips",
             ]
@@ -434,13 +540,23 @@ def _score_reconstructions(
                         raise SystemExit(
                             f"missing {len(missing)} reconstruction frames for {policy}/{seed}/{video_id}"
                         )
+                    from PIL import Image
+                    source_first = ROOT / metadata["source_path"] / metadata["frame_names"][0]
+                    with Image.open(source_first) as source_image:
+                        content_size = _resized_size(
+                            source_image.size,
+                            int(recon["spatial_transform"]["image_long_side"]),
+                        )
                     scored = _score_sequence(
                         scorer, paths,
                         run_root / "evaluator/reconstruction" / policy / f"seed_{seed}" / f"{video_id}.json",
                         long_side=None,
+                        pad_multiple=None,
+                        crop_size=content_size,
                         cache_metadata={
                             "kind": "reconstruction", "model_revision": preflight["evaluator_model"]["revision"],
                             "frame_count": expected,
+                            "evaluation_crop_size": list(content_size),
                         },
                     )
                     for item in scored:
@@ -518,6 +634,10 @@ def run(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--smoke", action="store_true", help="Two-frame structural GPU check; never paper evidence.")
     parser.add_argument("--preflight-only", action="store_true")
+    parser.add_argument(
+        "--reuse-captions-from-run", type=Path, default=None,
+        help="Adopt fully completed source-only captions from the invalidated formal G1 v1.0 run.",
+    )
     args = parser.parse_args(argv)
 
     run_root = args.run_root.resolve()
@@ -534,7 +654,7 @@ def run(argv: Iterable[str] | None = None) -> int:
         print(json.dumps(preflight, indent=2, sort_keys=True))
         return 0
 
-    video_ids = _selected_videos(gt_index, args.smoke)
+    video_ids = _selected_videos(protocol, gt_index, args.smoke)
     policies = (
         {"few10": int(protocol["reconstruction"]["policies"]["few10"])}
         if args.smoke else {key: int(value) for key, value in protocol["reconstruction"]["policies"].items()}
@@ -555,10 +675,15 @@ def run(argv: Iterable[str] | None = None) -> int:
         raise SystemExit("resume run_spec mismatch; choose another --run-root")
     _atomic_json(spec_path, run_spec)
 
+    if args.reuse_captions_from_run is not None:
+        adoption = _adopt_v1_0_captions(
+            args.reuse_captions_from_run, gt_index, video_ids, preflight["caption_model"],
+            long_side=int(protocol["reconstruction"]["spatial_transform"]["image_long_side"]),
+        )
+        _atomic_json(run_root / "caption_adoption.json", adoption)
     captions = _generate_captions(
         gt_index, video_ids, preflight["caption_model"], device=args.device,
         long_side=int(protocol["reconstruction"]["spatial_transform"]["image_long_side"]),
-        max_frames=max_frames,
     )
     _atomic_json(run_root / "caption_status.json", captions)
     calibration = _calibrate(

@@ -1,5 +1,5 @@
 ---
-status: ready_for_formal_run
+status: amended_v1_1_pending_smoke
 updated: 2026-09-03
 gate: G1
 evidence_split: OVIS Pilot
@@ -22,7 +22,7 @@ G1의 코드·동결 설정·재개형 단일 GPU 실행 경로를 준비했다.
 | 항목 | 값 |
 |---|---|
 | 데이터 | OVIS official-with-GT Pilot 40영상, 40 독립 event |
-| 변환 | longest side 512, aspect ratio 유지, bilinear antialias, upscale 없음 |
+| 변환 | longest side 512, aspect ratio 유지 후 H/W를 128 배수로 중앙 zero-padding; 평가 전 padding crop |
 | 전송 | `fixed_int4`, 10 dB fixed-reference digital step policy |
 | guide | `candidate_both_omit` |
 | 시간축 | 기존 operating point와 동일한 fixed max-GOP 16, reuse threshold 0.2 |
@@ -63,14 +63,15 @@ reconstruction pair, evaluator cache를 재사용하거나 기존 전송 runner�
 
 ```bash
 cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
-mkdir -p outputs/negative_semantics_g1_pilot_rtx4080
+mkdir -p outputs/negative_semantics_g1_pilot_rtx4080_v1_1
 set -o pipefail
 TOKENIZERS_PARALLELISM=false PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
   /home/sangukbae/anaconda3/bin/conda run --no-capture-output -n ptest \
   python scripts/run_negative_semantics_g1.py \
-    --run-root outputs/negative_semantics_g1_pilot_rtx4080 \
+    --run-root outputs/negative_semantics_g1_pilot_rtx4080_v1_1 \
     --device cuda:0 \
-  2>&1 | tee -a outputs/negative_semantics_g1_pilot_rtx4080/operator.log
+    --reuse-captions-from-run outputs/negative_semantics_g1_pilot_rtx4080 \
+  2>&1 | tee -a outputs/negative_semantics_g1_pilot_rtx4080_v1_1/operator.log
 ```
 
 터미널 연결이 끊길 수 있으면 위 명령을 `tmux` 안에서 실행한다. 다른 GPU 작업과 동시에
@@ -78,7 +79,7 @@ TOKENIZERS_PARALLELISM=false PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 OVIS 영상 내용과 실제 reuse 횟수에 따라 달라질 수 있다. 진행 중에는 다음 두 명령으로 확인한다.
 
 ```bash
-tail -f outputs/negative_semantics_g1_pilot_rtx4080/operator.log
+tail -f outputs/negative_semantics_g1_pilot_rtx4080_v1_1/operator.log
 nvidia-smi
 ```
 
@@ -101,7 +102,9 @@ Pilot 현상 근거일 뿐, method 개선이나 held-out 일반화를 입증하�
 - G1 metric 단위 테스트와 기존 G0/전송 runner 회귀 테스트: 70 passed
 - G0 재감사: 13/13 `PASSED`
 - RTX 4080/CUDA 11.8, SGD-JSCC 4 checkpoint, BLIP2/OWLv2 local snapshot preflight: `PASSED`
-- 실제 GPU smoke: commit `f954f81`, RTX 4080에서 2-frame end-to-end 통과.
-  `fixed_max_gop=16`, longest side 512, calibration `PASSED`, reconstruction
-  `run_status=completed`, failed pair 0. 최종 gate는 의도대로 `NOT_EVIDENCE`
+- v1.0 GPU smoke: commit `f954f81`, RTX 4080에서 2-frame end-to-end 통과했지만
+  pathological resize dimension을 포함하지 못했다.
+- v1.0 formal attempt: caption/calibration 완료 후 네 번째 영상에서 overlapping-patch
+  explosion에 따른 OOM. 전체 run 무효화. [v1.1 amendment](./2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md)
+- v1.1 실제 실패 영상 smoke: 수정 commit 후 재실행 예정
 - 정식 40영상 × 2 policy × 3 seed: 사용자 장시간 실행 대기

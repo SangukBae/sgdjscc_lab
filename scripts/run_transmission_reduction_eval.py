@@ -223,6 +223,11 @@ def _parse_args(argv=None) -> argparse.Namespace:
         help="Optionally resize image-sequence/video frames so the longest side has this many "
              "pixels (aspect ratio preserved, no upscale). Recorded in the resume signature.",
     )
+    p.add_argument(
+        "--image-pad-multiple", type=int, default=None,
+        help="After optional resize, symmetrically zero-pad H/W to this multiple. This avoids "
+             "the legacy overlapping-patch explosion near 128-pixel boundaries.",
+    )
     p.add_argument("--fps", type=float, default=None, help="recon.mp4 output fps; default = source fps.")
     # keyframe selection
     p.add_argument("--psss-threshold", type=float, default=0.35)
@@ -334,7 +339,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
 # Data loading
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _load_frames(video_path: Path, work_dir: Path, image_long_side: Optional[int] = None):
+def _load_frames(
+    video_path: Path,
+    work_dir: Path,
+    image_long_side: Optional[int] = None,
+    image_pad_multiple: Optional[int] = None,
+):
     from sgdjscc_lab.utils.video_io import extract_frames
     from sgdjscc_lab.io import list_image_files, load_image_as_tensor
 
@@ -373,6 +383,31 @@ def _load_frames(video_path: Path, work_dir: Path, image_long_side: Optional[int
         tensors = resized
         info["image_long_side"] = int(image_long_side)
         info["resize_rule"] = "aspect_preserving_bilinear_antialias_no_upscale"
+    if image_pad_multiple is not None:
+        if image_pad_multiple < 1:
+            raise ValueError("--image-pad-multiple must be >= 1")
+        import torch.nn.functional as F
+
+        padded = []
+        for tensor in tensors:
+            height, width = tensor.shape[-2:]
+            target_height = (
+                (height + image_pad_multiple - 1) // image_pad_multiple
+            ) * image_pad_multiple
+            target_width = (
+                (width + image_pad_multiple - 1) // image_pad_multiple
+            ) * image_pad_multiple
+            pad_height = target_height - height
+            pad_width = target_width - width
+            left = pad_width // 2
+            right = pad_width - left
+            top = pad_height // 2
+            bottom = pad_height - top
+            tensor = F.pad(tensor, (left, right, top, bottom), mode="constant", value=0.0)
+            padded.append(tensor)
+        tensors = padded
+        info["image_pad_multiple"] = int(image_pad_multiple)
+        info["padding_rule"] = "symmetric_constant_zero_extra_pixel_bottom_right"
     return tensors, info
 
 
@@ -1152,7 +1187,9 @@ def run(argv=None) -> int:
             work_dir = output_root / "logs" / f"{video_key}_frames"
             log(f"loading frames for {video_key} ...")
             frames, info = _load_frames(
-                entry["processed"], work_dir, image_long_side=args.image_long_side
+                entry["processed"], work_dir,
+                image_long_side=args.image_long_side,
+                image_pad_multiple=args.image_pad_multiple,
             )
             if args.max_frames is not None:
                 frames = frames[: args.max_frames]
@@ -1689,6 +1726,7 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
         "video_frame_counts": video_frame_counts,
         "max_frames_cap": args.max_frames,
         "image_long_side": args.image_long_side,
+        "image_pad_multiple": args.image_pad_multiple,
         "granularity": args.granularity,
         "psss": {
             "backend": args.psss_backend, "model_id": args.psss_model_id,

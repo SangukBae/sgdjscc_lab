@@ -96,6 +96,7 @@
 | [experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md](./experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md) | 공식 데이터·split·hash·승인·held-out 봉인 완료; 12/13, 사람 검수 대기 |
 | [experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md](./experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md) | OVIS official-GT Pilot 40개·자동 audit 13/13; G0 통과 |
 | [experiments/2026-09-03_negative_semantics_g1_preparation.md](./experiments/2026-09-03_negative_semantics_g1_preparation.md) | G1 동결 matrix, 독립 OWLv2 calibration, 단일 RTX 4080 재개형 실행 절차 |
+| [experiments/2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md](./experiments/2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md) | v1.0 OOM 원인, 128-grid padding/crop, 기존 run 무효화와 v1.1 재실행 경계 |
 
 ## 5. 참조 문서 (`reference/`)
 

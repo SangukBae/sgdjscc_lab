@@ -1,11 +1,13 @@
 # Frozen G1 phenomenon protocol. Changes after the first formal reconstruction
 # require a version bump and a dated amendment before any affected output is
 # interpreted as paper evidence.
-protocol_id: negative_semantics_g1_v1_0
-protocol_version: 1.0.0
+protocol_id: negative_semantics_g1_v1_1
+protocol_version: 1.1.0
 frozen_at: "2026-09-03"
 freeze_status: frozen
 parent_protocol: negative_semantics_g0_v1_2
+supersedes_protocol_version: 1.0.0
+amendment_record: docs/experiments/2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md
 
 scope:
   gate: G1
@@ -41,6 +43,11 @@ reconstruction:
     preserve_aspect_ratio: true
     upscale: false
     interpolation: bilinear_antialias
+    pad_to_multiple: 128
+    padding_alignment: centered
+    padding_value: 0
+    extra_pixel_side: bottom_right
+    evaluation_crop_internal_padding: true
   policies:
     few10: 10
     full50: 50
@@ -48,6 +55,7 @@ reconstruction:
   captions:
     model_id: Salesforce/blip2-opt-2.7b-coco
     source_only: true
+    generated_before_internal_padding: true
     one_caption_per_annotated_timestep: true
 
 evaluator:
@@ -97,3 +105,4 @@ gate:
   require_evaluator_calibration: true
   require_selector_weight_separation: true
   dependency_policy: full50
+  smoke_video_id: ovis_valid_1b664206
