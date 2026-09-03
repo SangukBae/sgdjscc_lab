@@ -65,7 +65,7 @@ reconstruction pair, evaluator cache를 재사용하거나 기존 전송 runner�
 cd /home/sangukbae/ETRI/Semantic/sgdjscc_lab
 mkdir -p outputs/negative_semantics_g1_pilot_rtx4080
 set -o pipefail
-PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+TOKENIZERS_PARALLELISM=false PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
   /home/sangukbae/anaconda3/bin/conda run --no-capture-output -n ptest \
   python scripts/run_negative_semantics_g1.py \
     --run-root outputs/negative_semantics_g1_pilot_rtx4080 \
@@ -74,7 +74,8 @@ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
 ```
 
 터미널 연결이 끊길 수 있으면 위 명령을 `tmux` 안에서 실행한다. 다른 GPU 작업과 동시에
-실행하지 않는다. 진행 중에는 다음 두 명령으로 확인한다.
+실행하지 않는다. 기존 10영상 측정과 이번 smoke를 기준으로 한 예상 시간은 약 5~8시간이지만,
+OVIS 영상 내용과 실제 reuse 횟수에 따라 달라질 수 있다. 진행 중에는 다음 두 명령으로 확인한다.
 
 ```bash
 tail -f outputs/negative_semantics_g1_pilot_rtx4080/operator.log
@@ -100,6 +101,7 @@ Pilot 현상 근거일 뿐, method 개선이나 held-out 일반화를 입증하�
 - G1 metric 단위 테스트와 기존 G0/전송 runner 회귀 테스트: 70 passed
 - G0 재감사: 13/13 `PASSED`
 - RTX 4080/CUDA 11.8, SGD-JSCC 4 checkpoint, BLIP2/OWLv2 local snapshot preflight: `PASSED`
-- 실제 GPU smoke: 초기 2-frame end-to-end 연결 통과; 기존 operating point와 동일한
-  max-GOP/reuse 설정으로 수정 후 최종 재실행 예정
+- 실제 GPU smoke: commit `f954f81`, RTX 4080에서 2-frame end-to-end 통과.
+  `fixed_max_gop=16`, longest side 512, calibration `PASSED`, reconstruction
+  `run_status=completed`, failed pair 0. 최종 gate는 의도대로 `NOT_EVIDENCE`
 - 정식 40영상 × 2 policy × 3 seed: 사용자 장시간 실행 대기
