@@ -222,11 +222,12 @@ def _adopt_v1_0_captions(
     status = _load_json(prior_run / "caption_status.json")
     if spec.get("protocol_sha256") != G1_V1_0_PROTOCOL_SHA256 or spec.get("smoke") is not False:
         raise SystemExit("caption donor is not the invalidated formal G1 v1.0 run")
-    if spec.get("video_ids") != list(video_ids):
-        raise SystemExit("caption donor video list differs from G1 v1.1")
+    donor_video_ids = list(spec.get("video_ids") or [])
+    if not set(video_ids).issubset(donor_video_ids):
+        raise SystemExit("caption donor does not cover the requested G1 v1.1 videos")
     if (
         status.get("status") != "GENERATED"
-        or int(status.get("video_count", -1)) != len(video_ids)
+        or int(status.get("video_count", -1)) != len(donor_video_ids)
         or status.get("model_revision") != snapshot["revision"]
     ):
         raise SystemExit("caption donor did not finish the frozen caption stage")
