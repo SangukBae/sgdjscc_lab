@@ -44,7 +44,7 @@
 | [current/status.md](./current/status.md) | 기능별 현재 구현 상태 — 완료/PoC/스캐폴드 구분 |
 | [current/roadmap.md](./current/roadmap.md) | 연구 목표 기준 향후 계획, 일정, ETRI 협의 필요사항 |
 | [current/open_issues.md](./current/open_issues.md) | 알려진 한계·기술 부채 |
-| [current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md) | 활성 논문 연구선; G0 v1 동결, 현재 `NOT_PASSED` |
+| [current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md) | 활성 논문 연구선; G0 v1.2 official-GT gate `PASSED` |
 
 ## 2. 장기 시스템 설계 (`architecture/`)
 
@@ -94,6 +94,7 @@
 | [experiments/2026-08-29_integrated_semantic_validation_10db.md](./experiments/2026-08-29_integrated_semantic_validation_10db.md) | 120-pair 통합 개발평가; both-omit guide, few10 잠정 후보, hallucination CI 경고 |
 | [experiments/2026-09-02_negative_semantics_g0_protocol.md](./experiments/2026-09-02_negative_semantics_g0_protocol.md) | negative-semantics G0 v1.0 역사 기록; 7/10 통과 시점 |
 | [experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md](./experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md) | 공식 데이터·split·hash·승인·held-out 봉인 완료; 12/13, 사람 검수 대기 |
+| [experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md](./experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md) | OVIS official-GT Pilot 40개·자동 audit 13/13; G0 통과 |
 
 ## 5. 참조 문서 (`reference/`)
 

@@ -1,0 +1,24 @@
+{
+  "mapping_id": "ovis_to_negative_semantics_core_v1_2",
+  "version": "1.0.0",
+  "frozen_at": "2026-09-03",
+  "source_id": "ovis_v1",
+  "source_partitions": ["valid"],
+  "category_to_concept": {
+    "Person": "person",
+    "Bird": "bird",
+    "Cat": "cat",
+    "Dog": "dog",
+    "Poultry": "bird",
+    "Parrot": "bird",
+    "Bicycle": "bicycle",
+    "Motorcycle": "motorcycle",
+    "Vehical": "vehicle"
+  },
+  "mapping_notes": {
+    "Poultry": "Taxonomic subtype of bird.",
+    "Parrot": "Taxonomic subtype of bird.",
+    "Vehical": "Provider spelling retained and mapped to the generic vehicle concept, not to car."
+  },
+  "unmapped_policy": "All other OVIS categories are outside this Pilot ontology and remain unknown."
+}

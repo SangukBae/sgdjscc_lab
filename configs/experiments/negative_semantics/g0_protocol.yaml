@@ -1,10 +1,10 @@
 # Frozen G0 contract for the negative-semantics paper track.
-protocol_id: negative_semantics_g0_v1_1
-protocol_version: 1.1.0
-frozen_at: "2026-09-02"
+protocol_id: negative_semantics_g0_v1_2
+protocol_version: 1.2.0
+frozen_at: "2026-09-03"
 freeze_status: frozen
-supersedes_protocol_version: 1.0.0
-amendment_record: docs/experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md
+supersedes_protocol_version: 1.1.0
+amendment_record: docs/experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md
 amendment_policy: >-
   Any change after this file is committed requires a version bump, a dated
   amendment record, and must occur before the affected split is opened.
@@ -18,27 +18,31 @@ research:
     - prior-map-free with online partial receiver memory
     - no final claim from the legacy ETRI ten-video development set
     - no joint-allocation claim unless the matched-rate Pareto gate passes
+    - automated endpoints support official-GT-derived additional-object and ghost-track claims, not human-perceived hallucination claims
 
 data:
   split_manifest: data/negative_semantics/g0/dataset_split_manifest.json
   split_manifest_sha256: data/negative_semantics/g0/dataset_split_manifest.sha256
   event_annotations:
     - data/negative_semantics/g0/etri_legacy_event_annotations.jsonl
-    - data/negative_semantics/g0/youtube_vos_pilot_event_candidates.jsonl
+    - data/negative_semantics/g0/ovis_official_gt_event_annotations.jsonl
   event_schema: data/negative_semantics/g0/event_schema.schema.json
   ontology_manifest: data/negative_semantics/g0/ontology_manifest.json
   category_mapping: data/negative_semantics/g0/youtube_vos_category_mapping.json
+  ovis_category_mapping: data/negative_semantics/g0/ovis_category_mapping.json
   data_use_approval: data/negative_semantics/g0/data_use_approval.json
   heldout_seal: data/negative_semantics/g0/heldout_seal.json
   acquisition:
     youtube_vos_train_archive: data/external/youtube_vos_2019/archives/train.tar
     youtube_vos_valid_archive: data/external/youtube_vos_2019/archives/valid.tar
     davis_trainval_archive: data/external/davis_2017/archives/DAVIS-2017-trainval-480p.zip
+    ovis_valid_frames_archive: data/external/ovis/archives/valid.zip
+    ovis_valid_gt: data/external/ovis/archives/annotations_valid_withgt.json
   fixed_split_counts:
-    pilot: 33
+    pilot: 40
     train: 3471
     development: 10
-    validation: 474
+    validation: 507
     heldout_test: 30
   pilot_independent_event_range: [30, 50]
   final_min_independent_videos: 50
@@ -50,10 +54,10 @@ data:
     etri_internal_legacy_v1. DAVIS 2017 val is sealed at G0 and opened once only
     after method choices, thresholds, budgets, and validation operating point freeze.
   pilot_selection: >-
-    Select one core-ontology mid-video first-appearance candidate from each of
-    the first 33 eligible lexicographically sorted YouTube-VOS 2019 valid video
-    IDs. Alternate identity playback ENTER and deterministic time-reverse EXIT;
-    count at most one independence cluster per native video.
+    Derive candidates from the provider-published OVIS validation with-GT
+    annotations using the frozen v1.2 rules, then use deterministic bipartite
+    matching to select 10 ENTER, 10 EXIT, 10 OCCLUDE, and 10 REAPPEAR events.
+    Every selected event must come from a different native video.
 
 rate_accounting:
   primary_unit: total_wire_bytes_per_source_frame
@@ -89,10 +93,16 @@ compute_accounting:
 
 state_contract:
   values: [present, confirmed_absent, unknown]
+  event_state_scope: entity_id
   confirmed_absent_rule: >-
-    A concept is confirmed_absent only inside an annotated opportunity whose
-    temporal extent and ontology scope were checked by humans. Missing detector
-    output and unlabeled classes remain unknown.
+    In an event row, confirmed_absent applies to the official entity_id, not to
+    every instance of its concept. It requires provider GT plus the frozen border
+    transition rule for ENTER/EXIT. Missing detector output and ambiguous terminal
+    disappearances remain unknown.
+  concept_absence_opportunity_rule: >-
+    For H_add only, concept c is confirmed absent at an annotated timestep iff no
+    provider GT instance mapped to c is present there. Unmapped categories and
+    detector misses never establish absence.
 
 event_contract:
   types: [ENTER, EXIT, OCCLUDE, REAPPEAR, SCENE_CUT]
@@ -106,12 +116,22 @@ event_contract:
   clustering_rule: >-
     Events from one video and causal episode share a cluster. Adjacent entity
     transitions at one scene cut are not counted as independent observations.
-  boundary_tolerance_frames: 1
+  boundary_unit: annotated_timestep
+  source_frame_stride: 5
+  boundary_tolerance_annotated_timesteps: 1
+  derivation_rules:
+    ENTER: first_present_at_or_after_timestep_2_and_three_visible_steps_and_bbox_touches_2px_border
+    EXIT: first_absent_after_last_present_with_three_visible_steps_and_bbox_touches_2px_border
+    OCCLUDE: internal_absent_gap_at_least_1_with_three_visible_steps_each_side_non_no_occlusion_flanks_and_no_5px_border_contact
+    REAPPEAR: end_of_the_same_internal_gap_used_by_OCCLUDE
 
 metrics:
   primary:
     h_add:
-      definition: generated_absent_concept_events / confirmed_absent_opportunities
+      definition: >-
+        Frozen-evaluator detections of concept c in the reconstruction when no
+        provider GT instance mapped to c is present, divided by all such
+        (video, annotated_timestep, concept) confirmed-absent opportunities.
       aggregation: event first, then video-clustered paired difference
       direction: lower_is_better
       success_margin_absolute: -0.01
@@ -125,15 +145,16 @@ metrics:
   safety:
     false_suppression_rise:
       definition: >-
-        Candidate-minus-positive-only fraction of human-verified present object
-        opportunities judged absent in the reconstruction.
+        Candidate-minus-positive-only fraction of official-GT present object
+        opportunities classified absent by the frozen independent evaluator.
       noninferiority_margin_absolute: 0.015
     object_recall_drop:
       noninferiority_margin_absolute: 0.02
     reappearance_identity_drop:
       definition: >-
         Positive-only-minus-candidate fraction of REAPPEAR events whose returned
-        entity is matched to the same pre-occlusion entity by blinded majority vote.
+        entity is matched to the same pre-occlusion official instance by the
+        frozen independent tracking evaluator.
       noninferiority_margin_absolute: 0.05
   quality:
     psnr_drop_db: 0.5
@@ -148,24 +169,25 @@ metrics:
     secondary_multiplicity: holm_or_explicitly_exploratory
 
 evaluation_independence:
-  primary_endpoint_evaluator: blinded_human_panel
-  panel_size: 3
+  primary_endpoint_evaluator: official_gt_anchored_automated_evaluator
+  panel_size: 0
   selector_output_hidden: true
   method_and_budget_hidden: true
   automated_presence_screen:
-    role: secondary_only
+    role: primary_after_g1_calibration_freeze
     model_id: google/owlv2-base-patch16-ensemble
     must_not_share_weights_with_selector: true
-  disagreement_rule: majority_vote_then_adjudicator
-  report_agreement: fleiss_kappa_and_raw_agreement
-  human_protocol: docs/experiments/2026-09-02_negative_semantics_g0_protocol.md
+  official_gt_role: source_event_and_reference_state
+  output_scope: automatic_additional_object_and_ghost_track_detection
+  prohibited_wording: human_verified_or_human_perceived_hallucination
+  g1_requirement: freeze_evaluator_thresholds_and_selector_weight_separation_before_validation
 
 gates:
   preregistration: configs/experiments/negative_semantics/g0_preregistered_gate.json
   audit_command: python scripts/audit_negative_semantics_g0.py --repo-root .
   require_pass_command: python scripts/audit_negative_semantics_g0.py --repo-root . --require-pass
   pass_requires:
-    - 30_to_50_human_verified_independent_pilot_events
+    - 30_to_50_official_gt_verified_independent_pilot_events
     - nonempty_source_disjoint_heldout_test
     - sealed_heldout_test
     - approved_license_for_every_assigned_source

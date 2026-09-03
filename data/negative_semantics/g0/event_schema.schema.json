@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://local.sgdjscc-lab/negative-semantics/event-v1.schema.json",
-  "title": "Negative semantic event annotation v1",
+  "$id": "https://local.sgdjscc-lab/negative-semantics/event-v1-2.schema.json",
+  "title": "Negative semantic event annotation v1.2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -36,6 +36,9 @@
     "event_type": {"enum": ["ENTER", "EXIT", "OCCLUDE", "REAPPEAR", "SCENE_CUT"]},
     "start_frame": {"type": "integer", "minimum": 0},
     "end_frame": {"type": "integer", "minimum": 0},
+    "boundary_unit": {"enum": ["source_frame", "annotated_timestep"]},
+    "source_frame_stride": {"type": "integer", "minimum": 1},
+    "state_scope": {"enum": ["entity", "concept", "scene"]},
     "state_before": {"enum": ["present", "confirmed_absent", "unknown"]},
     "state_after": {"enum": ["present", "confirmed_absent", "unknown"]},
     "visibility_before": {"enum": ["visible", "partial", "occluded", "out_of_frame", "not_applicable", "unknown"]},
@@ -54,6 +57,38 @@
         "status": {"enum": ["not_reviewed", "agreed", "adjudicated", "rejected"]},
         "annotator_ids": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
         "adjudicator_id": {"type": ["string", "null"]}
+      }
+    },
+    "official_gt_verified": {"type": "boolean"},
+    "official_gt_verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "dataset",
+        "partition",
+        "official_video_id",
+        "official_annotation_id",
+        "derivation_rule_id",
+        "per_video_gt_path",
+        "per_video_gt_sha256"
+      ],
+      "properties": {
+        "status": {"enum": ["official_gt_verified", "not_verified", "rejected"]},
+        "dataset": {"type": "string", "minLength": 1},
+        "partition": {"type": "string", "minLength": 1},
+        "official_video_id": {"type": "integer", "minimum": 1},
+        "official_annotation_id": {"type": "integer", "minimum": 1},
+        "derivation_rule_id": {
+          "enum": [
+            "ovis_enter_border_v1",
+            "ovis_exit_border_v1",
+            "ovis_internal_occlusion_gap_start_v1",
+            "ovis_internal_occlusion_gap_end_v1"
+          ]
+        },
+        "per_video_gt_path": {"type": "string", "minLength": 1},
+        "per_video_gt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
       }
     },
     "notes": {"type": "string"}

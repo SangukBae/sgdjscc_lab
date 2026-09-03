@@ -24,9 +24,9 @@ PROTOCOL = Path("configs/experiments/negative_semantics/g0_protocol.yaml")
 ENVIRONMENT = Path("environments/sgdjscc-py39-cu118.yml")
 APPROVAL = BASE / "data_use_approval.json"
 MAPPING = BASE / "youtube_vos_category_mapping.json"
+OVIS_MAPPING = BASE / "ovis_category_mapping.json"
 HELDOUT_SEAL = BASE / "heldout_seal.json"
-PREPARATION_SCRIPT = Path("scripts/prepare_negative_semantics_g0.py")
-REVIEW_COMPILER = Path("scripts/compile_negative_semantics_pilot_reviews.py")
+PREPARATION_SCRIPT = Path("scripts/prepare_negative_semantics_g0_v1_2.py")
 
 
 def sha256_file(path: Path) -> str:
@@ -88,12 +88,108 @@ def _assigned_entries(manifest: Dict[str, Any]) -> Iterable[Tuple[str, Dict[str,
             yield split, entry
 
 
+def _touches_border(bbox: Any, width: int, height: int, margin: int) -> bool:
+    if bbox is None:
+        return False
+    x, y, box_width, box_height = bbox
+    return (
+        x <= margin or y <= margin
+        or x + box_width >= width - margin
+        or y + box_height >= height - margin
+    )
+
+
+def _visible_run(masks: List[Any], index: int, direction: int) -> int:
+    count = 0
+    while 0 <= index < len(masks) and masks[index] is not None:
+        count += 1
+        index += direction
+    return count
+
+
+def _official_rule_matches(
+    row: Dict[str, Any], gt: Dict[str, Any], category_map: Dict[str, str]
+) -> bool:
+    official = row["official_gt_verification"]
+    video = next(
+        (item for item in gt["videos"] if item["id"] == official["official_video_id"]),
+        None,
+    )
+    annotation = next(
+        (item for item in gt["annotations"] if item["id"] == official["official_annotation_id"]),
+        None,
+    )
+    if video is None or annotation is None or annotation["video_id"] != video["id"]:
+        return False
+    categories = {item["id"]: item["name"] for item in gt["categories"]}
+    native_category = categories.get(annotation["category_id"])
+    if category_map.get(native_category) != row.get("concept_id"):
+        return False
+    masks = annotation["segmentations"]
+    boxes = annotation["bboxes"]
+    occlusion = annotation["occlusion"]
+    boundary = row["start_frame"]
+    if row["end_frame"] != boundary or not 0 <= boundary < len(masks):
+        return False
+    if Path(video["file_names"][boundary]).name != row.get("source_frame_id"):
+        return False
+    present = [index for index, mask in enumerate(masks) if mask is not None]
+    if not present:
+        return False
+    event_type = row["event_type"]
+    expected_rule = {
+        "ENTER": "ovis_enter_border_v1",
+        "EXIT": "ovis_exit_border_v1",
+        "OCCLUDE": "ovis_internal_occlusion_gap_start_v1",
+        "REAPPEAR": "ovis_internal_occlusion_gap_end_v1",
+    }.get(event_type)
+    if official.get("derivation_rule_id") != expected_rule:
+        return False
+    if event_type == "ENTER":
+        return (
+            boundary == present[0] and boundary >= 2
+            and _visible_run(masks, boundary, 1) >= 3
+            and _touches_border(boxes[boundary], video["width"], video["height"], 2)
+        )
+    if event_type == "EXIT":
+        last = present[-1]
+        return (
+            boundary == last + 1 and last <= len(masks) - 3
+            and _visible_run(masks, last, -1) >= 3
+            and _touches_border(boxes[last], video["width"], video["height"], 2)
+        )
+    if event_type == "OCCLUDE":
+        gap_start = boundary
+        gap_end = gap_start
+        while gap_end < len(masks) and masks[gap_end] is None:
+            gap_end += 1
+    elif event_type == "REAPPEAR":
+        gap_end = boundary
+        gap_start = gap_end - 1
+        while gap_start >= 0 and masks[gap_start] is None:
+            gap_start -= 1
+        gap_start += 1
+    else:
+        return False
+    return (
+        0 < gap_start < gap_end < len(masks)
+        and masks[gap_start - 1] is not None and masks[gap_end] is not None
+        and _visible_run(masks, gap_start - 1, -1) >= 3
+        and _visible_run(masks, gap_end, 1) >= 3
+        and occlusion[gap_start - 1] != "no_occlusion"
+        and occlusion[gap_end] != "no_occlusion"
+        and not _touches_border(boxes[gap_start - 1], video["width"], video["height"], 5)
+        and not _touches_border(boxes[gap_end], video["width"], video["height"], 5)
+    )
+
+
 def audit(repo_root: Path) -> Dict[str, Any]:
     root = repo_root.resolve()
     manifest = load_json(root / MANIFEST)
     prereg = load_json(root / PREREGISTRATION)
     ontology = load_json(root / ONTOLOGY)
     mapping = load_json(root / MAPPING)
+    ovis_mapping = load_json(root / OVIS_MAPPING)
     schema = load_json(root / EVENT_SCHEMA)
     protocol_text = (root / PROTOCOL).read_text(encoding="utf-8")
     expected_protocol_hash = prereg["frozen_artifacts"]["protocol_sha256"]
@@ -192,7 +288,7 @@ def audit(repo_root: Path) -> Dict[str, Any]:
             })
     checks.append(_check(
         "acquisition_archives_match",
-        len(acquisition) >= 3 and not acquisition_failures,
+        len(acquisition) >= 5 and not acquisition_failures,
         acquisition_artifact_count=len(acquisition),
         failures=acquisition_failures,
     ))
@@ -259,10 +355,47 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         verification = row.get("human_verification", {})
         if row.get("human_verified") is True and verification.get("status") not in {"agreed", "adjudicated"}:
             event_errors.append(f"row {index}: human_verified conflicts with verification status")
+        if row.get("official_gt_verified") is True:
+            official = row.get("official_gt_verification", {})
+            if official.get("status") != "official_gt_verified":
+                event_errors.append(f"row {index}: official_gt_verified conflicts with verification status")
+            if row.get("source_id") != "ovis_v1" or row.get("split") != "pilot":
+                event_errors.append(f"row {index}: official OVIS event must be in Pilot")
+            if row.get("boundary_unit") != "annotated_timestep" or row.get("source_frame_stride") != 5:
+                event_errors.append(f"row {index}: invalid OVIS boundary unit or stride")
+            if row.get("state_scope") != "entity":
+                event_errors.append(f"row {index}: OVIS event state must be entity-scoped")
+            gt_relative = official.get("per_video_gt_path")
+            gt_expected = official.get("per_video_gt_sha256")
+            gt_actual = sha256_artifact(root / str(gt_relative)) if gt_relative else None
+            if gt_actual != gt_expected:
+                event_errors.append(f"row {index}: per-video official GT hash mismatch")
+            assigned_entry = assigned_video_entries.get(key, {})
+            if assigned_entry.get("gt_path") != gt_relative or assigned_entry.get("gt_sha256") != gt_expected:
+                event_errors.append(f"row {index}: event GT does not match split manifest")
+            if gt_actual == gt_expected:
+                gt = load_json(root / str(gt_relative))
+                if not _official_rule_matches(
+                    row, gt, ovis_mapping.get("category_to_concept", {})
+                ):
+                    event_errors.append(f"row {index}: official derivation rule does not match GT")
+            expected_transition = {
+                "ENTER": ("confirmed_absent", "present", "out_of_frame", "visible"),
+                "EXIT": ("present", "confirmed_absent", "visible", "out_of_frame"),
+                "OCCLUDE": ("present", "present", "partial", "occluded"),
+                "REAPPEAR": ("present", "present", "occluded", "partial"),
+            }.get(row.get("event_type"))
+            observed_transition = (
+                row.get("state_before"), row.get("state_after"),
+                row.get("visibility_before"), row.get("visibility_after"),
+            )
+            if expected_transition != observed_transition:
+                event_errors.append(f"row {index}: official event transition violates contract")
 
     actual_ontology_hash = sha256_file(root / ONTOLOGY)
     actual_schema_hash = sha256_file(root / EVENT_SCHEMA)
     actual_mapping_hash = sha256_file(root / MAPPING)
+    actual_ovis_mapping_hash = sha256_file(root / OVIS_MAPPING)
     mapped_concepts = set(mapping.get("category_to_concept", {}).values())
     contract_ok = (
         states == {"present", "confirmed_absent", "unknown"}
@@ -271,6 +404,8 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         and actual_ontology_hash == prereg["frozen_artifacts"]["ontology_sha256"]
         and actual_schema_hash == prereg["frozen_artifacts"]["event_schema_sha256"]
         and actual_mapping_hash == prereg["frozen_artifacts"]["category_mapping_sha256"]
+        and actual_ovis_mapping_hash == prereg["frozen_artifacts"]["ovis_category_mapping_sha256"]
+        and set(ovis_mapping.get("category_to_concept", {}).values()) <= concepts
         and not annotation_hash_failures
         and not event_errors
     )
@@ -282,6 +417,7 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         ontology_sha256=actual_ontology_hash,
         event_schema_sha256=actual_schema_hash,
         category_mapping_sha256=actual_mapping_hash,
+        ovis_category_mapping_sha256=actual_ovis_mapping_hash,
         mapped_concepts=sorted(mapped_concepts),
         event_row_count=len(event_rows),
         event_errors=event_errors,
@@ -292,17 +428,27 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         row for row in event_rows
         if row.get("split") == "pilot"
         and row.get("event_type") in EVENT_TYPES
-        and row.get("human_verified") is True
-        and row.get("human_verification", {}).get("status") in {"agreed", "adjudicated"}
+        and row.get("official_gt_verified") is True
+        and row.get("official_gt_verification", {}).get("status") == "official_gt_verified"
     ]
     pilot_clusters = sorted({row.get("independence_cluster_id") for row in qualifying})
+    pilot_videos = sorted({row.get("video_id") for row in qualifying})
+    type_counts = {
+        event_type: sum(row.get("event_type") == event_type for row in qualifying)
+        for event_type in ("ENTER", "EXIT", "OCCLUDE", "REAPPEAR")
+    }
     min_events = prereg["frozen_thresholds"]["pilot_independent_events_min"]
     max_events = prereg["frozen_thresholds"]["pilot_independent_events_max"]
     checks.append(_check(
-        "pilot_has_30_to_50_human_verified_independent_events",
-        not annotation_hash_failures and min_events <= len(pilot_clusters) <= max_events,
-        human_verified_event_rows=len(qualifying),
+        "pilot_has_30_to_50_official_gt_verified_independent_events",
+        not annotation_hash_failures
+        and min_events <= len(pilot_clusters) <= max_events
+        and len(pilot_videos) == len(qualifying) == len(pilot_clusters)
+        and all(count == 10 for count in type_counts.values()),
+        official_gt_verified_event_rows=len(qualifying),
         independent_event_clusters=len(pilot_clusters),
+        independent_videos=len(pilot_videos),
+        event_type_counts=type_counts,
         required_range=[min_events, max_events],
         annotation_hash_failures=annotation_hash_failures,
     ))
@@ -385,13 +531,10 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         sha256_file(root / ENVIRONMENT) if (root / ENVIRONMENT).is_file() else None
     )
     actual_preparation_hash = sha256_file(root / PREPARATION_SCRIPT)
-    actual_review_compiler_hash = sha256_file(root / REVIEW_COMPILER)
     expected_preparation_hash = prereg["frozen_artifacts"]["preparation_script_sha256"]
-    expected_review_compiler_hash = prereg["frozen_artifacts"]["review_compiler_sha256"]
     reproducible = (
         actual_environment_hash == expected_environment_hash
         and actual_preparation_hash == expected_preparation_hash
-        and actual_review_compiler_hash == expected_review_compiler_hash
         and not hash_failures
         and not acquisition_failures
         and not annotation_hash_failures
@@ -406,9 +549,6 @@ def audit(repo_root: Path) -> Dict[str, Any]:
         preparation_script=str(PREPARATION_SCRIPT),
         actual_preparation_script_sha256=actual_preparation_hash,
         preregistered_preparation_script_sha256=expected_preparation_hash,
-        review_compiler=str(REVIEW_COMPILER),
-        actual_review_compiler_sha256=actual_review_compiler_hash,
-        preregistered_review_compiler_sha256=expected_review_compiler_hash,
         assigned_video_count=len(assigned),
     ))
 

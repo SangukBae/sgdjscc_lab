@@ -1,10 +1,10 @@
 {
-  "seal_id": "negative_semantics_davis2017_heldout_v1_1",
-  "sealed_at": "2026-09-02",
+  "seal_id": "negative_semantics_davis2017_heldout_v1_2",
+  "sealed_at": "2026-09-03",
   "source_id": "davis_2017",
   "source_partition": "val",
   "video_count": 30,
-  "split_manifest_sha256": "d559d011a982f0f65bc21e1b2b850105d2efcf2a0f90039521ad865c1037b2ee",
+  "split_manifest_sha256": "9daa1efcb1d4018fff9ef8d2cef1dfc3d46ebf4daf5a9554cf783e14232c7262",
   "opened_for_method_development": false,
   "authorized_open_condition": "Open once after G1-G3 implementation, all method choices, thresholds, budgets, and the validation operating point are frozen."
 }

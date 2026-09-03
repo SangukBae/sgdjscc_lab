@@ -1,7 +1,7 @@
 {
-  "ontology_id": "negative_semantics_core_v1",
-  "version": "1.0.0",
-  "frozen_at": "2026-09-02",
+  "ontology_id": "negative_semantics_core_v1_2",
+  "version": "1.1.0",
+  "frozen_at": "2026-09-03",
   "state_values": [
     "present",
     "confirmed_absent",
@@ -11,6 +11,7 @@
   "concepts": [
     {"concept_id": "person", "label": "person", "aliases": ["pedestrian", "people"]},
     {"concept_id": "car", "label": "car", "aliases": ["automobile"]},
+    {"concept_id": "vehicle", "label": "vehicle", "aliases": ["vehical"]},
     {"concept_id": "truck", "label": "truck", "aliases": ["lorry"]},
     {"concept_id": "bus", "label": "bus", "aliases": []},
     {"concept_id": "bicycle", "label": "bicycle", "aliases": ["bike"]},

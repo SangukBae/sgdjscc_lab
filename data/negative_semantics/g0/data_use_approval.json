@@ -10,7 +10,8 @@
     "sources": [
       "etri_internal_legacy_v1",
       "youtube_vos_2019",
-      "davis_2017"
+      "davis_2017",
+      "ovis_v1"
     ],
     "permitted_actions": [
       "download official research distributions",
@@ -35,6 +36,18 @@
       "source_id": "etri_internal_legacy_v1",
       "terms_url": null,
       "condition": "The project owner authorizes use of the project-provided local assets for this research track."
+    },
+    {
+      "source_id": "ovis_v1",
+      "terms_url": "https://songbai.site/ovis/",
+      "condition": "Use is limited to internal non-commercial research under the provider's CC BY-NC-SA 4.0 terms; raw frames are not redistributed."
+    }
+  ],
+  "amendments": [
+    {
+      "recorded_at": "2026-09-03",
+      "user_instruction": "오케이. 너가 권장하는 이 방식대로 진행해줘.",
+      "change": "Approve OVIS provider frames and official validation/test GT for the human-free G0 v1.2 Pilot."
     }
   ],
   "limitations": [

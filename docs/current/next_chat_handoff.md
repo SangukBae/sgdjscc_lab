@@ -9,22 +9,22 @@ source_commit: 7089b24
 
 # 다음 채팅용 연구개발 인계 요약
 
-## 2026-09-02 최우선 변경
+## 2026-09-03 최우선 변경
 
 - 활성 논문 연구선은
   [negative semantic paper plan](./negative_semantic_paper_plan.md)이다. 이전
   `paper_writing_notes.md`는 superseded historical artifact다.
-- G0 v1.1에서 공식 YouTube-VOS/DAVIS 취득, 사용 승인, 5-way split, archive·영상별
-  hash와 DAVIS Held-out 봉인을 완료했다.
-- G0 자동 감사는 12/13 통과지만 최종 판정은 **`NOT_PASSED`**다.
-- 유일한 차단 항목: Pilot 후보 33개에 대한 실제 두 명 독립 검수+불일치 adjudication.
-- 다음 행동은 `data/negative_semantics/g0/pilot_review/` 양식을 독립 작성한 뒤
-  `compile_negative_semantics_pilot_reviews.py` 실행→v1.2 hash 동결→`--require-pass`다.
-- G0 통과 전에는 G1 논문 evidence, negative packet/RSM/joint allocator 구현으로 넘어가지 않는다.
+- G0 v1.2에서 OVIS official-GT Pilot 40개와 기존 YouTube-VOS/DAVIS 5-way split,
+  archive·영상별 hash, 승인, DAVIS Held-out 재봉인을 완료했다.
+- G0 자동 감사는 13/13, `--require-pass` exit 0으로 **`PASSED`**다.
+- 사람 A/B/C 검수는 G0 조건에서 제거됐고, claim은 official-GT-anchored automatic
+  additional-object/ghost-track으로 제한한다.
+- 다음 행동은 G1에서 selector와 독립인 evaluator threshold를 Pilot에 고정하고 Oracle
+  ABSENT GPU smoke 후 정식 paired run을 실행하는 것이다.
 - 통합 요약기는 이후 평균/CI candidate를 분리하고 baseline을 후보에서 제외한다.
   Development role의 `validation_passed`는 `null`이며, Validation manifest가 명시된
   실행에서만 CI 기반 bool이다. 2026-08-29 결과 파일은 역사적 무결성을 위해 변경하지 않았다.
-- 근거: [G0 v1.1 기록](../experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md)
+- 근거: [G0 v1.2 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md)
 
 ## 프로젝트 기준
 

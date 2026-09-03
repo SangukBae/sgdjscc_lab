@@ -1,11 +1,11 @@
 ---
 status: active
-updated: 2026-09-01
+updated: 2026-09-03
 owner: ETRI SGD-JSCC 연구팀
 source_commit: 74d72a2
 primary_venue: IEEE Transactions on Multimedia
 fallback_venue: IEEE Transactions on Circuits and Systems for Video Technology
-g0_gate: NOT_PASSED
+g0_gate: PASSED
 supersedes: docs/reference/paper_writing_notes.md
 ---
 
@@ -36,10 +36,12 @@ supersedes: docs/reference/paper_writing_notes.md
 `docs/experiments/YYYY-MM-DD_<name>.md`에 결과를 고정하고, 구현 상태는
 [status.md](./status.md)에 반영한다.
 
-2026-09-02에 G0 v1.1 방법론·데이터 계약을 동결했다. 현재 판정은 **`NOT_PASSED`**다.
-Pilot 33 / Train 3,471 / Development 10 / Validation 474 / DAVIS Held-out 30과 사용
-승인·hash·seal은 확보했다. 남은 조건은 Pilot 33개에 대한 실제 두 명 독립 검수와
-불일치 adjudication이다. 근거는 [G0 v1.1 기록](../experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md)을 따른다.
+2026-09-03에 G0 v1.2 방법론·데이터 계약을 동결하고 **`PASSED`**했다.
+OVIS official-GT Pilot 40 / Train 3,471 / Development 10 / Validation 507 /
+DAVIS Held-out 30과 사용 승인·hash·seal을 확보했고 자동 감사 13/13을 통과했다.
+사람 지각 hallucination은 claim하지 않으며 official-GT-anchored automatic
+additional-object/ghost-track만 primary 표현으로 허용한다. 근거는
+[G0 v1.2 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md)을 따른다.
 
 ### 0.1 연구 분기
 
@@ -520,10 +522,11 @@ held-out reconstruction을 predictor 학습에 사용하지 않는다.
 
 - [DAVIS 2017](https://davischallenge.org/): 정밀한 multi-object mask와 짧은 controlled sequence
 - [YouTube-VOS/VIS](https://youtube-vos.org/dataset/): 다양한 object track과 대규모 영상
+- [OVIS](https://songbai.site/ovis/): Pilot에 선택; exhaustive category mask·instance identity·occlusion GT
 - [TAO](https://taodataset.org/): open-world category와 긴 object track
 - [BDD100K](https://bdd-data.berkeley.edu/): 사람·차량 중심 실제 주행 scene
 
-최종 조합은 다음 기준으로 Gate G0에서 선택한다.
+최종 조합은 다음 기준으로 Gate G0 v1.2에서 선택했다.
 
 - exit·occlusion·reappearance·scene cut event 밀도
 - frame-level mask/track annotation 가용성
@@ -545,18 +548,20 @@ start_frame
 end_frame
 visibility_before / visibility_after
 annotation_source
-human_verified
+official_gt_verified
+boundary_unit / source_frame_stride
 ```
 
-Pilot gate는 최소 30~50개의 독립 event와 최소 3개 generation seed를 요구한다. 같은
+Pilot gate는 provider GT로 검증된 최소 30~50개의 독립 event를 요구하며, G1 이후 생성
+실험은 최소 3개 generation seed를 요구한다. 같은
 영상의 인접 event를 완전히 독립 표본으로 취급하지 않는다. 최종 평가 목표는 최소 50개
 독립 영상과 100개 이상의 검증 event이며, 실제 확보 가능성은 G0 데이터 audit에서 확정한다.
 
 ### 8.4 Leakage 방지
 
 - selector와 최종 evaluator에 같은 detector weight를 사용하지 않는다.
-- OWLv2가 candidate 생성에 쓰이면 최종 object 판정은 별도 detector/VLM과 human subset으로
-  교차검증한다.
+- OWLv2가 selector에 쓰이면 최종 object 판정에는 weight를 공유하지 않는 별도 자동
+  evaluator를 사용한다. threshold와 association rule은 Validation 전에 Pilot에서 동결한다.
 - oracle rollout 결과는 oracle table과 predictor train에만 사용하며 held-out policy 선택에
   사용하지 않는다.
 - concept별 split만 하지 않고 video/source별 split을 우선한다.
@@ -638,8 +643,8 @@ diffusion step/rollout budget을 맞추고, practical table은 실제 latency와
 - 다수 secondary 검정은 Holm correction 또는 exploratory 표기로 구분
 - 평균뿐 아니라 median, p95, failure count를 보고
 
-human evaluation subset은 조건을 blind 처리하고 최소 3명 평가자가 추가/누락/ghost/identity를
-판정한다. 합의율과 adjudication 규칙을 기록한다.
+primary 결과는 method·budget 정보를 받지 않는 frozen automatic evaluator로 산출한다.
+따라서 사람 지각 기반 hallucination 또는 human-verified identity라는 표현은 쓰지 않는다.
 
 ## 10. 비교군과 ablation
 
@@ -724,19 +729,19 @@ G0 Pilot에서 실제 failure 분포를 확인한 뒤 본실험 전에 동결한
 
 ## 11. 단계별 실행 계획과 gate
 
-아래 gate 중 G0의 rate·metric·margin·annotation 규칙과 실제 split은 2026-09-02
-v1.1에서 동결했다. Pilot 사람 검수 미완료 때문에 G0는 아직 통과하지 않았다. 동결값을 바꿔야 한다면 G1 전에
+아래 gate 중 G0의 rate·metric·margin·annotation 규칙과 실제 split은 2026-09-03
+v1.2에서 동결하고 통과했다. 동결값을 바꿔야 한다면 영향받는 다음 gate 전에
 versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
 
 ### G0. Protocol freeze와 데이터 audit
 
-**현재 판정: `NOT_PASSED`, 자동 감사 12/13 (2026-09-02 v1.1)**
+**현재 판정: `PASSED`, 자동 감사 13/13 (2026-09-03 v1.2)**
 
 - 완료: Full Track, TMM primary venue, wire-byte rate 단위, 4개 budget, metric/margin,
   ontology/state/event schema, 실제 5-way split·공식 archive·영상별 tree hash·사용 승인·Held-out seal
-- 감사 통과: 13개 조건 중 12개
-- 차단: Pilot 기계 후보는 33개지만 human-verified 독립 이벤트는 0/30~50
-- 근거: [G0 v1.1 acquisition 기록](../experiments/2026-09-02_negative_semantics_g0_acquisition_amendment_v1_1.md)
+- 감사 통과: 13개 조건 중 13개
+- Pilot: OVIS official-GT-derived 40개, 40개 독립 영상, event type별 10개
+- 근거: [G0 v1.2 official-GT 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md)
 - 강제 검사: `python scripts/audit_negative_semantics_g0.py --repo-root . --require-pass`
 
 **작업**
@@ -744,7 +749,7 @@ versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
 - 연구 Track, primary venue와 rate 단위 확정
 - dataset license·event density audit
 - Pilot/Train/Dev/Validation/Test 목록을 파일로 고정
-- concept ontology와 event annotation schema v1
+- concept ontology와 event annotation schema v1.2
 - primary/secondary metric과 margin 사전 선언
 - 최소 4개 rate budget과 compute budget 정의
 
@@ -774,7 +779,7 @@ versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
 
 - hallucination이 한 영상·한 seed에만 집중되지 않음
 - 사전 정의한 최소 prevalence와 event count 충족
-- detector 교차검증 및 human spot check 통과
+- frozen independent automatic evaluator의 calibration과 selector weight 분리 통과
 
 **실패 시**
 
@@ -935,7 +940,7 @@ versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
 - 최소 3 seeds
 - video-level paired hierarchical bootstrap
 - p50/p95 latency, VRAM, failure count
-- independent evaluator와 human subset
+- official-GT-anchored independent automatic evaluator
 
 **통과 조건**
 
@@ -1149,7 +1154,7 @@ manifest 필수 항목은 다음과 같다.
 - 최소 50개 독립 held-out 영상 또는 G0에서 승인한 동등 규모
 - 최소 100개 검증 exit/occlusion/reappearance event 또는 승인된 동등 규모
 - 최소 3 generation seeds
-- independent evaluator와 human subset
+- official-GT-anchored independent automatic evaluator와 frozen threshold
 - exact matched-rate 및 rate breakdown
 - matched compute와 실제 p50/p95 latency
 - RSM/packet/allocator 필수 ablation
