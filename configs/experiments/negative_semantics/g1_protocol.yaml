@@ -31,6 +31,8 @@ reconstruction:
   base_config: fixed_int4
   guide_profile: candidate_both_omit
   selector: fixed
+  fixed_max_gop: 16
+  temporal_reuse_threshold: 0.2
   snr_db: 10.0
   digital_step_policy: fixed_reference
   fixed_reference_snr_db: 10.0

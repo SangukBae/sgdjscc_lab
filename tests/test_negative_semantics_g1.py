@@ -130,4 +130,6 @@ def test_g1_protocol_keeps_heldout_sealed_and_freezes_full_matrix():
     assert protocol["scope"]["heldout_access"] == "prohibited"
     assert protocol["reconstruction"]["policies"] == {"few10": 10, "full50": 50}
     assert protocol["reconstruction"]["seeds"] == [2025, 2026, 2027]
+    assert protocol["reconstruction"]["fixed_max_gop"] == 16
+    assert protocol["reconstruction"]["temporal_reuse_threshold"] == 0.2
     assert protocol["evaluator"]["selector_model_ids"] == []

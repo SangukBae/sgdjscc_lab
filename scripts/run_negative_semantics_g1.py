@@ -389,7 +389,7 @@ def _run_reconstructions(
                 "--snr", str(recon["snr_db"]),
                 "--digital-step-policy", recon["digital_step_policy"],
                 "--fixed-reference-snr-db", str(recon["fixed_reference_snr_db"]),
-                "--fixed-max-gop", "1",
+                "--fixed-max-gop", str(recon["fixed_max_gop"]),
                 "--image-long-side", str(spatial["image_long_side"]),
                 "--fps", "1",
                 "--skip-keyframe-sweep", "--skip-source-size-report", "--no-lpips",

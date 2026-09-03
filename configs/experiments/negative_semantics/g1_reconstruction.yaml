@@ -13,13 +13,15 @@ use_text: false
 use_phase4: false
 use_phase5: false
 
-# G1 uses the fixed selector; reuse is disabled so every annotated timestep is
-# reconstructed and can be compared with its official OVIS state.
+# Match the previously frozen fixed_int4 operating point. Every source
+# timestep still receives an output record: inter-frames may legitimately
+# reuse a prior reconstruction, which is part of the temporal phenomenon G1
+# is designed to measure.
 keyframe:
   selector: fixed
-  max_gop: 1
+  max_gop: 16
 temporal:
-  reuse_threshold: 0.0
+  reuse_threshold: 0.2
 
 video_io:
   save_recon_frames: true

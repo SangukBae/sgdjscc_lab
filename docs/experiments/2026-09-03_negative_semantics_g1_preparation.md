@@ -25,6 +25,7 @@ G1의 코드·동결 설정·재개형 단일 GPU 실행 경로를 준비했다.
 | 변환 | longest side 512, aspect ratio 유지, bilinear antialias, upscale 없음 |
 | 전송 | `fixed_int4`, 10 dB fixed-reference digital step policy |
 | guide | `candidate_both_omit` |
+| 시간축 | 기존 operating point와 동일한 fixed max-GOP 16, reuse threshold 0.2 |
 | sampler | `few10`, `full50` |
 | seed | 2025, 2026, 2027 |
 | evaluator | `google/owlv2-base-patch16-ensemble` |
@@ -99,5 +100,6 @@ Pilot 현상 근거일 뿐, method 개선이나 held-out 일반화를 입증하�
 - G1 metric 단위 테스트와 기존 G0/전송 runner 회귀 테스트: 70 passed
 - G0 재감사: 13/13 `PASSED`
 - RTX 4080/CUDA 11.8, SGD-JSCC 4 checkpoint, BLIP2/OWLv2 local snapshot preflight: `PASSED`
-- 실제 GPU smoke: 구현 commit 후 실행 예정
+- 실제 GPU smoke: 초기 2-frame end-to-end 연결 통과; 기존 operating point와 동일한
+  max-GOP/reuse 설정으로 수정 후 최종 재실행 예정
 - 정식 40영상 × 2 policy × 3 seed: 사용자 장시간 실행 대기
