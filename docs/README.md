@@ -86,7 +86,7 @@
 | [experiments/2026-08-26_transmission_normalization.md](./experiments/2026-08-26_transmission_normalization.md) | 전송 정상화·3-GPU 실측 결과와 후속 과제 |
 | [experiments/2026-08-28_float32_digital_step_normalization.md](./experiments/2026-08-28_float32_digital_step_normalization.md) | 60dB→10dB decoder-step 정상화 3-GPU short 실측 |
 | [experiments/2026-08-28_float32_digital_step_normalization_full.md](./experiments/2026-08-28_float32_digital_step_normalization_full.md) | 10dB decoder-step 정상화 3-GPU full 300프레임 최종 실측 |
-| [experiments/2026-08-28_quantization_reevaluation_10db.md](./experiments/2026-08-28_quantization_reevaluation_10db.md) | 10dB fixed-selector float32/int16/int8/int6/int4 양자화 재평가와 4-bit 운영점 확정 |
+| [experiments/2026-08-28_quantization_reevaluation_10db.md](./experiments/2026-08-28_quantization_reevaluation_10db.md) | 10dB fixed-selector float32/int16/int8/int6/int4 양자화 재평가와 당시 rate-first 4-bit 운영점 확정 |
 | [experiments/2026-08-28_fixed_skem_matched_rate_10db.md](./experiments/2026-08-28_fixed_skem_matched_rate_10db.md) | fixed–SKEM actual-transmission/effective-byte exact matching과 proxy SKEM의 fixed schedule 수렴 null 결과 |
 | [experiments/2026-08-28_edge_uncertainty_ablation_10db.md](./experiments/2026-08-28_edge_uncertainty_ablation_10db.md) | fixed_int4 edge·uncertainty 16-profile 3-GPU full ablation; combined_ds4 조건부 최소-byte 후보와 digital uncertainty bypass 확인 |
 | [experiments/2026-08-28_edge_uncertainty_ablation_preparation.md](./experiments/2026-08-28_edge_uncertainty_ablation_preparation.md) | 위 full ablation의 실행 전 profile·wire-accounting 계약 |
@@ -97,6 +97,10 @@
 | [experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md](./experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md) | OVIS official-GT Pilot 40개·자동 audit 13/13; G0 통과 |
 | [experiments/2026-09-03_negative_semantics_g1_preparation.md](./experiments/2026-09-03_negative_semantics_g1_preparation.md) | G1 동결 matrix, 독립 OWLv2 calibration, 단일 RTX 4080 재개형 실행 절차 |
 | [experiments/2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md](./experiments/2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md) | v1.0 OOM 원인, 128-grid padding/crop, 기존 run 무효화와 v1.1 재실행 경계 |
+| [experiments/2026-09-04_int6_etri_operating_point_decision.md](./experiments/2026-09-04_int6_etri_operating_point_decision.md) | ETRI 신규 기본 운용점을 fixed_int6로 변경하고 int4 G1 stress 조건과 bridge validation 경계를 명시한 결정 기록 |
+| [experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md](./experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md) | G1 v1.1 정식 240/240 Pilot 실행 감사(`audit_negative_semantics_g1.py`)와 runner PASSED vs 논문 주장 범위 구분 |
+| [experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md](./experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md) | effective-seed 집계(seed 중복 발견, effective_seed_count=1)와 source-paired additional-object 분리; gate 재적용 시 NOT_PASSED로 뒤집힘 |
+| [experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md](./experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md) | fixed_int4 vs fixed_int6 paired bridge 실행 준비(코드/설정/테스트 완료, GPU 실행은 미실시) — tmux 명령과 판독 절차 |
 
 ## 5. 참조 문서 (`reference/`)
 

@@ -1,13 +1,65 @@
 ---
 status: active
-updated: 2026-09-02
+updated: 2026-09-06
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 7089b24
+source_commit: aae9e26
 ---
 
 > [← 문서 색인](../README.md)
 
 # 다음 채팅용 연구개발 인계 요약
+
+## 2026-09-06 G1 v1.1 완료·감사, v1.2 amendment, int6 bridge 실행 준비
+
+- **G1 v1.1 정식 실행이 완료됐다**: OVIS Pilot 40영상 × `{few10,full50}` ×
+  3 declared seed, child run 6개 × 40영상 = **240/240**, 실패 0, held-out
+  미접근. 신규 `scripts/audit_negative_semantics_g1.py --require-pass`(exit 0)로
+  독립 재검증했다. `g1_summary.json.gate_status: PASSED`(declared-seed 정의).
+  보존: [results/negative_semantics_g1_pilot_rtx4080_v1_1](../../results/negative_semantics_g1_pilot_rtx4080_v1_1/),
+  해석: [실험 문서](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md).
+- **v1.2 amendment로 세 가지 한계를 GPU 재실행 없이 정량화했다**
+  (`scripts/derive_negative_semantics_g1_v1_2.py`, 기존
+  `detection_rows.jsonl`만 읽음):
+  1. 이 reconstruction 경로(고정 selector + 고정 diffusion schedule)는
+     `seed`를 실제로 소비하지 않는다 — 세 seed의 reconstruction PNG/OWLv2
+     점수가 완전히 동일하다. **`effective_seed_count=1`**(few10/full50
+     모두). 같은 gate threshold를 effective-seed 지표에 그대로 재적용하면
+     `affected_seed_count`와 `not_concentrated_in_one_seed`가 FAIL로
+     뒤집혀 few10 기준 gate가 **`NOT_PASSED`**가 된다.
+  2. source-paired additional-object(원본 프레임이 이미 오탐이던 경우 제외)로
+     다시 계산하면 h_add가 raw 대비 약 47~51% 낮아진다(few10 0.019793→
+     0.010493, full50 0.018536→0.009081). **full50은 `h_add_min=0.01`
+     미달**이다.
+  3. ghost survival uncensored 표본은 effective-seed 기준 policy당 4개뿐
+     (unique EXIT 이벤트 10개 중 12개 right-censored)이다.
+  v1.1의 원본 파일은 전혀 수정하지 않았다. 보존:
+  [results/…_derived_v1_2](../../results/negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2/),
+  해석: [v1.2 amendment 문서](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md).
+- **`fixed_int4 vs fixed_int6` paired bridge를 실행 준비까지 완료했다** —
+  코드(`scripts/run_negative_semantics_int6_bridge.py`,
+  `src/sgdjscc_lab/evaluators/int6_bridge.py`), 동결 protocol
+  (`configs/experiments/negative_semantics/g1_int6_bridge_protocol.yaml`),
+  테스트 11개(합성 fixture + 실제 v1.1 run에 대한 GPU-free 검증)를 완료했다.
+  **GPU 실험·GPU smoke는 이 세션에서 실행하지 않았다** — 정확한 tmux
+  명령과 preflight/smoke/formal 구분, 판독 절차는
+  [bridge 준비 기록](../experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md)에
+  있다. 사용자가 직접 실행해야 한다.
+- 회귀 없음: `python -m pytest tests/` — **1552 passed** (기존 1541 + 신규
+  11).
+- 다음 채팅에서 int6 bridge formal 결과가 나오면: (1) `int6_bridge_summary.json`을
+  판독하고 (2) `docs/experiments/`에 날짜 문서·`results/`에 보존 사본을
+  추가하고 (3) 이 문서·`status.md`·`roadmap.md`를 갱신하고 (4) G2 Oracle
+  ABSENT 진입 여부를 v1.2/int6 bridge 결과를 반영해 재검토한다.
+
+## 2026-09-04 ETRI 양자화 운용점 변경
+
+- 신규 ETRI 개발·시연·최종 후보의 기본 bit-depth는 `fixed_int6`다.
+- 기존 `fixed_int4` 선택은 최소-byte rate-first 결정이었으며 완료 실험과 G1 v1.1
+  stress configuration은 역사적 비교 가능성을 위해 그대로 보존한다.
+- `int6 + both-omit`의 exact byte와 hallucination 결과는 아직 없으므로 G1 뒤 G2 전에
+  동일 공개 데이터·seed·diffusion step의 paired bridge validation을 수행한다.
+- 근거와 적용 범위:
+  [int6 ETRI 운용점 결정](../experiments/2026-09-04_int6_etri_operating_point_decision.md)
 
 ## 2026-09-03 최우선 변경
 
@@ -78,7 +130,8 @@ source_commit: 7089b24
 - 최소 bit-depth `fixed_int4`: byte -28.45%, PSNR -0.0526dB,
   SSIM -0.00201, LPIPS 변화 -0.000487.
 - AWGN은 참고 기준이며 digital Pareto baseline으로 사용하지 않는다.
-- 결론: **전송 양자화 operating point는 `fixed_int4`.**
+- 당시 결론: **rate-first operating point는 `fixed_int4`.** 2026-09-04부터 신규 ETRI
+  기본 운용점은 baseline에 더 가까운 PSNR·SSIM을 보인 `fixed_int6`로 변경했다.
 - 근거: [실험 문서](../experiments/2026-08-28_quantization_reevaluation_10db.md),
   [보존 결과](../../results/quantization_reevaluation_10db_20260828/README.md)
 
@@ -88,7 +141,8 @@ source_commit: 7089b24
 - raw byte 차이는 최대 0.004953%, padding 후 effective byte는 exact match.
 - proxy SKEM이 10/10 영상에서 fixed와 같은 keyframe/transmission schedule로 수렴해
   품질 차이도 정확히 0이었다.
-- 결론: **현재 proxy SKEM은 fixed 대비 이점이 없으며 `fixed_int4`를 유지한다.**
+- 결론: **현재 proxy SKEM은 fixed 대비 이점이 없다.** 이 실험의 int4 조건은
+  historical evidence로 유지하며 신규 ETRI bit-depth 결정은 int6 기록을 따른다.
 - 근거: [실험 문서](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md),
   [보존 결과](../../results/fixed_skem_matched_rate_10db_20260828/README.md)
 
@@ -138,14 +192,33 @@ source_commit: 7089b24
 - 근거: [실험 문서](../experiments/2026-08-29_integrated_semantic_validation_10db.md),
   [보존 결과](../../results/integrated_semantic_validation_10db_20260829/README.md)
 
+### 6. negative-semantics G1 additional-object/ghost-track phenomenon
+
+- 조건: `fixed_int4`, `candidate_both_omit`, `{few10,full50}`, OVIS Pilot
+  40영상, 3 declared seed, OWLv2 threshold 0.2(source-only calibration).
+- 240/240 완료, 실패 0, held-out 미접근. declared-seed 정의로 `gate_status:
+  PASSED`(few10 h_add 0.019793, full50 0.018536, 24/23개 영상에 분산).
+- v1.2 amendment: 이 경로는 `seed`를 소비하지 않아 `effective_seed_count=1`이다.
+  같은 gate threshold를 정직하게 재적용하면 few10 기준 **`NOT_PASSED`**로
+  뒤집힌다. source-paired h_add(원본이 이미 오탐이던 경우 제외)는 raw 대비
+  약 47~51% 낮고, full50은 prevalence 조건 미달이다.
+- 결론: **P1 현상 자체는 존재하지만(effective seed 1개, video 전반에 분산),
+  "여러 독립 seed에 걸쳐 재현"과 "reconstruction이 만든 오탐이 두 정책 모두
+  prevalence 기준을 만족"이라는 더 강한 주장은 아직 성립하지 않는다.**
+- 근거: [v1.1 결과·감사](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md),
+  [v1.2 amendment](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md),
+  [보존 결과](../../results/negative_semantics_g1_pilot_rtx4080_v1_1/README.md)
+
 ## 현재 임시 결정
 
-- bit-depth: `fixed_int4`
+- ETRI 신규 기본 bit-depth: `fixed_int6`
+- G1 v1.1 stress bit-depth: `fixed_int4` 유지
 - selector: fixed. proxy SKEM은 현재 이점 없음.
 - guide: `candidate_both_omit`을 opt-in 개발 후보로 사용.
 - decoder: `few10`을 잠정 후보, `full50`을 보수적 기준으로 유지.
-- 합친 잠정 후보: **`fixed_int4 + candidate_both_omit + few10`**.
-- 이 후보를 final/best generalized operating point라고 부르면 안 된다.
+- 실측된 과거 잠정 후보: **`fixed_int4 + candidate_both_omit + few10`**.
+- 신규 ETRI 목표 조합: **`fixed_int6 + candidate_both_omit + few10`**이며 bridge
+  validation 전에는 실측 후보나 final/best generalized operating point라고 부르지 않는다.
 
 ## held-out 검증 상태
 
@@ -153,29 +226,39 @@ source_commit: 7089b24
   명시적으로 연기**했다. 취소하거나 통과한 것으로 간주하지 않는다.
 - 기존 개발 10영상으로 threshold를 더 튜닝하지 않는다.
 - 새 데이터가 준비되면 권장 20영상 이상, 영상당 100 frame으로 다음 3조건을 비교한다.
-  1. `fixed_int4 + baseline + full50`
-  2. `fixed_int4 + both-omit + full50`
-  3. `fixed_int4 + both-omit + few10`
+  1. `fixed_int6 + baseline + full50`
+  2. `fixed_int6 + both-omit + full50`
+  3. `fixed_int6 + both-omit + few10`
+- `fixed_int4 + both-omit`은 G1 stress reference와 int6 bridge 비교점으로 별도 보존한다.
 - 최종 판정에서는 평균뿐 아니라 hallucination/additional-object paired CI 상한까지
   margin 안에 들어와야 한다.
 
 ## 바로 이어서 할 작업
 
-1. **guide Tx/Rx 계약 정리**
+1. **int6 bridge 정식 GPU 실행 (코드·설정·테스트는 완료, 실행만 남음)**
+   - `docs/experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md`의
+     명령대로 preflight → smoke → 정식 실행 순서를 tmux에서 수행한다.
+   - `int6_bridge_summary.json`을 판독해 exact byte/PSNR·SSIM·LPIPS/latency
+     delta와 quality gate, raw/source-paired additional-object, ghost를
+     확인하고 날짜 문서·`results/`에 보존한다.
+   - G1 v1.1(240/240 완료, declared-seed `PASSED`)과 v1.2 amendment
+     (effective-seed 기준 `NOT_PASSED`, full50 source-paired h_add 미달)는
+     이미 끝났다 — 재실행하지 않는다.
+2. **guide Tx/Rx 계약 정리**
    - both-omit을 명시적 opt-in 정책으로 고정한다.
    - baseline 동작을 유지하고 manifest, packet accounting, resume signature에 정책을
      기록한다.
-2. **verifier를 실제 sampler에 연결**
+3. **verifier를 실제 sampler에 연결**
    - 현재 결정·로그만 하는 action을 retry, stop, negative prompt, prompt emphasis,
      fallback에 실제 반영한다.
    - 최대 retry, 실패 fallback, 추가 지연·시도 횟수·추가 전송 byte를 기록한다.
-3. **verifier 폐루프 ablation**
+4. **verifier 폐루프 ablation**
    - OFF / 로그 전용 / retry·stop / prompt 제어 포함 조건을 비교한다.
    - 품질, hallucination, temporal, 추가 연산량과 지연을 함께 본다.
-4. **동적 전송 예산 controller**
+5. **동적 전송 예산 controller**
    - 채널 상태, uncertainty, verifier 위험도로 전송량과 복원 연산량을 결정한다.
    - feedback, retransmission byte, RTT를 accounting에 포함한다.
-5. **데이터 준비 후 held-out과 최종 문서 마감**
+6. **데이터 준비 후 held-out과 최종 문서 마감**
    - 최종 operating point, paired CI, Pareto 표·그래프·재현 명령·checksum을 확정한다.
 
 ## 작업 시 주의할 과학적 경계

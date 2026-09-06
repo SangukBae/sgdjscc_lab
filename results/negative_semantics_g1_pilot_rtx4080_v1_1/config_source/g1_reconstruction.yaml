@@ -1,0 +1,28 @@
+# G1 reconstruction config. Captions are generated once from source frames by
+# run_negative_semantics_g1.py and supplied through the dataset manifest.
+# Keeping BLIP2 out of the reconstruction process lets the frozen SGD-JSCC
+# diffusion path fit on one 16 GiB RTX 4080 without changing transmitted text.
+_defaults_:
+  - ../../base/channel/awgn
+  - ../../base/model/sgdjscc
+  - ../../base/infer/awgn
+  - ../../base/eval/default
+  - ../../base/video/default
+
+use_text: false
+use_phase4: false
+use_phase5: false
+
+# Match the previously frozen fixed_int4 operating point. Every source
+# timestep still receives an output record: inter-frames may legitimately
+# reuse a prior reconstruction, which is part of the temporal phenomenon G1
+# is designed to measure.
+keyframe:
+  selector: fixed
+  max_gop: 16
+temporal:
+  reuse_threshold: 0.2
+
+video_io:
+  save_recon_frames: true
+  save_recon_video: true

@@ -1,0 +1,135 @@
+{
+  "audit_id": "negative_semantics_g1_v1_1_run_audit",
+  "checks": [
+    {
+      "check_id": "run_spec_not_smoke",
+      "evidence": {
+        "smoke": false
+      },
+      "passed": true
+    },
+    {
+      "check_id": "run_spec_heldout_not_accessed",
+      "evidence": {
+        "heldout_accessed": false
+      },
+      "passed": true
+    },
+    {
+      "check_id": "run_spec_forty_ovis_pilot_videos",
+      "evidence": {
+        "video_count": 40
+      },
+      "passed": true
+    },
+    {
+      "check_id": "run_spec_both_policies_present",
+      "evidence": {
+        "policies": {
+          "few10": 10,
+          "full50": 50
+        }
+      },
+      "passed": true
+    },
+    {
+      "check_id": "run_spec_three_declared_seeds",
+      "evidence": {
+        "seeds": [
+          2025,
+          2026,
+          2027
+        ]
+      },
+      "passed": true
+    },
+    {
+      "check_id": "child_runs_240_of_240_zero_failures",
+      "evidence": {
+        "all_run_status_completed": true,
+        "child_run_count": 6,
+        "missing_children": [],
+        "total_failed_pairs": 0,
+        "total_videos": 240
+      },
+      "passed": true
+    },
+    {
+      "check_id": "detection_rows_nonempty_and_seven_concepts",
+      "evidence": {
+        "distinct_concepts": [
+          "bicycle",
+          "bird",
+          "cat",
+          "dog",
+          "motorcycle",
+          "person",
+          "vehicle"
+        ],
+        "row_count": 108990
+      },
+      "passed": true
+    },
+    {
+      "check_id": "gate_summary_evidence_scope_is_ovis_pilot_g1",
+      "evidence": {
+        "evidence_scope": "OVIS_PILOT_G1",
+        "heldout_accessed": false
+      },
+      "passed": true
+    },
+    {
+      "check_id": "gate_checks_all_recorded_true",
+      "evidence": {
+        "gate_checks": {
+          "additional_event_count": true,
+          "affected_seed_count": true,
+          "affected_video_count": true,
+          "all_policies_present": true,
+          "all_seeds_present": true,
+          "evaluator_calibration_passed": true,
+          "formal_not_smoke": true,
+          "h_add_prevalence": true,
+          "not_concentrated_in_one_seed": true,
+          "not_concentrated_in_one_video": true,
+          "selector_weight_separation": true
+        },
+        "gate_status": "PASSED"
+      },
+      "passed": true
+    },
+    {
+      "check_id": "no_heldout_source_among_run_videos",
+      "evidence": {
+        "heldout_like_video_ids": []
+      },
+      "passed": true
+    },
+    {
+      "check_id": "effective_seed_count_reported",
+      "evidence": {
+        "effective_seed_summary": {
+          "few10": {
+            "declared_seed_count": 3,
+            "deterministic_collapse": true,
+            "effective_seed_count": 1
+          },
+          "full50": {
+            "declared_seed_count": 3,
+            "deterministic_collapse": true,
+            "effective_seed_count": 1
+          }
+        },
+        "interpretation": "reconstruction scores are bit-identical across nominal seeds for this deterministic decoder path; effective_seed_count=1 per policy does not invalidate the run, but seed-level variance/CI claims should use the v1.2 effective-seed view"
+      },
+      "passed": true
+    }
+  ],
+  "declared_gate_status": "PASSED",
+  "paper_claimable_scope_note": "runner PASSED verifies the 240/240 OVIS Pilot inference+evaluation completed without failure and without held-out access. It is a narrower claim than 'method generalizes': the declared gate_status PASSED reflects the frozen fixed_int4 stress configuration only, on 3 nominal but effective_seed_count=1 seeds, and additional-object prevalence has not been separated into source-carried vs. pipeline-introduced until the v1.2 source-paired metric is applied.",
+  "run_root": "/home/sangukbae/ETRI/Semantic/sgdjscc_lab/outputs/negative_semantics_g1_pilot_rtx4080_v1_1",
+  "runner_gate_status": "PASSED",
+  "runner_missing_required_checks": [],
+  "runner_required_check_count": 10,
+  "runner_required_checks_passed": 10
+}

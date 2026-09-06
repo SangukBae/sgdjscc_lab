@@ -1,0 +1,108 @@
+# Frozen G1 phenomenon protocol. Changes after the first formal reconstruction
+# require a version bump and a dated amendment before any affected output is
+# interpreted as paper evidence.
+protocol_id: negative_semantics_g1_v1_1
+protocol_version: 1.1.0
+frozen_at: "2026-09-03"
+freeze_status: frozen
+parent_protocol: negative_semantics_g0_v1_2
+supersedes_protocol_version: 1.0.0
+amendment_record: docs/experiments/2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md
+
+scope:
+  gate: G1
+  purpose: establish_additional_object_and_ghost_track_phenomenon
+  training: false
+  evidence_split: pilot
+  heldout_access: prohibited
+  smoke_outputs_are_evidence: false
+
+data:
+  g0_manifest: data/negative_semantics/g0/dataset_split_manifest.json
+  g0_manifest_sha256: data/negative_semantics/g0/dataset_split_manifest.sha256
+  event_annotations: data/negative_semantics/g0/ovis_official_gt_event_annotations.jsonl
+  category_mapping: data/negative_semantics/g0/ovis_category_mapping.json
+  generated_dataset_root: data/negative_semantics/g1/pilot
+  expected_videos: 40
+  expected_independent_events: 40
+  annotation_unit: annotated_timestep
+  source_frame_stride: 5
+
+reconstruction:
+  config: configs/experiments/negative_semantics/g1_reconstruction.yaml
+  base_config: fixed_int4
+  guide_profile: candidate_both_omit
+  selector: fixed
+  fixed_max_gop: 16
+  temporal_reuse_threshold: 0.2
+  snr_db: 10.0
+  digital_step_policy: fixed_reference
+  fixed_reference_snr_db: 10.0
+  spatial_transform:
+    image_long_side: 512
+    preserve_aspect_ratio: true
+    upscale: false
+    interpolation: bilinear_antialias
+    pad_to_multiple: 128
+    padding_alignment: centered
+    padding_value: 0
+    extra_pixel_side: bottom_right
+    evaluation_crop_internal_padding: true
+  policies:
+    few10: 10
+    full50: 50
+  seeds: [2025, 2026, 2027]
+  captions:
+    model_id: Salesforce/blip2-opt-2.7b-coco
+    source_only: true
+    generated_before_internal_padding: true
+    one_caption_per_annotated_timestep: true
+
+evaluator:
+  model_id: google/owlv2-base-patch16-ensemble
+  selector_model_ids: []
+  must_not_share_weights_with_selector: true
+  method_and_budget_hidden_from_detector: true
+  concepts: [person, bird, cat, dog, bicycle, motorcycle, vehicle]
+  queries:
+    person: a person
+    bird: a bird
+    cat: a cat
+    dog: a dog
+    bicycle: a bicycle
+    motorcycle: a motorcycle
+    vehicle: a vehicle
+  threshold_grid: [0.025, 0.05, 0.075, 0.10, 0.125, 0.15, 0.20, 0.25, 0.30]
+  calibration:
+    source_gt_recall_min: 0.70
+    source_gt_false_positive_rate_max: 0.10
+    selection_rule: highest_threshold_meeting_both_constraints
+    fail_closed: true
+
+metrics:
+  h_add:
+    unit: video_annotated_timestep_concept
+    definition: detector_positive_when_official_gt_concept_absent_divided_by_absent_opportunities
+  additional_event:
+    definition: maximal_consecutive_positive_run_for_same_video_seed_policy_concept_while_gt_absent
+  ghost_survival_auc:
+    event_type: EXIT
+    horizon_annotated_timesteps: 16
+    right_censored: exclude_and_report
+  statistics:
+    cluster_unit: video
+    bootstrap_iterations: 5000
+    confidence_level: 0.95
+
+gate:
+  primary_policy: few10
+  h_add_min: 0.01
+  additional_events_min: 20
+  affected_videos_min: 5
+  affected_seeds_min: 2
+  max_single_video_event_share: 0.50
+  max_single_seed_event_share: 0.75
+  require_evaluator_calibration: true
+  require_selector_weight_separation: true
+  dependency_policy: full50
+  smoke_video_id: ovis_valid_1b664206

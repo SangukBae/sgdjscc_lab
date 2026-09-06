@@ -1,0 +1,1054 @@
+{
+  "amendment": "negative_semantics_g1_v1_2",
+  "amendment_record": "docs/experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md",
+  "declared_deterministic_decoder": true,
+  "derivation_signature": "81598a9c80d523a791d15bf0641870c5d149915348f5d30b86495028a188232f",
+  "effective_seed_view": {
+    "by_policy": {
+      "few10": {
+        "absent_opportunities": 15106,
+        "additional_detections": 299,
+        "additional_event_count": 165,
+        "affected_seed_count": 1,
+        "affected_video_count": 24,
+        "h_add": 0.019793459552495698,
+        "h_add_video_clustered_bootstrap_95ci": {
+          "lower": 0.009544468546637744,
+          "upper": 0.03331426937374893
+        },
+        "max_single_seed_event_share": 1.0,
+        "max_single_video_event_share": 0.18181818181818182
+      },
+      "full50": {
+        "absent_opportunities": 15106,
+        "additional_detections": 280,
+        "additional_event_count": 147,
+        "affected_seed_count": 1,
+        "affected_video_count": 23,
+        "h_add": 0.018535681186283594,
+        "h_add_video_clustered_bootstrap_95ci": {
+          "lower": 0.008837669683257918,
+          "upper": 0.0311427994888007
+        },
+        "max_single_seed_event_share": 1.0,
+        "max_single_video_event_share": 0.19727891156462585
+      }
+    },
+    "ghost_survival": {
+      "by_policy": {
+        "few10": {
+          "mean_auc": 0.015625,
+          "uncensored_count": 4
+        },
+        "full50": {
+          "mean_auc": 0.0,
+          "uncensored_count": 4
+        }
+      },
+      "horizon_annotated_timesteps": 16,
+      "right_censored_count": 12,
+      "uncensored": [
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_016_exit",
+          "policy": "few10",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_aa925437"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_016_exit",
+          "policy": "full50",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_aa925437"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_017_exit",
+          "policy": "few10",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_1b664206"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_017_exit",
+          "policy": "full50",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_1b664206"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_018_exit",
+          "policy": "few10",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_d084134f"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_018_exit",
+          "policy": "full50",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_d084134f"
+        },
+        {
+          "auc": 0.0625,
+          "event_id": "ovis_gt_019_exit",
+          "policy": "few10",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_2ab06287"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_019_exit",
+          "policy": "full50",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_2ab06287"
+        }
+      ],
+      "unique_exit_event_count": 10
+    },
+    "note": "recomputed using only the canonical (deduplicated) seed per policy"
+  },
+  "gate_reapplication": {
+    "checks_that_flip_to_fail_under_effective_seeds": [
+      "affected_seed_count",
+      "not_concentrated_in_one_seed"
+    ],
+    "effective_seed_checks": {
+      "additional_event_count": true,
+      "affected_seed_count": false,
+      "affected_video_count": true,
+      "h_add_prevalence": true,
+      "not_concentrated_in_one_seed": false,
+      "not_concentrated_in_one_video": true
+    },
+    "effective_seed_status": "NOT_PASSED",
+    "primary_policy": "few10",
+    "raw_declared_seed_checks": {
+      "additional_event_count": true,
+      "affected_seed_count": true,
+      "affected_video_count": true,
+      "h_add_prevalence": true,
+      "not_concentrated_in_one_seed": true,
+      "not_concentrated_in_one_video": true
+    },
+    "raw_declared_seed_status": "PASSED"
+  },
+  "heldout_accessed": false,
+  "primary_policy": "few10",
+  "protocol_id": "negative_semantics_g1_v1_2",
+  "raw_v1_1_view": {
+    "by_policy": {
+      "few10": {
+        "absent_opportunities": 45318,
+        "additional_detections": 897,
+        "additional_event_count": 495,
+        "affected_seed_count": 3,
+        "affected_video_count": 24,
+        "h_add": 0.019793459552495698,
+        "h_add_video_clustered_bootstrap_95ci": {
+          "lower": 0.009544468546637744,
+          "upper": 0.03331426937374893
+        },
+        "max_single_seed_event_share": 0.3333333333333333,
+        "max_single_video_event_share": 0.18181818181818182
+      },
+      "full50": {
+        "absent_opportunities": 45318,
+        "additional_detections": 840,
+        "additional_event_count": 441,
+        "affected_seed_count": 3,
+        "affected_video_count": 23,
+        "h_add": 0.018535681186283594,
+        "h_add_video_clustered_bootstrap_95ci": {
+          "lower": 0.008837669683257918,
+          "upper": 0.0311427994888007
+        },
+        "max_single_seed_event_share": 0.3333333333333333,
+        "max_single_video_event_share": 0.19727891156462585
+      }
+    },
+    "ghost_survival": {
+      "by_policy": {
+        "few10": {
+          "mean_auc": 0.015625,
+          "uncensored_count": 12
+        },
+        "full50": {
+          "mean_auc": 0.0,
+          "uncensored_count": 12
+        }
+      },
+      "horizon_annotated_timesteps": 16,
+      "right_censored_count": 36,
+      "uncensored": [
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_016_exit",
+          "policy": "few10",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_aa925437"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_016_exit",
+          "policy": "few10",
+          "seed": 2026,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_aa925437"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_016_exit",
+          "policy": "few10",
+          "seed": 2027,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_aa925437"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_016_exit",
+          "policy": "full50",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_aa925437"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_016_exit",
+          "policy": "full50",
+          "seed": 2026,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_aa925437"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_016_exit",
+          "policy": "full50",
+          "seed": 2027,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_aa925437"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_017_exit",
+          "policy": "few10",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_1b664206"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_017_exit",
+          "policy": "few10",
+          "seed": 2026,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_1b664206"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_017_exit",
+          "policy": "few10",
+          "seed": 2027,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_1b664206"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_017_exit",
+          "policy": "full50",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_1b664206"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_017_exit",
+          "policy": "full50",
+          "seed": 2026,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_1b664206"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_017_exit",
+          "policy": "full50",
+          "seed": 2027,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_1b664206"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_018_exit",
+          "policy": "few10",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_d084134f"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_018_exit",
+          "policy": "few10",
+          "seed": 2026,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_d084134f"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_018_exit",
+          "policy": "few10",
+          "seed": 2027,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_d084134f"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_018_exit",
+          "policy": "full50",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_d084134f"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_018_exit",
+          "policy": "full50",
+          "seed": 2026,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_d084134f"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_018_exit",
+          "policy": "full50",
+          "seed": 2027,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_d084134f"
+        },
+        {
+          "auc": 0.0625,
+          "event_id": "ovis_gt_019_exit",
+          "policy": "few10",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_2ab06287"
+        },
+        {
+          "auc": 0.0625,
+          "event_id": "ovis_gt_019_exit",
+          "policy": "few10",
+          "seed": 2026,
+          "survival": [
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_2ab06287"
+        },
+        {
+          "auc": 0.0625,
+          "event_id": "ovis_gt_019_exit",
+          "policy": "few10",
+          "seed": 2027,
+          "survival": [
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_2ab06287"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_019_exit",
+          "policy": "full50",
+          "seed": 2025,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_2ab06287"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_019_exit",
+          "policy": "full50",
+          "seed": 2026,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_2ab06287"
+        },
+        {
+          "auc": 0.0,
+          "event_id": "ovis_gt_019_exit",
+          "policy": "full50",
+          "seed": 2027,
+          "survival": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+          ],
+          "video_id": "ovis_valid_2ab06287"
+        }
+      ]
+    },
+    "note": "unchanged v1.1 definition; seeds counted as declared (2025/2026/2027), not deduplicated"
+  },
+  "read_only_derivation": true,
+  "reconstruction_frame_hash_manifest": {
+    "few10": {
+      "2025": "aa3ad6a4f4127c817836e28987e0e06ffef3845b6c4129b7ce3b3ca6cbb3c9d1",
+      "2026": "aa3ad6a4f4127c817836e28987e0e06ffef3845b6c4129b7ce3b3ca6cbb3c9d1",
+      "2027": "aa3ad6a4f4127c817836e28987e0e06ffef3845b6c4129b7ce3b3ca6cbb3c9d1"
+    },
+    "full50": {
+      "2025": "a053790824eef314a31df0fb89cd2a4d5495c3617283287c97a4fb5b66697b9b",
+      "2026": "a053790824eef314a31df0fb89cd2a4d5495c3617283287c97a4fb5b66697b9b",
+      "2027": "a053790824eef314a31df0fb89cd2a4d5495c3617283287c97a4fb5b66697b9b"
+    }
+  },
+  "seed_evidence_hash_groups": {
+    "few10": {
+      "canonical_seeds": [
+        2025
+      ],
+      "declared_seed_count": 3,
+      "deterministic_collapse": true,
+      "effective_seed_count": 1,
+      "seed_to_canonical": {
+        "2025": 2025,
+        "2026": 2025,
+        "2027": 2025
+      }
+    },
+    "full50": {
+      "canonical_seeds": [
+        2025
+      ],
+      "declared_seed_count": 3,
+      "deterministic_collapse": true,
+      "effective_seed_count": 1,
+      "seed_to_canonical": {
+        "2025": 2025,
+        "2026": 2025,
+        "2027": 2025
+      }
+    }
+  },
+  "seed_evidence_method": "score_and_hash_dual_verified",
+  "seed_groups": {
+    "few10": {
+      "canonical_seeds": [
+        2025
+      ],
+      "declared_seed_count": 3,
+      "deterministic_collapse": true,
+      "effective_seed_count": 1,
+      "seed_to_canonical": {
+        "2025": 2025,
+        "2026": 2025,
+        "2027": 2025
+      }
+    },
+    "full50": {
+      "canonical_seeds": [
+        2025
+      ],
+      "declared_seed_count": 3,
+      "deterministic_collapse": true,
+      "effective_seed_count": 1,
+      "seed_to_canonical": {
+        "2025": 2025,
+        "2026": 2025,
+        "2027": 2025
+      }
+    }
+  },
+  "source_dataset_manifest_sha256": "6e1bd7d48db154792fa4a9f31fce681fda481070be9af2f6a2e1cfc810b1fc84",
+  "source_detection_rows_count": 108990,
+  "source_detection_rows_sha256": "49886142f71f84b3532c2792fabecefc59a0e0f1bede671621091b9a1514607c",
+  "source_evaluator_freeze_sha256": "237d86af2e4a34728f6180edd967699db09ee53006f615b1cf6db83f6da448b9",
+  "source_gt_index_sha256": "2ba1173e05c263bb00c83256d19776f9dc44bc6d7b1ac3c9438c1a1664350cee",
+  "source_paired_additional_object": {
+    "declared_seeds": {
+      "few10": {
+        "absent_opportunities": 45318,
+        "raw_additional_detections": 897,
+        "raw_h_add": 0.019793459552495698,
+        "source_paired_additional_detections": 468,
+        "source_paired_h_add": 0.010493038272684468,
+        "source_paired_opportunities": 44601,
+        "unpairable_opportunities": 0
+      },
+      "full50": {
+        "absent_opportunities": 45318,
+        "raw_additional_detections": 840,
+        "raw_h_add": 0.018535681186283594,
+        "source_paired_additional_detections": 405,
+        "source_paired_h_add": 0.009080513889823097,
+        "source_paired_opportunities": 44601,
+        "unpairable_opportunities": 0
+      }
+    },
+    "effective_seeds": {
+      "few10": {
+        "absent_opportunities": 15106,
+        "raw_additional_detections": 299,
+        "raw_h_add": 0.019793459552495698,
+        "source_paired_additional_detections": 156,
+        "source_paired_h_add": 0.010493038272684468,
+        "source_paired_opportunities": 14867,
+        "unpairable_opportunities": 0
+      },
+      "full50": {
+        "absent_opportunities": 15106,
+        "raw_additional_detections": 280,
+        "raw_h_add": 0.018535681186283594,
+        "source_paired_additional_detections": 135,
+        "source_paired_h_add": 0.009080513889823097,
+        "source_paired_opportunities": 14867,
+        "unpairable_opportunities": 0
+      }
+    }
+  },
+  "source_protocol_sha256": "9edda50e41bafecede5f7d5e50fc6940ee7c151d1aa761a2a30f00f51d68c2da",
+  "source_run_git_commit": "aae9e268dccce2cf3db9727720fa8f64883c1ad0",
+  "source_run_root": "/home/sangukbae/ETRI/Semantic/sgdjscc_lab/outputs/negative_semantics_g1_pilot_rtx4080_v1_1",
+  "threshold": 0.2
+}

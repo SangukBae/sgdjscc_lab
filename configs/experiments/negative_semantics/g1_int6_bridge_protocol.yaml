@@ -1,0 +1,145 @@
+# Frozen fixed_int4 vs fixed_int6 bridge protocol. Purpose: quantify whether
+# the 2026-09-04 ETRI operating-point change (fixed_int4 -> fixed_int6) holds
+# up under the same OVIS Pilot / both-omit / few10+full50 conditions G1 used,
+# without re-litigating any G1 gate decision. Changes after the first formal
+# reconstruction require a version bump and a dated amendment before any
+# affected output is interpreted as paper evidence, same discipline as
+# g1_protocol.yaml.
+protocol_id: negative_semantics_int6_bridge_v1_0
+protocol_version: 1.0.0
+frozen_at: "2026-09-06"
+freeze_status: frozen
+parent_protocol: negative_semantics_g1_v1_1
+amendment_record: docs/experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md
+
+scope:
+  purpose: paired_fixed_int4_vs_fixed_int6_comparison_under_g1_conditions
+  training: false
+  evidence_split: pilot
+  heldout_access: prohibited
+  smoke_outputs_are_evidence: false
+
+data:
+  # Identical to G1: reuses the same materialized OVIS Pilot view. This
+  # protocol never re-runs `prepare_negative_semantics_g1.py` with different
+  # inputs and never reads a different split.
+  generated_dataset_root: data/negative_semantics/g1/pilot
+  expected_videos: 40
+
+reconstruction:
+  config: configs/experiments/negative_semantics/g1_reconstruction.yaml
+  # Both bit depths are run under the identical guide/selector/temporal/
+  # spatial contract G1 froze; only `--configs` (bit depth) differs.
+  bit_depths: [fixed_int4, fixed_int6]
+  reference_bit_depth: fixed_int4
+  guide_profile: candidate_both_omit
+  selector: fixed
+  fixed_max_gop: 16
+  temporal_reuse_threshold: 0.2
+  snr_db: 10.0
+  digital_step_policy: fixed_reference
+  fixed_reference_snr_db: 10.0
+  spatial_transform:
+    image_long_side: 512
+    preserve_aspect_ratio: true
+    upscale: false
+    interpolation: bilinear_antialias
+    pad_to_multiple: 128
+    padding_alignment: centered
+    padding_value: 0
+    extra_pixel_side: bottom_right
+    evaluation_crop_internal_padding: true
+  policies:
+    few10: 10
+    full50: 50
+  # A single seed, not three: the v1.2 amendment established that this
+  # reconstruction path never consumes `seed` (bit-identical PNGs/scores
+  # across nominal seeds), so declaring three seeds here would just restate
+  # the same G1 v1.1 finding rather than adding statistical power. Using
+  # `effective_seed_count=1` from the start avoids re-triplicating the exact
+  # bookkeeping problem the v1.2 amendment corrected after the fact.
+  seeds: [2025]
+  declared_deterministic_decoder: true
+  captions:
+    # Reused, not regenerated: BLIP2 captions are computed from source frames
+    # only and do not depend on bit depth. They already exist at
+    # data/negative_semantics/g1/pilot/captions/ from the G1 v1.1 run.
+    reuse_from: data/negative_semantics/g1/pilot/captions
+    model_id: Salesforce/blip2-opt-2.7b-coco
+
+reuse:
+  # fixed_int4 reconstructions/scores are never recomputed: they are read
+  # directly from the frozen G1 v1.1 run (PNG frames + per_video_metrics.csv
+  # for accounting, detection_rows.jsonl filtered to seed 2025 for detector
+  # scores). Only fixed_int6 reconstruction+scoring is new GPU work.
+  int4_source_run: outputs/negative_semantics_g1_pilot_rtx4080_v1_1
+  int4_source_protocol_id: negative_semantics_g1_v1_1
+  int4_source_protocol_sha256: 9edda50e41bafecede5f7d5e50fc6940ee7c151d1aa761a2a30f00f51d68c2da
+
+evaluator:
+  # Reused verbatim from the G1 v1.1 frozen calibration -- never recalibrated
+  # per bit depth. Recalibrating per condition would make the evaluator a
+  # function of the thing being measured, which the negative-semantics
+  # protocol family treats as a fail-closed violation (see
+  # `evaluator.must_not_share_weights_with_selector` in g1_protocol.yaml).
+  reuse_threshold_from: outputs/negative_semantics_g1_pilot_rtx4080_v1_1/evaluator/evaluator_freeze.json
+  reuse_source_scores_from: outputs/negative_semantics_g1_pilot_rtx4080_v1_1/evaluator/source
+  model_id: google/owlv2-base-patch16-ensemble
+  concepts: [person, bird, cat, dog, bicycle, motorcycle, vehicle]
+  queries:
+    person: a person
+    bird: a bird
+    cat: a cat
+    dog: a dog
+    bicycle: a bicycle
+    motorcycle: a motorcycle
+    vehicle: a vehicle
+
+metrics:
+  h_add:
+    unit: video_annotated_timestep_concept
+    definition: detector_positive_when_official_gt_concept_absent_divided_by_absent_opportunities
+  source_paired_h_add:
+    definition: h_add_restricted_to_source_frame_detector_negative_opportunities
+  additional_event:
+    definition: maximal_consecutive_positive_run_for_same_video_policy_concept_while_gt_absent
+  ghost_survival_auc:
+    event_type: EXIT
+    horizon_annotated_timesteps: 16
+    right_censored: exclude_and_report
+  accounting:
+    exact_fields: [total_bundle_bytes, total_bundle_bytes_per_frame, mean_psnr, mean_ssim, mean_lpips, total_elapsed_s]
+    proxy_fields: [analog_channel_symbols_total]
+  lpips:
+    # Computed post-hoc by the bridge script itself (both fixed_int4 and
+    # fixed_int6 ran with --no-lpips; see
+    # scripts/run_negative_semantics_int6_bridge.py's module docstring), with
+    # ONE shared evaluator instance for the whole run, never recreated per
+    # condition. `net` is the only value preflight checks against a frozen
+    # expectation; package_version/preprocessing/state_dict_sha256 are
+    # recorded (not compared to a pre-declared golden value) so a resumed
+    # run under a different environment fails closed via run_spec.json's
+    # exact-match resume check instead of silently comparing under
+    # different weights.
+    net: vgg
+    package: lpips
+  statistics:
+    cluster_unit: video
+    bootstrap_iterations: 5000
+    confidence_level: 0.95
+  quality_gate:
+    # Same numeric thresholds `run_transmission_reduction_eval.py` already
+    # uses for bit-depth comparisons (see e.g. child run summary.json
+    # `quality_gate`), applied to fixed_int6 vs. the fixed_int4 reference.
+    psnr_drop_db_max: 0.5
+    ssim_drop_max: 0.01
+    lpips_rise_max: 0.02
+
+gate:
+  # This bridge does not define a pass/fail gate of its own -- G1's
+  # phenomenon gate already governs whether additional-object/ghost-track
+  # is real; this protocol only asks "does fixed_int6 change that finding
+  # relative to fixed_int4 under otherwise-identical conditions?" and reports
+  # exact-byte/quality/hallucination deltas with CI for a human decision.
+  smoke_video_id: ovis_valid_1b664206
+  require_g0_pass: true

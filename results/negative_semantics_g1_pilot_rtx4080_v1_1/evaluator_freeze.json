@@ -1,0 +1,119 @@
+{
+  "calibration_uses_reconstruction_outputs": false,
+  "candidates": [
+    {
+      "eligible": false,
+      "false_positive": 2915,
+      "false_positive_rate": 0.19296968092148814,
+      "negative_opportunities": 15106,
+      "positive_opportunities": 3059,
+      "recall": 0.978751225890814,
+      "threshold": 0.025,
+      "true_positive": 2994
+    },
+    {
+      "eligible": false,
+      "false_positive": 1712,
+      "false_positive_rate": 0.11333245068184827,
+      "negative_opportunities": 15106,
+      "positive_opportunities": 3059,
+      "recall": 0.9676364825106244,
+      "threshold": 0.05,
+      "true_positive": 2960
+    },
+    {
+      "eligible": true,
+      "false_positive": 1115,
+      "false_positive_rate": 0.07381173043823647,
+      "negative_opportunities": 15106,
+      "positive_opportunities": 3059,
+      "recall": 0.9545603138280484,
+      "threshold": 0.075,
+      "true_positive": 2920
+    },
+    {
+      "eligible": true,
+      "false_positive": 724,
+      "false_positive_rate": 0.04792797563881901,
+      "negative_opportunities": 15106,
+      "positive_opportunities": 3059,
+      "recall": 0.9405034324942791,
+      "threshold": 0.1,
+      "true_positive": 2877
+    },
+    {
+      "eligible": true,
+      "false_positive": 531,
+      "false_positive_rate": 0.03515159539255925,
+      "negative_opportunities": 15106,
+      "positive_opportunities": 3059,
+      "recall": 0.9218698921216084,
+      "threshold": 0.125,
+      "true_positive": 2820
+    },
+    {
+      "eligible": true,
+      "false_positive": 410,
+      "false_positive_rate": 0.02714153316562955,
+      "negative_opportunities": 15106,
+      "positive_opportunities": 3059,
+      "recall": 0.8999673095782935,
+      "threshold": 0.15,
+      "true_positive": 2753
+    },
+    {
+      "eligible": true,
+      "false_positive": 239,
+      "false_positive_rate": 0.01582152786972064,
+      "negative_opportunities": 15106,
+      "positive_opportunities": 3059,
+      "recall": 0.8349133703824779,
+      "threshold": 0.2,
+      "true_positive": 2554
+    },
+    {
+      "eligible": false,
+      "false_positive": 152,
+      "false_positive_rate": 0.01006222692969681,
+      "negative_opportunities": 15106,
+      "positive_opportunities": 3059,
+      "recall": 0.6917293233082706,
+      "threshold": 0.25,
+      "true_positive": 2116
+    },
+    {
+      "eligible": false,
+      "false_positive": 100,
+      "false_positive_rate": 0.006619886137958427,
+      "negative_opportunities": 15106,
+      "positive_opportunities": 3059,
+      "recall": 0.5420071918927755,
+      "threshold": 0.3,
+      "true_positive": 1658
+    }
+  ],
+  "evaluator_model": {
+    "model_id": "google/owlv2-base-patch16-ensemble",
+    "revision": "cfd3195ba4ea9592eec887ded089f4c08eff231d",
+    "snapshot_path": "/home/sangukbae/.cache/huggingface/hub/models--google--owlv2-base-patch16-ensemble/snapshots/cfd3195ba4ea9592eec887ded089f4c08eff231d"
+  },
+  "max_false_positive_rate": 0.1,
+  "min_recall": 0.7,
+  "protocol_sha256": "9edda50e41bafecede5f7d5e50fc6940ee7c151d1aa761a2a30f00f51d68c2da",
+  "selected_operating_point": {
+    "eligible": true,
+    "false_positive": 239,
+    "false_positive_rate": 0.01582152786972064,
+    "negative_opportunities": 15106,
+    "positive_opportunities": 3059,
+    "recall": 0.8349133703824779,
+    "threshold": 0.2,
+    "true_positive": 2554
+  },
+  "selected_threshold": 0.2,
+  "selection_rule": "highest_threshold_meeting_both_constraints",
+  "selector_model_ids": [],
+  "selector_weight_separation": true,
+  "smoke": false,
+  "status": "PASSED"
+}

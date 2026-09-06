@@ -1,11 +1,12 @@
 ---
 status: active
-updated: 2026-09-03
+updated: 2026-09-06
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 74d72a2
+source_commit: aae9e26
 primary_venue: IEEE Transactions on Multimedia
 fallback_venue: IEEE Transactions on Circuits and Systems for Video Technology
 g0_gate: PASSED
+g1_gate: PASSED_DECLARED_SEED__NOT_PASSED_EFFECTIVE_SEED
 supersedes: docs/reference/paper_writing_notes.md
 ---
 
@@ -58,14 +59,19 @@ P2가 실패하면 현재 제목에서 `Revocable Receiver Memory`를 제거한�
 
 ### 1.1 개발 backbone
 
-- 통신 backbone: `fixed_int4`
+- ETRI 신규 기본 통신 backbone: `fixed_int6`
+- G1 v1.1 현상 확인 backbone: `fixed_int4` stress configuration
 - guide profile: `candidate_both_omit`
 - reconstruction stress policy: `few10`
 - 비교 기준: `full50 + baseline`, `full50 + both-omit`
 - 주요 조건: reliable-digital, fixed-reference 10 dB, seed 2025
 
 `fixed_int4 + both-omit + few10`은 **frozen development stress configuration**이다.
-held-out 검증이 끝난 최종 operating point가 아니다.
+held-out 검증이 끝난 최종 operating point가 아니며 G1 v1.1의 비교 가능성을 위해
+변경하지 않는다. 2026-09-04 이후 신규 ETRI 개발과 G2 이후 primary method는
+`fixed_int6`를 후보로 사용하되, G1 통과 후 동일 조건의 int4/int6 paired bridge
+validation을 먼저 통과해야 한다. 결정 근거는
+[int6 ETRI 운용점 기록](../experiments/2026-09-04_int6_etri_operating_point_decision.md)을 따른다.
 
 현재 개발셋 결과는 다음과 같다.
 
@@ -774,17 +780,45 @@ versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
 - 최소 3 seeds
 - absent opportunity와 additional object를 event/video 단위 집계
 - `full50 + both-omit`도 병행해 sampler-step 의존성 확인
+- G1 통과 후 같은 공개 데이터·seed·diffusion step에서
+  `fixed_int6 + both-omit` bridge condition을 추가해 ETRI 기본 운용점에서도 현상과
+  exact-byte 차이를 확인
 
 **통과 조건**
 
 - hallucination이 한 영상·한 seed에만 집중되지 않음
 - 사전 정의한 최소 prevalence와 event count 충족
 - frozen independent automatic evaluator의 calibration과 selector weight 분리 통과
+- int6 bridge 결과가 없는 동안 G1 int4 prevalence를 int6 운용 성능으로 일반화하지 않음
 
 **실패 시**
 
 - 사전 허용된 범위에서 Pilot dataset만 1회 교체 가능
 - 두 번째 dataset에서도 실패하면 Stop Track
+
+**실행 결과 (2026-09-06)**
+
+- `fixed_int4 + both-omit`, `few10`/`full50`, 3 declared seed로 Pilot
+  40영상 전체(child run 6개 × 40영상 = 240/240)를 완료했다. 실패 0,
+  held-out 미접근. declared-seed 정의로는 위 통과 조건을 모두 만족해
+  `gate_status: PASSED`다.
+- 그러나 v1.2 amendment가 이 reconstruction 경로는 `seed`를 소비하지 않아
+  `effective_seed_count=1`임을 확인했다. 같은 threshold를 effective-seed
+  지표에 재적용하면 "hallucination이 한 seed에만 집중되지 않음" 조건이
+  **FAIL**로 뒤집혀 few10 기준 gate가 `NOT_PASSED`가 된다. 즉 3-seed
+  통과는 실제로 존재하지 않았던 독립성에 의존했다.
+- source-paired additional-object(원본 프레임이 이미 오탐이던 경우를 제외)로
+  다시 계산하면 h_add가 약 47~51% 낮아지고, full50은 사전 정의한
+  `h_add_min` prevalence 조건을 만족하지 못한다.
+- 따라서 이 gate의 **정직한 판정은 "P1 현상이 존재한다(raw, 단일 effective
+  seed, 24/23개 영상에 분산됨)"까지이며, "여러 독립 seed에 걸쳐 재현된다"와
+  "reconstruction이 새로 만든 오탐이 prevalence 기준을 만족한다(특히
+  full50)"는 아직 성립하지 않는다.** G2 진입 전 이 경계를 반영해야 한다.
+- int6 bridge는 코드·설정·테스트를 완료해 실행 준비가 됐고 GPU 실행만
+  남았다.
+- 근거: [G1 v1.1 결과·감사](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md),
+  [G1 v1.2 amendment](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md),
+  [int6 bridge 준비](../experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md)
 
 ### G2. Oracle ABSENT controllability
 

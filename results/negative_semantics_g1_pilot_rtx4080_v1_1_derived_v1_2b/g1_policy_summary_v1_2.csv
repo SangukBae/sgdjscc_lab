@@ -1,0 +1,3 @@
+policy,declared_seed_count,effective_seed_count,raw_h_add,raw_additional_detections,raw_additional_event_count,effective_h_add,effective_additional_detections,effective_additional_event_count,source_paired_h_add_effective,source_paired_additional_detections_effective,source_paired_opportunities_effective
+few10,3,1,0.019793459552495698,897,495,0.019793459552495698,299,165,0.010493038272684468,156,14867
+full50,3,1,0.018535681186283594,840,441,0.018535681186283594,280,147,0.009080513889823097,135,14867

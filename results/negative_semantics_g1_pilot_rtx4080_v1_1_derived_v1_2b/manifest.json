@@ -1,0 +1,111 @@
+{
+  "schema_version": 2,
+  "run_id": "negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2b",
+  "generated_at": "2026-09-06T09:16:03.113579+00:00",
+  "git": {
+    "commit": "aae9e268dccce2cf3db9727720fa8f64883c1ad0",
+    "dirty": true,
+    "branch": "main"
+  },
+  "command": {
+    "text": "python scripts/derive_negative_semantics_g1_v1_2.py --output-root outputs/negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2b",
+    "argv": "unknown",
+    "source": "captured"
+  },
+  "seed": "not_set",
+  "resolved_config": {
+    "status": "config_source_only",
+    "resolved": "unknown",
+    "config_source": {
+      "path": "configs/experiments/negative_semantics/g1_protocol.yaml",
+      "sha256": "9edda50e41bafecede5f7d5e50fc6940ee7c151d1aa761a2a30f00f51d68c2da",
+      "note": "reads the frozen v1.1 protocol's gate/metrics section for threshold reapplication only"
+    }
+  },
+  "dataset": {
+    "ref": "data/negative_semantics/g1/pilot (same OVIS Pilot as v1.1; no new data read)",
+    "hash": "49886142f71f84b3532c2792fabecefc59a0e0f1bede671621091b9a1514607c"
+  },
+  "checkpoints": {
+    "status": "not_set",
+    "items": {}
+  },
+  "environment": {
+    "python_version": "3.9.25",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+    "torch_version": "2.1.0",
+    "cuda_available": true,
+    "cuda_version": "11.8",
+    "gpu_name": "NVIDIA GeForce RTX 4080"
+  },
+  "evaluator_versions": {
+    "owlv2": "google/owlv2-base-patch16-ensemble (reused v1.1 frozen threshold, not recalibrated)"
+  },
+  "original_artifact_paths": {
+    "run_root": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2b"
+  },
+  "artifacts": {
+    "g1_summary_v1_2.json": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2b/g1_summary_v1_2.json",
+      "copied_sha256": "8c5f302501da8c54d1e93486edfd40476cf49f8ff4848987e8643c7ff870908f",
+      "original_path": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2b/g1_summary_v1_2.json",
+      "original_sha256": "8c5f302501da8c54d1e93486edfd40476cf49f8ff4848987e8643c7ff870908f",
+      "matches": true
+    },
+    "g1_policy_summary_v1_2.csv": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2b/g1_policy_summary_v1_2.csv",
+      "copied_sha256": "2a8c144ea72a3f2e52ccbaee0ce217675eed97ea4a5ff1e07c1c41698ec4cbf9",
+      "original_path": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2b/g1_policy_summary_v1_2.csv",
+      "original_sha256": "2a8c144ea72a3f2e52ccbaee0ce217675eed97ea4a5ff1e07c1c41698ec4cbf9",
+      "matches": true
+    }
+  },
+  "accounting": {
+    "exact_fields": [
+      "reconstruction_frame_hash_manifest (real sha256 of all 15,570 v1.1 reconstruction PNGs)",
+      "effective_seed_groups_from_hashes / cross_validate_seed_evidence (dual-evidence seed collapse proof)",
+      "source_paired_additional_object, gate_reapplication (deterministic threshold comparison)"
+    ],
+    "proxy_fields": [
+      "h_add_video_clustered_bootstrap_95ci (bootstrap estimate, carried through from v1.1 logic)"
+    ]
+  },
+  "nan_or_failure_counts": {
+    "n_failed_pairs": 0
+  },
+  "extra": {
+    "read_only_derivation_of": "results/negative_semantics_g1_pilot_rtx4080_v1_1",
+    "supersedes_evidence_quality_of": "results/negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2",
+    "supersedes_note": "same numeric conclusions as _derived_v1_2; this version additionally independently hashes and cross-validates the reconstruction frame trees instead of trusting detector-score equality alone. _derived_v1_2 is kept as a frozen historical artifact, not deleted or silently replaced.",
+    "source_run_git_commit": "aae9e268dccce2cf3db9727720fa8f64883c1ad0",
+    "source_protocol_sha256": "9edda50e41bafecede5f7d5e50fc6940ee7c151d1aa761a2a30f00f51d68c2da",
+    "seed_evidence_method": "score_and_hash_dual_verified",
+    "derivation_signature": "81598a9c80d523a791d15bf0641870c5d149915348f5d30b86495028a188232f",
+    "amendment_record": "docs/experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md",
+    "headline_gate_reapplication": {
+      "checks_that_flip_to_fail_under_effective_seeds": [
+        "affected_seed_count",
+        "not_concentrated_in_one_seed"
+      ],
+      "effective_seed_checks": {
+        "additional_event_count": true,
+        "affected_seed_count": false,
+        "affected_video_count": true,
+        "h_add_prevalence": true,
+        "not_concentrated_in_one_seed": false,
+        "not_concentrated_in_one_video": true
+      },
+      "effective_seed_status": "NOT_PASSED",
+      "primary_policy": "few10",
+      "raw_declared_seed_checks": {
+        "additional_event_count": true,
+        "affected_seed_count": true,
+        "affected_video_count": true,
+        "h_add_prevalence": true,
+        "not_concentrated_in_one_seed": true,
+        "not_concentrated_in_one_video": true
+      },
+      "raw_declared_seed_status": "PASSED"
+    }
+  }
+}

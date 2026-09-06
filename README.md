@@ -125,8 +125,10 @@ python scripts/run_transmission_reduction_eval.py \
     --output-root outputs/transmission_reduction
 ```
 
-- 10영상 reliable-digital 정상화 결과에서 `fixed_int6`은 보수적 후보,
-  `fixed_int4`는 최대 절감 후보다. digital 절대 품질과 SKEM matched-rate는 후속 검증이 필요하다.
+- 2026-09-04 결정에 따라 신규 ETRI 개발·시연의 기본 운용점은 `fixed_int6`이고,
+  `fixed_int4`는 최대 절감 및 G1 stress 비교점으로 유지한다. `int6 + both-omit`의
+  공개 데이터 bridge validation은 아직 남아 있다. 상세:
+  [int6 ETRI 운용점 결정](docs/experiments/2026-09-04_int6_etri_operating_point_decision.md).
 
 ### 전송 정상화 (digital NaN 수정 + fixed/SKEM x 양자화 전체 스윕)
 

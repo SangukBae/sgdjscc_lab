@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-02
+updated: 2026-09-04
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 5a8f2aa
+source_commit: aae9e26
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -91,6 +91,15 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     4개 bit-depth가 모두 품질 허용 기준을 통과했고 `fixed_int4`가 최소 bit-depth로 선택됐다.
   - [full 실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md),
     [진단 프로토콜](../protocols/float32_digital_diagnostics.md).
+- **신규 `fixed_int6` ETRI 운용점의 both-omit·공개 데이터 검증이 남았다**
+  - 2026-09-04부터 신규 ETRI 기본 bit-depth를 `fixed_int6`로 정했지만 근거가 된
+    양자화 비교는 기존 개발 영상 10개와 baseline guide 조건이다.
+  - `int6 + both-omit`의 exact bundle byte, additional-object, ghost-track, latency는
+    아직 실측하지 않았다. 기존 int4 절감률·hallucination 수치를 int6에 전용하면 안 된다.
+  - G1 v1.1이 완료됐으므로 같은 OVIS Pilot·seed·diffusion step의 paired bridge
+    코드·설정·테스트를 준비했다(**실행 준비 완료, GPU 실행은 미실시**). 상세:
+    [int6 결정](../experiments/2026-09-04_int6_etri_operating_point_decision.md),
+    [bridge 준비 기록](../experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md).
 - **VAE-direct는 통합 개발평가의 strict SSIM gate를 실패했다**
   - both-omit에서 23.4885s/video로 full50보다 4.60배 빠르고 PSNR·LPIPS 및 semantic
     지표는 양호했지만, 평균 SSIM 하락 0.01129가 사전 margin 0.01을 넘었다.
@@ -101,9 +110,11 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     맞췄지만, 10/10 영상에서 fixed/SKEM keyframe·transmitting index가 같았다.
   - PSNR/SSIM/LPIPS 차이 0은 SKEM 우위가 아니라 동일 schedule 결과다. raw 100
     byte/video 차이도 config label의 manifest 길이뿐이라 padding 후 완전 동률이다.
-  - 현재 operating point는 `fixed_int4`를 유지한다. 다른 semantic schedule의 효용을
-    보려면 exact-count 후보 중 fixed와 다른 index를 강제하거나 실제 MLLM PSSS로
-    재검증해야 한다. 상세: [실험 결과](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md).
+  - 이 결과는 selector를 fixed로 유지한다는 근거다. 당시 bit-depth는 `fixed_int4`였지만
+    2026-09-04 이후 신규 ETRI bit-depth는 별도 Pareto 결정에 따라 `fixed_int6`다.
+    다른 semantic schedule의 효용을 보려면 exact-count 후보 중 fixed와 다른 index를
+    강제하거나 실제 MLLM PSSS로 재검증해야 한다. 상세:
+    [실험 결과](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md).
 - **reliable-digital 경로에서 uncertainty payload를 decoder가 소비하지 않는다**
   - 16-profile full 결과에서 uncertainty q4/ds2/ds4/reuse2/omit이 10영상 각각의
     PSNR·SSIM·LPIPS를 baseline과 전부 정확히 같게 만들었다.
@@ -143,15 +154,27 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - **대규모 외부 영상은 취득했지만 학습 적합성 검증은 아직 없음**
   - YouTube-VOS 2019 train 3,471개와 valid 507개를 취득·해시 고정했다.
   - 이 사실은 RSM/allocator 학습이 수행됐거나 temporal metric 분별력이 검증됐다는 뜻이 아니다.
-- **negative-semantics G0 데이터 gate 통과, G1 효과 검증 미착수**
+- **negative-semantics G0/G1 데이터 gate 통과, effective-seed/source-paired 한계는 v1.2에서 별도 문서화**
   - ETRI 10영상은 반복 개발 이력 때문에 전부 Development only로 고정했다.
   - OVIS Pilot 40 / Train 3,471 / Development 10 / Validation 507 / DAVIS Held-out 30을
     실제 바이트와 hash로 동결했고 사용 승인·Held-out seal도 기록했다.
   - Pilot은 official GT 기반 40개 독립 event이며 ENTER/EXIT/OCCLUDE/REAPPEAR 각 10개다.
   - G0 자동 감사 13/13과 `--require-pass` exit 0을 확인했다.
-  - 남은 한계는 사람 지각 hallucination을 주장할 수 없다는 점과 G1 자동 evaluator
-    threshold·selector weight 분리가 아직 동결되지 않았다는 점이다.
-  - 근거: [G0 v1.2 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md)
+  - G1은 240/240 정식 Pilot run을 완료했고 evaluator threshold(0.2)와 selector
+    weight 분리를 동결해 declared-seed 기준 `gate_status: PASSED`를 얻었다.
+  - 남은 한계: (1) 사람 지각 hallucination은 여전히 주장할 수 없다. (2) 이
+    reconstruction 경로는 `seed`를 소비하지 않아 `effective_seed_count=1`이며,
+    같은 gate threshold를 정직하게(seed 중복 제거) 재적용하면 few10 기준
+    `NOT_PASSED`로 뒤집힌다. (3) source-carried additional-object를 제외한
+    source-paired h_add는 raw 대비 약 47~51% 낮고 full50은 `h_add_min` 미달이다.
+    (4) `results/…_derived_v1_2b`는 checksum-frozen이지만 그 결과를 만든
+    derivation 코드(`derive_negative_semantics_g1_v1_2.py` 등)가 당시 git에
+    commit되지 않은 code-dirty 상태였다 — 코드가 clean commit된 뒤
+    `v1_2c` 경로로 재파생해야 provenance 한계가 해소된다(결론 자체는
+    바뀔 것으로 예상하지 않음).
+  - 근거: [G0 v1.2 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md),
+    [G1 v1.1 결과·감사](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md),
+    [G1 v1.2 amendment](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md)
 
 ## 결과 판정 의미
 

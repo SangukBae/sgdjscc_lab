@@ -1,0 +1,32 @@
+{
+  "caption_model": {
+    "model_id": "Salesforce/blip2-opt-2.7b-coco",
+    "revision": "cda95b9319b722f79c9451a3d8ff92eea02048dc",
+    "snapshot_path": "/home/sangukbae/.cache/huggingface/hub/models--Salesforce--blip2-opt-2.7b-coco/snapshots/cda95b9319b722f79c9451a3d8ff92eea02048dc"
+  },
+  "checkpoint_root": "/home/sangukbae/ETRI/Semantic/sgdjscc_lab/checkpoints",
+  "checkpoint_sha256": {
+    "JSCC_model.pth": "455cb603d071d9aee7f6e3704c3228f543178453bc7c25ffcbfd95e5ab1915fe",
+    "diffusion_backbone.pth": "3c338aff5b69665629fd7bdc338f6becdc5c61fde1438ad7d1708be0f12892d4",
+    "diffusion_controlnet.pth": "3049b9d81835c6459238c78fdb07ebdf963877131251095fa695daa02920db74",
+    "muge-epoch-19-checkpoint.pth": "0db6b14550925cbd4ca12160f9f19c78302b0814f560695d6ded37bf0eb3c683"
+  },
+  "cuda_runtime": "11.8",
+  "evaluator_model": {
+    "model_id": "google/owlv2-base-patch16-ensemble",
+    "revision": "cfd3195ba4ea9592eec887ded089f4c08eff231d",
+    "snapshot_path": "/home/sangukbae/.cache/huggingface/hub/models--google--owlv2-base-patch16-ensemble/snapshots/cfd3195ba4ea9592eec887ded089f4c08eff231d"
+  },
+  "git": {
+    "branch": "main",
+    "commit": "aae9e268dccce2cf3db9727720fa8f64883c1ad0",
+    "dirty": false
+  },
+  "gpu_name": "NVIDIA GeForce RTX 4080",
+  "gpu_total_memory_bytes": 16716070912,
+  "python": "/home/sangukbae/anaconda3/envs/ptest/bin/python",
+  "selector_model_ids": [],
+  "selector_weight_separation": true,
+  "status": "PASSED",
+  "torch_version": "2.1.0"
+}

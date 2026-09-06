@@ -1,0 +1,175 @@
+{
+  "accounting": {
+    "exact_fields": [
+      "child-run n_videos/n_failed_pairs (per-policy-seed summary.json)",
+      "detection_rows.jsonl per-frame OWLv2 score",
+      "g1_summary.json by_policy h_add/event counts (declared-seed, v1.1 definition)"
+    ],
+    "proxy_fields": [
+      "h_add_video_clustered_bootstrap_95ci (bootstrap estimate, not exact)",
+      "ghost_survival_auc (small uncensored sample; see v1.2 amendment)"
+    ]
+  },
+  "artifacts": {
+    "README.md": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1/README.md",
+      "copied_sha256": "bc0297d3aa5602a6c9b2bb0a9a5da13df6e3729591c0cacc83020076c5eda228",
+      "matches": "unknown",
+      "original_path": null,
+      "original_sha256": "unknown"
+    },
+    "audit_report.json": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1/audit_report.json",
+      "copied_sha256": "80f16f7d3feb15c57d375cd7a1dbcf561e984329e99e8d8b429b42d2d3aef6b7",
+      "matches": true,
+      "original_path": "/tmp/claude-1000/-home-sangukbae-ETRI-Semantic/06c98d97-2084-4a1e-a2ed-51caa5655bc4/scratchpad/g1_audit_v1_1.json",
+      "original_sha256": "80f16f7d3feb15c57d375cd7a1dbcf561e984329e99e8d8b429b42d2d3aef6b7"
+    },
+    "caption_adoption.json": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1/caption_adoption.json",
+      "copied_sha256": "e564e5909011868d4cee8fa303f94e54cbb995919e7418670220d4dca9eebcdc",
+      "matches": true,
+      "original_path": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1/caption_adoption.json",
+      "original_sha256": "e564e5909011868d4cee8fa303f94e54cbb995919e7418670220d4dca9eebcdc"
+    },
+    "caption_status.json": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1/caption_status.json",
+      "copied_sha256": "23c219926cd3638e2ff5217b6602d936d76694bbe6c7eeb8787228eebdf66fb3",
+      "matches": true,
+      "original_path": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1/caption_status.json",
+      "original_sha256": "23c219926cd3638e2ff5217b6602d936d76694bbe6c7eeb8787228eebdf66fb3"
+    },
+    "evaluator_freeze.json": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1/evaluator_freeze.json",
+      "copied_sha256": "237d86af2e4a34728f6180edd967699db09ee53006f615b1cf6db83f6da448b9",
+      "matches": true,
+      "original_path": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1/evaluator/evaluator_freeze.json",
+      "original_sha256": "237d86af2e4a34728f6180edd967699db09ee53006f615b1cf6db83f6da448b9"
+    },
+    "g1_policy_summary.csv": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1/g1_policy_summary.csv",
+      "copied_sha256": "4f191745f090f4ce48a2199baabf4370c69f0e7f5604a01a5ef845ad6adf3c67",
+      "matches": true,
+      "original_path": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1/g1_policy_summary.csv",
+      "original_sha256": "4f191745f090f4ce48a2199baabf4370c69f0e7f5604a01a5ef845ad6adf3c67"
+    },
+    "g1_summary.json": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1/g1_summary.json",
+      "copied_sha256": "ee478f853eeaa802b7ffce2c6ce5cd30a43303f60ee21f279c331608ee8c411e",
+      "matches": true,
+      "original_path": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1/g1_summary.json",
+      "original_sha256": "ee478f853eeaa802b7ffce2c6ce5cd30a43303f60ee21f279c331608ee8c411e"
+    },
+    "preflight.json": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1/preflight.json",
+      "copied_sha256": "b146f4760bd8204559a9ca865c3ed228b4159b81dd7f89588b2c3fb11b93e61c",
+      "matches": true,
+      "original_path": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1/preflight.json",
+      "original_sha256": "b146f4760bd8204559a9ca865c3ed228b4159b81dd7f89588b2c3fb11b93e61c"
+    },
+    "run_spec.json": {
+      "copied_path": "results/negative_semantics_g1_pilot_rtx4080_v1_1/run_spec.json",
+      "copied_sha256": "bed639e450639dd480de9fbe7b65cbaf302bc90896f208b09e1e0e4706db3769",
+      "matches": true,
+      "original_path": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1/run_spec.json",
+      "original_sha256": "bed639e450639dd480de9fbe7b65cbaf302bc90896f208b09e1e0e4706db3769"
+    }
+  },
+  "checkpoints": {
+    "items": {
+      "JSCC_model.pth": {
+        "path": "checkpoints/JSCC_model.pth",
+        "sha256": "455cb603d071d9aee7f6e3704c3228f543178453bc7c25ffcbfd95e5ab1915fe"
+      },
+      "diffusion_backbone.pth": {
+        "path": "checkpoints/diffusion_backbone.pth",
+        "sha256": "3c338aff5b69665629fd7bdc338f6becdc5c61fde1438ad7d1708be0f12892d4"
+      },
+      "diffusion_controlnet.pth": {
+        "path": "checkpoints/diffusion_controlnet.pth",
+        "sha256": "3049b9d81835c6459238c78fdb07ebdf963877131251095fa695daa02920db74"
+      },
+      "muge-epoch-19-checkpoint.pth": {
+        "path": "checkpoints/muge-epoch-19-checkpoint.pth",
+        "sha256": "0db6b14550925cbd4ca12160f9f19c78302b0814f560695d6ded37bf0eb3c683"
+      }
+    },
+    "status": "recorded"
+  },
+  "command": {
+    "argv": "unknown",
+    "source": "reconstructed",
+    "text": "python scripts/run_negative_semantics_g1.py --run-root outputs/negative_semantics_g1_pilot_rtx4080_v1_1 --device cuda:0 --reuse-captions-from-run outputs/negative_semantics_g1_pilot_rtx4080"
+  },
+  "dataset": {
+    "hash": "6e1bd7d48db154792fa4a9f31fce681fda481070be9af2f6a2e1cfc810b1fc84",
+    "ref": "data/negative_semantics/g1/pilot (OVIS official-GT Pilot, 40 videos)"
+  },
+  "environment": {
+    "cuda_available": true,
+    "cuda_version": "11.8",
+    "gpu_name": "NVIDIA GeForce RTX 4080",
+    "platform": "Linux-6.8.0-138-generic-x86_64-with-glibc2.35",
+    "python_version": "3.9.25",
+    "torch_version": "2.1.0"
+  },
+  "evaluator_versions": {
+    "caption": "Salesforce/blip2-opt-2.7b-coco",
+    "owlv2": "google/owlv2-base-patch16-ensemble"
+  },
+  "extra": {
+    "amendment_note": "A v1.2 amendment (effective-seed dedup + source-paired additional-object split) is preserved separately as run_id negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2; it derives from these same frozen artifacts without modifying them.",
+    "audit_runner_gate_status": "see audit_report.json (runner_gate_status)",
+    "checksum_incident": {
+      "cause": "checksums.sha256 was generated before a documentation-only fix to README.md (the OWLv2 evaluator threshold was mistyped as 0.125; the actual frozen selected_threshold is 0.2). The typo fix edited README.md after checksums.sha256 already existed, so sha256sum -c failed on ./README.md only.",
+      "discovered": "2026-09-06",
+      "fix": "regenerated checksums.sha256 from the current (corrected) file contents; manifest.json and README.md content are otherwise unchanged",
+      "scope": "provenance bookkeeping only -- no numeric result, gate verdict, or conclusion in this run changed"
+    },
+    "gate_status_declared_v1_1": "PASSED",
+    "git": {
+      "commit": "aae9e268dccce2cf3db9727720fa8f64883c1ad0",
+      "dirty": false,
+      "note": "captured live in run_spec.json at G1 v1.1 execution time, not re-probed now"
+    },
+    "large_artifacts_not_copied": {
+      "evaluator/detection_rows.jsonl": {
+        "sha256": "49886142f71f84b3532c2792fabecefc59a0e0f1bede671621091b9a1514607c",
+        "size_bytes": 17369478
+      },
+      "operator.log": {
+        "sha256": "e5ec7fcb5c3fac1960305643dfa83bfebe9cf62f102e65d1019e94422aefd90d",
+        "size_bytes": 31038942
+      }
+    },
+    "protocol_id": "negative_semantics_g1_v1_1",
+    "run_status": "completed"
+  },
+  "generated_at": "2026-09-06T07:25:08.123024+00:00",
+  "git": {
+    "branch": "unknown",
+    "commit": "unknown",
+    "dirty": "unknown"
+  },
+  "nan_or_failure_counts": {
+    "child_run_count": 6,
+    "child_run_video_total": 240,
+    "n_failed_pairs": 0
+  },
+  "original_artifact_paths": {
+    "reconstruction_frames": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1/reconstruction",
+    "run_root": "outputs/negative_semantics_g1_pilot_rtx4080_v1_1"
+  },
+  "resolved_config": {
+    "config_source": {
+      "note": "root protocol; reconstruction fragment g1_reconstruction.yaml composed via _defaults_",
+      "path": "configs/experiments/negative_semantics/g1_protocol.yaml",
+      "sha256": "9edda50e41bafecede5f7d5e50fc6940ee7c151d1aa761a2a30f00f51d68c2da"
+    },
+    "resolved": "unknown",
+    "status": "config_source_only"
+  },
+  "run_id": "negative_semantics_g1_pilot_rtx4080_v1_1",
+  "schema_version": 2,
+  "seed": "not_set"
+}
