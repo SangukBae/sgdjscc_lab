@@ -10,6 +10,17 @@ from .contracts import (
     SignedEntityEvent,
 )
 from .signed_assertion_tokenizer import SignedAssertionOutput, SignedAssertionTokenizer
+from .joint_assertion_symbol_router import JointAssertionSymbolRouter, RouterOutput
+from .semantic_channel_codec import (
+    ActionConditionedSemanticChannelCodec,
+    WirelessChannelObservation,
+    WirelessSemanticSymbols,
+)
+from .signed_memory_dit import (
+    SignedMemoryAdapterOutput,
+    SignedMemoryDiTAdapterStack,
+    SignedMemoryDiTBlock,
+)
 from .versioned_entity_memory import (
     MemoryUpdateOutput,
     VersionedMemoryState,
@@ -26,6 +37,14 @@ __all__ = [
     "SignedEntityEvent",
     "SignedAssertionOutput",
     "SignedAssertionTokenizer",
+    "JointAssertionSymbolRouter",
+    "RouterOutput",
+    "ActionConditionedSemanticChannelCodec",
+    "WirelessChannelObservation",
+    "WirelessSemanticSymbols",
+    "SignedMemoryAdapterOutput",
+    "SignedMemoryDiTAdapterStack",
+    "SignedMemoryDiTBlock",
     "MemoryUpdateOutput",
     "VersionedMemoryState",
     "VersionedRevocableEntityMemory",
