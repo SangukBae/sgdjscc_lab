@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 076a26d
+source_commit: 8fbe6d98
 supersedes:
 ---
 
@@ -92,6 +92,43 @@ supersedes:
 4. `results/registry.csv`에 한 행 추가
 5. `docs/experiments/YYYY-MM-DD_<name>.md`에 실험 해설이 있다면 `doc_link`로 연결
 6. `results/README.md`의 "현재 등록된 run" 표 갱신
+
+### SAVER-JSCC run 추가 계약
+
+SAVER run은 일반 manifest 항목에 더해 다음을 기록한다.
+
+```text
+research_line: saver_jscc
+saver_gate: SV0 | SV1 | SV2 | SV3 | SV4 | SV5
+evidence_scope: SMOKE | PILOT | DEVELOPMENT | VALIDATION | HELD_OUT
+model_status: DESIGN_ONLY | IMPLEMENTED | TRAINED | FORMAL_EVALUATED
+architecture_version
+architecture_fingerprint
+base_checkpoint_sha256
+saver_checkpoint_sha256
+K, d_m, action_vocabulary
+packet_schema_version
+injection_layers
+rate_profile: saver_source | saver_wireless
+declared_seed
+effective_seed_group/hash
+trainable_parameter_count
+metric_roles
+```
+
+- `SV0` Oracle run은 `model_status=DESIGN_ONLY` 또는 `IMPLEMENTED`일 수 있지만 SAVER
+  trained-model evidence로 등록하지 않는다.
+- SV0/G2는 네 condition manifest SHA-256, `oracle_side_input=ORACLE_EVAL_ONLY`,
+  `serialized_in_packet=false`, `oracle_rate_accounted=false`, G1 scientific gate 상태와
+  `matched_compute_audit.json`을 함께 보존한다.
+- smoke는 `evidence_scope=SMOKE`이며 논문 표에 집계하지 않는다.
+- `saver_source`의 exact bytes와 `saver_wireless`의 actual channel uses를 별도 필드로
+  저장한다. proxy와 actual 값을 같은 rate 필드에 쓰지 않는다.
+- child run 재사용 시 파일 hash뿐 아니라 source run ID, row key와 derivation code
+  version을 기록한다.
+- held-out run은 architecture/config/checkpoint/evaluator freeze artifact를 함께 등록한다.
+- aborted/OOM/protocol-invalid run은 새 output root를 사용하고 resume 가능 artifact와
+  evidence-invalid artifact를 구분한다.
 
 ## 예시 — 사후 이관(과거 run)
 

@@ -1,23 +1,31 @@
 ---
-status: active
-updated: 2026-09-06
+status: supporting_active
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: aae9e26
+source_commit: 8fbe6d98
 primary_venue: IEEE Transactions on Multimedia
 fallback_venue: IEEE Transactions on Circuits and Systems for Video Technology
 g0_gate: PASSED
 g1_gate: PASSED_DECLARED_SEED__NOT_PASSED_EFFECTIVE_SEED
+primary_development_bit_depth: fixed_int4
+int6_bridge: COMPLETED_NO_SIGNIFICANT_H_ADD_CHANGE
+parent_plan: docs/current/saver_jscc_model_plan.md
 supersedes: docs/reference/paper_writing_notes.md
 ---
 
-> [← 문서 색인](../README.md) · [현재 로드맵](./roadmap.md) ·
+> [← 문서 색인](../README.md) · [SAVER-JSCC 단일 기준](./saver_jscc_model_plan.md) · [현재 로드맵](./roadmap.md) ·
 > [구현 상태](./status.md) · [알려진 한계](./open_issues.md)
 
-# 논문용 최종 개발 계획: Positive–Negative Semantic Source Coding과 Revocable Receiver Memory
+# SAVER-JSCC 선행 계획: Positive–Negative Semantic Source Coding과 Revocable Receiver Memory
 
 ## 0. 문서 목적과 최종 결정
 
-이 문서는 다음 가제의 IEEE Transactions급 논문을 만들기 위한 **단일 실행 기준 문서**다.
+이 문서는 SAVER-JSCC의 SV0/SV1 진입 여부를 판정하기 위한 **negative-semantics
+선행 실행 기준**이다. SAVER의 최종 모델 구조·학습·ablation과 출판 범위는
+[saver_jscc_model_plan.md](./saver_jscc_model_plan.md)를 따른다. 이 문서의 G0~G11
+결과만으로 SAVER module이 구현·학습·검증됐다고 해석하지 않는다.
+
+원래 연구 가제는 다음과 같다.
 
 > **Joint Positive–Negative Semantic Source Coding with Revocable Receiver Memory for Generative Video Communication**
 
@@ -33,7 +41,7 @@ supersedes: docs/reference/paper_writing_notes.md
 7. held-out 영상과 독립 generative backbone에서도 개선 방향이 유지되는가?
 
 이 문서는 현재 [roadmap.md](./roadmap.md)의 일반적인 verifier 폐루프·동적 예산 제어와
-구분되는 **별도 논문 연구선**을 정의한다. 완료된 단계는 날짜 기반
+구분되는 **SAVER 선행 검증 연구선**을 정의한다. 완료된 단계는 날짜 기반
 `docs/experiments/YYYY-MM-DD_<name>.md`에 결과를 고정하고, 구현 상태는
 [status.md](./status.md)에 반영한다.
 
@@ -59,19 +67,22 @@ P2가 실패하면 현재 제목에서 `Revocable Receiver Memory`를 제거한�
 
 ### 1.1 개발 backbone
 
-- ETRI 신규 기본 통신 backbone: `fixed_int6`
-- G1 v1.1 현상 확인 backbone: `fixed_int4` stress configuration
+- 논문 primary development backbone: `fixed_int4`
+- bit-depth robustness/품질 민감도 조건: `fixed_int6`
+- G1 v1.1 현상 확인 backbone: `fixed_int4` frozen configuration
 - guide profile: `candidate_both_omit`
 - reconstruction stress policy: `few10`
 - 비교 기준: `full50 + baseline`, `full50 + both-omit`
 - 주요 조건: reliable-digital, fixed-reference 10 dB, seed 2025
 
-`fixed_int4 + both-omit + few10`은 **frozen development stress configuration**이다.
-held-out 검증이 끝난 최종 operating point가 아니며 G1 v1.1의 비교 가능성을 위해
-변경하지 않는다. 2026-09-04 이후 신규 ETRI 개발과 G2 이후 primary method는
-`fixed_int6`를 후보로 사용하되, G1 통과 후 동일 조건의 int4/int6 paired bridge
-validation을 먼저 통과해야 한다. 결정 근거는
-[int6 ETRI 운용점 기록](../experiments/2026-09-04_int6_etri_operating_point_decision.md)을 따른다.
+`fixed_int4 + both-omit + few10`은 **frozen development stress configuration**이자
+G2 이후 primary development condition이다. held-out 검증이 끝난 최종 operating
+point는 아니다. OVIS Pilot 40영상 int4/int6 formal bridge에서 int6는 품질이 소폭
+개선됐지만 int4 대비 bytes가 44.217% 증가했고 H_add의 유의한 개선은 없었다.
+따라서 2026-09-07부터 fixed_int4를 primary로 사용하고 fixed_int6는 secondary
+ablation/시연 opt-in으로만 유지한다. 근거는
+[bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md)와
+[fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md)을 따른다.
 
 현재 개발셋 결과는 다음과 같다.
 
@@ -780,16 +791,15 @@ versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
 - 최소 3 seeds
 - absent opportunity와 additional object를 event/video 단위 집계
 - `full50 + both-omit`도 병행해 sampler-step 의존성 확인
-- G1 통과 후 같은 공개 데이터·seed·diffusion step에서
-  `fixed_int6 + both-omit` bridge condition을 추가해 ETRI 기본 운용점에서도 현상과
-  exact-byte 차이를 확인
+- 같은 공개 데이터·seed·diffusion step에서 `fixed_int6 + both-omit` bridge
+  condition을 추가해 bit-depth 민감도와 exact-byte 차이를 확인
 
 **통과 조건**
 
 - hallucination이 한 영상·한 seed에만 집중되지 않음
 - 사전 정의한 최소 prevalence와 event count 충족
 - frozen independent automatic evaluator의 calibration과 selector weight 분리 통과
-- int6 bridge 결과가 없는 동안 G1 int4 prevalence를 int6 운용 성능으로 일반화하지 않음
+- int4/int6 결과를 서로의 운용 성능으로 일반화하지 않고 paired bridge로만 비교
 
 **실패 시**
 
@@ -814,19 +824,39 @@ versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
   seed, 24/23개 영상에 분산됨)"까지이며, "여러 독립 seed에 걸쳐 재현된다"와
   "reconstruction이 새로 만든 오탐이 prevalence 기준을 만족한다(특히
   full50)"는 아직 성립하지 않는다.** G2 진입 전 이 경계를 반영해야 한다.
-- int6 bridge는 코드·설정·테스트를 완료해 실행 준비가 됐고 GPU 실행만
-  남았다.
+- int4–int6 formal bridge는 OVIS Pilot 40영상, seed 2025, few10/full50에서
+  완료됐다. int6 quality gate는 통과했지만 bytes가 44.217% 증가했고 H_add
+  paired CI는 모두 0을 포함했다. ghost uncensored 표본은 정책당 4개였다.
+- bridge 결과를 반영해 이후 primary development bit-depth를 `fixed_int4`로
+  재결정했다. 이 운용점 결정은 G1 scientific gate를 통과로 바꾸지 않는다.
 - 근거: [G1 v1.1 결과·감사](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md),
   [G1 v1.2 amendment](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md),
-  [int6 bridge 준비](../experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md)
+  [int6 bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md),
+  [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md)
 
 ### G2. Oracle ABSENT controllability
 
+**구현 상태 (2026-09-07): `IMPLEMENTED_UNVALIDATED`**
+
+- frozen protocol: `configs/experiments/negative_semantics/g2_oracle_absent_protocol.yaml`
+- runner: `scripts/run_negative_semantics_g2.py`
+- read-only audit: `scripts/audit_negative_semantics_g2.py`
+- receiver injection: `negative_conditioning.prompt`가 기존 quality-negative에 append되며
+  옵션이 없으면 baseline 문자열과 수치 경로를 유지한다.
+- Oracle condition은 `ORACLE_EVAL_ONLY`, `serialized_in_packet=false`,
+  `rate_accounted=false`로 기록한다.
+- CPU 단위/회귀 테스트만 통과했으며 GPU smoke·Pilot 및 gate 판정은 아직 수행하지 않았다.
+
 **작업**
 
+- primary bit-depth는 `fixed_int4`로 고정하고 모든 arm에서 동일하게 유지
 - RSM 없이 완벽한 confirmed-absent 목록을 receiver negative condition으로 제공
 - no negative, random negative, frequency negative, oracle negative 비교
 - matched generation/step budget 유지
+
+G1의 effective-seed gate가 `NOT_PASSED`인 동안 G2의 Pilot 결과는 mechanism
+feasibility를 보는 탐색 근거로 기록한다. 이를 G1 통과나 confirmatory paper evidence로
+소급 해석하지 않는다.
 
 **provisional 통과 조건**
 

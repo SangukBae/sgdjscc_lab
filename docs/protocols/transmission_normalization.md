@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-28
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c5721cb
+source_commit: 8fbe6d98
 supersedes:
 ---
 
@@ -15,6 +15,24 @@ supersedes:
   - 과거 실험 기록(불변): [experiments/2026-08-18_transmission_reduction.md](../experiments/2026-08-18_transmission_reduction.md)
   - run manifest 절차(정식 의존성): [results_registry.md](./results_registry.md)
   - Tx/Rx 계약: [../architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md)
+
+## SAVER-JSCC 적용 범위
+
+기존 정상화 결과와 fixed-int4 운용점은 SAVER `saver_source` profile의 출발점으로만
+재사용한다. SAVER 모델 성능 증거로 소급 해석하지 않는다.
+
+- `saver_source`: visual/positive/negative/state/protection/feedback/retransmission/padding의
+  실제 binary byte를 모두 센다.
+- `saver_wireless`: digital header와 실제 modulation/FEC를 포함한 complex channel
+  uses를 센다.
+- 기존 `proxy_channel_symbols`는 참고 열이며 어느 profile의 actual rate에도 더하지 않는다.
+- JASR 비교에서 positive-only baseline도 같은 total budget 안에서 keyframe, latent
+  precision과 protection을 다시 선택해야 한다.
+- fixed-int4와 fixed-int6 결과는 bit-depth sensitivity이며 learned router 또는 signed
+  memory의 효과가 아니다.
+- SAVER 세부 계약: [모델 계획](../current/saver_jscc_model_plan.md),
+  [Tx/Rx 계약](../architecture/tx_rx_contract.md),
+  [평가 절차](./evaluation.md).
 
 ## 배경 — 무엇이 고장났었나, 어떻게 고쳤나
 

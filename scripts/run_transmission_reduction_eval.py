@@ -70,7 +70,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SRC_ROOT = _REPO_ROOT / "src"
@@ -288,6 +288,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
         "--diffusion-step", type=int, default=None,
         help="Override the composed diffusion step count (must be positive).",
     )
+    p.add_argument(
+        "--negative-condition-manifest", type=Path, default=None,
+        help="Explicit receiver-side G2 condition manifest. The semantic negative text is "
+             "not serialized or rate-accounted; its hash and arm are recorded in the run "
+             "signature. Omit for the unchanged production decoder.",
+    )
     # accounting estimates (labeled proxy; omit for "unavailable")
     p.add_argument("--bits-per-symbol", type=float, default=None,
                     help="Modulation assumption for estimated_digital_channel_symbols; "
@@ -420,6 +426,59 @@ def _load_captions(captions_path: Optional[Path], n_frames: int) -> Optional[Lis
     if len(lines) == 1:
         lines = lines * n_frames
     return lines
+
+
+def _load_negative_condition_plan(
+    path: Optional[Path], entries: List[Dict[str, Any]], max_frames: Optional[int],
+) -> tuple[Optional[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+    """Load and fail-closed validate an opt-in G2 receiver condition plan."""
+    if path is None:
+        return None, {}
+    path = Path(path).resolve()
+    if not path.is_file():
+        raise ValueError(f"negative-condition manifest does not exist: {path}")
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    expected = {}
+    for entry in entries:
+        row = entry.get("row") or {}
+        if "n_frames" not in row:
+            raise ValueError(
+                "negative-condition runs require n_frames in the dataset manifest"
+            )
+        count = int(row["n_frames"])
+        expected[entry["key"]] = min(count, int(max_frames)) if max_frames is not None else count
+
+    # The materialized condition file covers full videos. Validate its complete
+    # selected-video rows first, then apply any smoke frame cap locally.
+    full_expected = {
+        entry["key"]: int((entry.get("row") or {})["n_frames"])
+        for entry in entries
+    }
+    from sgdjscc_lab.guidance.negative_conditioning import validate_g2_condition_manifest
+    rows = validate_g2_condition_manifest(manifest, full_expected)
+    rows = {video: values[:expected[video]] for video, values in rows.items()}
+    return manifest, rows
+
+
+def _with_negative_condition(cfg, frame_condition: Mapping[str, Any], arm: str):
+    """Clone cfg and attach one receiver-only semantic negative suffix."""
+    from omegaconf import OmegaConf
+
+    prompt = frame_condition.get("negative_prompt")
+    if not isinstance(prompt, str):
+        raise ValueError("negative condition frame is missing string negative_prompt")
+    block = {
+        "enabled": bool(prompt.strip()),
+        "mode": "append",
+        "prompt": prompt,
+        "arm": str(arm),
+        "source": "official_gt_closed_vocabulary" if arm == "oracle_negative" else "control",
+        "receiver_side_input": True,
+        "oracle_eval_only": arm == "oracle_negative",
+        "serialized_in_packet": False,
+        "rate_accounted": False,
+    }
+    return OmegaConf.merge(cfg, OmegaConf.create({"negative_conditioning": block}))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -815,7 +874,8 @@ def _run_temporal_pipeline(
     frames, models, cfg, keyframe_extractor, captions=None, *, channel_kind="awgn",
     bit_depth=None, granularity="per_tensor", video_key="", config_name="",
     selected_keyframes=None, log_fn=None, digital_step_policy="fixed_reference",
-    base_seed=None, guide_profile="baseline",
+    base_seed=None, guide_profile="baseline", negative_condition_rows=None,
+    negative_condition_arm=None,
 ):
     """Reconstruct *frames* via TemporalPipeline.
 
@@ -852,9 +912,19 @@ def _run_temporal_pipeline(
     receiver_guide_cache: Dict[str, object] = {}
     selector_name, _channel_name, _ = _split_experiment_config(config_name)
 
+    if negative_condition_rows is not None and len(negative_condition_rows) != len(frames):
+        raise ValueError(
+            "negative condition row count must match loaded frames "
+            f"({len(negative_condition_rows)} != {len(frames)})"
+        )
+
     def reconstruct_fn(frame, run_cfg):
         resolved_cfg = run_cfg if run_cfg is not None else cfg
         index = frame_index_by_id[id(frame)]
+        if negative_condition_rows is not None:
+            resolved_cfg = _with_negative_condition(
+                resolved_cfg, negative_condition_rows[index], str(negative_condition_arm)
+            )
         if base_seed is not None:
             # Deterministic per-(video, frame) seed shared across every
             # config reconstructing this same frame, so a residual
@@ -1084,6 +1154,14 @@ def run(argv=None) -> int:
         wanted = set(args.video_ids.split(","))
         entries = [e for e in entries if e["key"] in wanted]
     expected_video_keys = {e["key"] for e in entries}
+
+    negative_condition_manifest, negative_condition_rows = _load_negative_condition_plan(
+        args.negative_condition_manifest, entries, args.max_frames,
+    )
+    negative_condition_arm = (
+        str(negative_condition_manifest["arm"])
+        if negative_condition_manifest is not None else None
+    )
 
     from sgdjscc_lab.paths import model_root as _model_root
     cfg = _make_cfg(
@@ -1341,6 +1419,8 @@ def run(argv=None) -> int:
                         config_name=config_name, selected_keyframes=sel.keyframe_indices,
                         log_fn=log, digital_step_policy=args.digital_step_policy,
                         base_seed=int(args.seed), guide_profile=guide_profile_name,
+                        negative_condition_rows=negative_condition_rows.get(video_key),
+                        negative_condition_arm=negative_condition_arm,
                     )
                 except NonFiniteError as exc:
                     failed_pairs = [
@@ -1558,6 +1638,11 @@ def run(argv=None) -> int:
                         args.ablation_label if channel_kind == "digital_packet" else ""
                     ),
                     "decoder_mode": args.decoder_mode,
+                    "negative_condition_arm": negative_condition_arm or "",
+                    "negative_condition_oracle_eval_only": (
+                        negative_condition_arm == "oracle_negative"
+                        if negative_condition_arm is not None else ""
+                    ),
                     "diffusion_step": int(cfg.diffusion_step),
                     "effective_diffusion_step": (
                         0 if args.decoder_mode == "vae_direct" else int(cfg.diffusion_step)
@@ -1712,6 +1797,22 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
                 item_hashes[field] = rm.sha256_file(value)
         dataset_artifact_sha256[entry["key"]] = item_hashes
 
+    negative_condition = None
+    condition_arg = getattr(args, "negative_condition_manifest", None)
+    if condition_arg is not None:
+        condition_path = Path(condition_arg).resolve()
+        condition_value = json.loads(condition_path.read_text(encoding="utf-8"))
+        negative_condition = {
+            "path": str(condition_path),
+            "sha256": rm.sha256_file(condition_path),
+            "schema_version": condition_value.get("schema_version"),
+            "arm": condition_value.get("arm"),
+            "receiver_side_input": condition_value.get("receiver_side_input"),
+            "serialized_in_packet": condition_value.get("serialized_in_packet"),
+            "rate_accounted": condition_value.get("rate_accounted"),
+            "oracle_eval_only": condition_value.get("oracle_eval_only"),
+        }
+
     return {
         "git_commit": git_state["commit"],
         "git_dirty": git_state["dirty"],
@@ -1764,6 +1865,7 @@ def _build_run_signature(args, cfg, entries, model_root: Path) -> Dict[str, Any]
             name="--matched-rate-max-segment-lengths",
         ),
         "fixed_max_gop": args.fixed_max_gop,
+        "negative_conditioning": negative_condition,
     }
 
 

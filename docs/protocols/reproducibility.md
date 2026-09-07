@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 8fbe6d98
 supersedes: docs/checkpoint_usage.md
 ---
 
@@ -18,6 +18,7 @@ supersedes: docs/checkpoint_usage.md
   - paper-like
   - scaffold
   - ETRI 확장
+  - SAVER target
   - 기준: [paper_alignment.md](../reference/paper_alignment.md)
 
 ## Checkpoint 핵심 결론
@@ -37,6 +38,23 @@ supersedes: docs/checkpoint_usage.md
 | `checkpoints/` | 공개 SGD-JSCC baseline inference checkpoint |
 | `outputs/checkpoints/*/best.pth` | stage별 학습 checkpoint. optimizer/scaler/epoch를 포함한 학습 스냅샷 |
 | `checkpoints_custom/paper_like_multi/` | `outputs/checkpoints/paper_*_multi/best.pth`에서 export한 custom inference checkpoint |
+| `outputs/checkpoints/saver/<stage>/<run_id>/` | SAVER 전용 학습 snapshot 목표 경로; 현재 미구현 |
+| `checkpoints_custom/saver/<architecture_version>/` | gate를 통과한 SAVER inference export 목표 경로; 현재 없음 |
+
+### SAVER-JSCC 재현 경계 (핵심 모델 `DESIGN_ONLY`, SV0 `IMPLEMENTED_UNVALIDATED`)
+
+- SAVER checkpoint와 core-model config는 존재하지 않는다. SV0/G2에는 frozen
+  `g2_oracle_absent_protocol.yaml`, receiver condition manifest, run signature와
+  `artifact_checksums.json` 경로가 구현돼 있다.
+- 향후 master gate `use_saver_jscc`의 기본값은 `false`다.
+- SAVER checkpoint에는 architecture version, SAT slot 수 `K`, memory dimension `d_m`,
+  action vocabulary, packet schema, SM-DiT injection layers와 base checkpoint SHA-256을
+  포함한다.
+- architecture fingerprint가 다르면 partial load하지 않고 fail-closed한다.
+- baseline checkpoint를 SAVER 이름으로 복사하거나 SAVER checkpoint로 간주하지 않는다.
+- `paper_mode` baseline 재현과 SAVER evaluation은 같은 run에서 동시에 활성화하지 않는다.
+- SV0 평가 명령은 [evaluation.md](./evaluation.md)를 따른다. SV1 이후
+  training/export 명령은 해당 runner와 smoke test가 완료된 뒤에만 추가한다.
 
 ### Baseline 실행
 

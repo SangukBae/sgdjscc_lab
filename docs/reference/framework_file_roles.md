@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 8fbe6d98
 supersedes:
 ---
 
@@ -117,6 +117,38 @@ evaluate.py → eval config → eval_pipeline.py → infer_pipeline.py
   - `pipelines/`, `utils/` re-export
 - 주의
   - 메인 실행 경로 아님
+
+## 5. SAVER-JSCC 파일 역할
+
+### 5.1 구현된 SV0/G2 경로 (`IMPLEMENTED_UNVALIDATED`)
+
+| 파일 | 책임 |
+|---|---|
+| `guidance/negative_conditioning.py` | 기존 quality negative 보존, opt-in semantic suffix와 네 arm condition manifest 생성·검증 |
+| `evaluators/negative_semantics_g2.py` | source-paired H_add, false suppression, paired bootstrap, 품질 non-inferiority |
+| `scripts/run_negative_semantics_g2.py` | fixed_int4 네 arm 실행·resume signature·matched-compute 집계 |
+| `scripts/audit_negative_semantics_g2.py` | 완료 run의 grid/hash/rate/held-out 경계 read-only 감사 |
+| `configs/experiments/negative_semantics/g2_oracle_absent_protocol.yaml` | SV0/G2 frozen 조건과 provisional gate |
+
+### 5.2 SAVER 핵심 모델 목표 (`DESIGN_ONLY`)
+
+아래 경로는 [SAVER 단일 기준](../current/saver_jscc_model_plan.md)의 구현 목표다. 현재
+파일이 존재하거나 동작한다는 뜻이 아니며, 구현 시 이 역할 경계를 유지한다.
+
+| 목표 파일 | 책임 |
+|---|---|
+| `models/saver/signed_assertion_tokenizer.py` | GOP/entity slot binding, tri-state와 action candidate 생성 |
+| `models/saver/joint_assertion_symbol_router.py` | common-budget action·precision·protection 선택 |
+| `models/saver/semantic_channel_codec.py` | signed action payload의 source/wireless profile codec |
+| `models/saver/versioned_entity_memory.py` | identity/render/negative bank의 learned update |
+| `models/saver/signed_memory_dit.py` | channel AdaLN과 positive/negative 비대칭 diffusion block |
+| `pipelines/saver_video_pipeline.py` | Tx/channel/Rx 경계 조립, 원본 target의 Rx 유입 차단 |
+| `training/saver_losses.py` | state/memory/ghost/preserve/rate/channel loss |
+| `training/saver_stage_runner.py` | SV1~SV4 freeze·gradient·checkpoint 계약 |
+
+deterministic packet schema/version/tombstone 검사는 `transmission/` 또는 별도 state
+protocol 계층에 두며 neural memory update와 섞어 구현하지 않는다. master gate
+`use_saver_jscc`는 기본 `false`다.
 
 ## 한 줄 정리
 

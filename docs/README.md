@@ -14,7 +14,8 @@
 |---|---|
 | 다음 채팅에서 전체 상황 인계 | **[current/next_chat_handoff.md](./current/next_chat_handoff.md)** — 검증·잠정 결론·다음 작업 요약 |
 | 다음 구현 작업과 우선순위 | **[current/roadmap.md](./current/roadmap.md)** — 메인 작업 문서 |
-| negative-semantics 논문 단일 실행 기준 | **[current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md)** — G0~G11 gate와 claim 경계 |
+| SAVER-JSCC 모델 단일 기준 | **[current/saver_jscc_model_plan.md](./current/saver_jscc_model_plan.md)** — 구조·학습·SV0~SV5 gate와 claim 경계 |
+| negative-semantics 선행 검증 기준 | [current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md) — SAVER SV0/SV1의 G0~G11 데이터·Oracle·packet/RSM 근거 |
 | 실제 완료·PoC·미구현 판단 | [current/status.md](./current/status.md) |
 | 알려진 제약 확인 | [current/open_issues.md](./current/open_issues.md) |
 | 지표·평가 설계 | [architecture/metrics.md](./architecture/metrics.md) |
@@ -44,27 +45,28 @@
 | [current/status.md](./current/status.md) | 기능별 현재 구현 상태 — 완료/PoC/스캐폴드 구분 |
 | [current/roadmap.md](./current/roadmap.md) | 연구 목표 기준 향후 계획, 일정, ETRI 협의 필요사항 |
 | [current/open_issues.md](./current/open_issues.md) | 알려진 한계·기술 부채 |
-| [current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md) | 활성 논문 연구선; G0 v1.2 official-GT gate `PASSED` |
+| [current/saver_jscc_model_plan.md](./current/saver_jscc_model_plan.md) | 활성 제안 모델의 단일 기준; 핵심 모델 `DESIGN_ONLY`, SV0/G2 `IMPLEMENTED_UNVALIDATED`, 학습·formal evidence 없음 |
+| [current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md) | SAVER 선행 연구선; G0 `PASSED`, G1 effective-seed `NOT_PASSED`, fixed_int4 primary |
 
 ## 2. 장기 시스템 설계 (`architecture/`)
 
 | 문서 | 내용 |
 |---|---|
-| [architecture/system.md](./architecture/system.md) | 과제 목표, 핵심 연구 문제, 전체 파이프라인, 모듈 구조 |
-| [architecture/tx_rx_contract.md](./architecture/tx_rx_contract.md) | Tx/Rx 모듈 설계, 패킷 검증·채널 조건화 계약, LGVSC 참고 영상 확장 설계 |
-| [architecture/metrics.md](./architecture/metrics.md) | SRS·시간축 지표(`PTC`/`SFR`/`SDI`) 공식 정의, loop-internal/held-out 분리 원칙 |
+| [architecture/system.md](./architecture/system.md) | baseline과 SAVER target을 분리한 전체 파이프라인·모듈 구조 |
+| [architecture/tx_rx_contract.md](./architecture/tx_rx_contract.md) | 기존 Tx/Rx와 SAVER signed action·versioned memory·SM-DiT 계약 |
+| [architecture/metrics.md](./architecture/metrics.md) | SRS·시간축·SAVER ghost/revocation 지표 정의, loop-internal/held-out 분리 원칙 |
 
 ## 3. 평가·재현 절차 (`protocols/`)
 
 | 문서 | 내용 |
 |---|---|
-| [protocols/evaluation.md](./protocols/evaluation.md) | 이미지/영상 평가 실행 절차, 실험 설정 규약, presence 보정 재측정 |
+| [protocols/evaluation.md](./protocols/evaluation.md) | 이미지/영상/SAVER gate 평가 절차, 실험 설정 규약, presence 보정 재측정 |
 | [protocols/video_rate_benchmark.md](./protocols/video_rate_benchmark.md) | 의미통신 payload vs H.264/H.265/AV1 코덱 비교 방법 |
-| [protocols/datasets.md](./protocols/datasets.md) | 데이터셋 역할·stage 매핑·변환 워크플로 |
-| [protocols/reproducibility.md](./protocols/reproducibility.md) | checkpoint 선택 기준, `paper_mode` 사용법 |
+| [protocols/datasets.md](./protocols/datasets.md) | 기존/SAVER 데이터 역할·stage 매핑·held-out 개봉 규칙 |
+| [protocols/reproducibility.md](./protocols/reproducibility.md) | baseline/SAVER checkpoint 분리, `paper_mode`와 fingerprint 규칙 |
 | [protocols/results_registry.md](./protocols/results_registry.md) | 추적 `results/` 구조, run manifest 스키마·생성 절차 |
-| [protocols/training.md](./protocols/training.md) | stage-aware 학습 CLI, export, real-model smoke 검증 |
-| [protocols/transmission_normalization.md](./protocols/transmission_normalization.md) | 전송 정상화와 단일/3-GPU 안전 실행 절차 |
+| [protocols/training.md](./protocols/training.md) | 기존 stage-aware 학습과 SAVER 단계·gradient·checkpoint 계약 |
+| [protocols/transmission_normalization.md](./protocols/transmission_normalization.md) | 전송 정상화와 SAVER source/wireless rate 단위 분리 |
 | [protocols/float32_digital_diagnostics.md](./protocols/float32_digital_diagnostics.md) | float32 digital 복원 품질 진단 harness(경로 비교·stage 계측·ablation) — 10dB full 300프레임 검증 완료 |
 
 - 데이터 문서
@@ -97,17 +99,20 @@
 | [experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md](./experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md) | OVIS official-GT Pilot 40개·자동 audit 13/13; G0 통과 |
 | [experiments/2026-09-03_negative_semantics_g1_preparation.md](./experiments/2026-09-03_negative_semantics_g1_preparation.md) | G1 동결 matrix, 독립 OWLv2 calibration, 단일 RTX 4080 재개형 실행 절차 |
 | [experiments/2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md](./experiments/2026-09-03_negative_semantics_g1_memory_amendment_v1_1.md) | v1.0 OOM 원인, 128-grid padding/crop, 기존 run 무효화와 v1.1 재실행 경계 |
-| [experiments/2026-09-04_int6_etri_operating_point_decision.md](./experiments/2026-09-04_int6_etri_operating_point_decision.md) | ETRI 신규 기본 운용점을 fixed_int6로 변경하고 int4 G1 stress 조건과 bridge validation 경계를 명시한 결정 기록 |
+| [experiments/2026-09-04_int6_etri_operating_point_decision.md](./experiments/2026-09-04_int6_etri_operating_point_decision.md) | 당시 fixed_int6 임시 결정 기록; 2026-09-07 fixed_int4 결정으로 superseded된 역사적 artifact |
 | [experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md](./experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md) | G1 v1.1 정식 240/240 Pilot 실행 감사(`audit_negative_semantics_g1.py`)와 runner PASSED vs 논문 주장 범위 구분 |
 | [experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md](./experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md) | effective-seed 집계(seed 중복 발견, effective_seed_count=1)와 source-paired additional-object 분리; gate 재적용 시 NOT_PASSED로 뒤집힘 |
 | [experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md](./experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md) | fixed_int4 vs fixed_int6 paired bridge 실행 준비(코드/설정/테스트 완료, GPU 실행은 미실시) — tmux 명령과 판독 절차 |
+| [experiments/2026-09-07_negative_semantics_int6_bridge_results.md](./experiments/2026-09-07_negative_semantics_int6_bridge_results.md) | OVIS Pilot 40영상 formal bridge 결과; int6 품질 gate 통과, bytes +44.217%, H_add 유의차 없음 |
+| [experiments/2026-09-07_negative_semantics_g2_implementation.md](./experiments/2026-09-07_negative_semantics_g2_implementation.md) | SV0/G2 Oracle ABSENT receiver path·four-arm runner·read-only audit 구현; CPU 회귀만 완료, GPU 결과 없음 |
+| [experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md](./experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md) | bridge 결과와 통신 효율 목표를 반영해 fixed_int4를 primary development bit-depth로 재결정 |
 
 ## 5. 참조 문서 (`reference/`)
 
 | 문서 | 내용 |
 |---|---|
-| [reference/paper_alignment.md](./reference/paper_alignment.md) | 논문 정합성, `paper_mode`, 하이퍼파라미터 출처, 충실도 분류 |
-| [reference/framework_file_roles.md](./reference/framework_file_roles.md) | 파일별 실행 흐름과 역할 지도 |
+| [reference/paper_alignment.md](./reference/paper_alignment.md) | SGD-JSCC/LGVSC/SAVER 정합성, `paper_mode`, 충실도·claim 분류 |
+| [reference/framework_file_roles.md](./reference/framework_file_roles.md) | 기존 파일 실행 흐름과 SAVER 목표 파일 역할 지도 |
 | [reference/paper_writing_notes.md](./reference/paper_writing_notes.md) | 이전 reliability-layer 연구선 메모(superseded; 역사 참고용) |
 
 ## 6. 발표·보고 자료 (`reports/`)
@@ -138,6 +143,10 @@
    - 오케스트레이션: `pipelines/`
    - 지표: `evaluators/`
 3. **원본 읽기 전용** — 새 아이디어는 `SGDJSCC/`가 아니라 `sgdjscc_lab/`에 구현한다.
+4. **SAVER opt-in** — `use_saver_jscc=false`가 기본이며, 구현 전·게이트 off에서 기존
+   SGD-JSCC/LGVSC-inspired 경로를 변경하지 않는다.
+   SV0/G2의 `--negative-condition-manifest`도 명시적 opt-in이며 Oracle text는 packet에
+   직렬화하거나 rate로 계산하지 않는다.
 
 - 추가 기준
   - 전체 디렉터리·Phase gate: [system.md](./architecture/system.md)

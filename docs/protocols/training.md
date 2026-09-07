@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 8fbe6d98
 supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
 ---
 
@@ -14,6 +14,7 @@ supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
 - 범위
   - 논문 3-stage 학습
   - 보조·확장 실험
+  - SAVER-JSCC gate 통과 후의 단계별 학습 계약
 - 비영향 범위
   - 추론
   - 평가
@@ -35,6 +36,73 @@ supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
   3. `edge_codec`
   4. `controlnet`
 - 확장 실험: baseline 이후 `end_to_end_ft`
+
+## SAVER-JSCC 학습 계약 (`PLANNED`; SV0 inference runner만 구현)
+
+모델 구조와 gate는
+[saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md)를 따른다. Stage 0은 학습이
+없는 Oracle inference이며 `run_negative_semantics_g2.py`로 구현됐다. Stage 1~4의
+training config와 runner는 아직 없으므로 해당 명령 예시를 실행 가능 경로로 해석하지
+않는다.
+
+| 순서 | 계획 stage | 학습 대상 | 시작 조건 |
+|---:|---|---|---|
+| 0 | `saver_sv0_oracle` | 학습 없음, Oracle condition 실험 — `IMPLEMENTED_UNVALIDATED` | negative-semantics G2 protocol 동결 |
+| 1 | `saver_sv1_memory` | SAT + VREM updater/state heads | SV0 통과 |
+| 2 | `saver_sv2_dit` | SM-DiT zero-init adapters, SAT/VREM | SV1 통과 |
+| 3 | `saver_sv3_router` | JASR + semantic codec, 필요 시 SAT/VREM/adapter | SV2 통과 |
+| 4 | `saver_sv4_robust` | 선택된 SAVER trainable modules | SV3 구조·rate 단위 동결 |
+
+학습 순서를 건너뛰지 않는다.
+
+1. Oracle action으로 decoder/memory 효과를 먼저 확인한다.
+2. base SGD-JSCC/video diffusion backbone을 freeze한다.
+3. SAT/VREM과 SM-DiT adapter만 학습한다.
+4. SM-DiT 효과가 확인된 뒤 router와 channel codec을 연결한다.
+5. full-backbone LoRA/unfreeze는 frozen-backbone ablation 이후 별도 승인한다.
+
+필수 gradient audit:
+
+- `L_diff/L_ghost/L_preserve → SM-DiT → VREM → channel codec → SAT`
+- `L_rate → JASR → hard-forward/soft-backward action selection`
+- frozen backbone parameter gradient는 0 또는 `None`
+- held-out evaluator parameter gradient는 항상 `None`
+- deterministic version/tombstone check를 neural deletion loss로 표현하지 않음
+
+데이터 역할:
+
+- OVIS/YouTube-VOS Train: training
+- 사전 지정 Validation: early stopping·checkpoint selection
+- OVIS Pilot/Development: mechanism 확인과 debugging; final selection에 재사용하지 않음
+- DAVIS Held-out: architecture·threshold·checkpoint 동결 후 한 번만 개봉
+
+각 stage의 formal 시작 전 필요한 smoke:
+
+1. tensor shape와 action mask test
+2. VREM state-transition property test
+3. 1~2 step forward/backward에서 finite loss와 expected gradient path 확인
+4. checkpoint save/resume 및 architecture fingerprint mismatch fail-closed 확인
+5. 같은 seed 재현성과 서로 다른 effective seed 소비 확인
+
+SAVER checkpoint 필수 metadata:
+
+```text
+model_family: saver_jscc
+architecture_version
+stage
+K, d_m
+action_vocabulary
+packet_schema_version
+injection_layers
+base_checkpoint_sha256
+trainable_parameter_names/hash
+dataset_split_hash
+loss_weights
+rate_profile: saver_source | saver_wireless
+```
+
+기존 baseline checkpoint와 SAVER checkpoint 사이의 partial load는 명시적 migration
+script 없이는 거부한다.
 
 ## 기본 실행
 
@@ -151,3 +219,4 @@ python -m pytest tests/test_train_stages.py -q
 
 - 논문 대비 옵션·freeze 정책
   - [paper_alignment.md](../reference/paper_alignment.md)
+  - [SAVER-JSCC 모델 계획](../current/saver_jscc_model_plan.md)

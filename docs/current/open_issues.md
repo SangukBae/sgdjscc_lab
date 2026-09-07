@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-04
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: aae9e26
+source_commit: 8fbe6d98
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -16,6 +16,39 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - 연결 문서
   - 구현 상태: [status.md](./status.md)
   - 신규 연구 계획: [roadmap.md](./roadmap.md)
+  - SAVER 설계 기준: [saver_jscc_model_plan.md](./saver_jscc_model_plan.md)
+
+## SAVER-JSCC 구조
+
+- **핵심 모델은 설계만 있고 전용 학습 module이 없다**
+  - SAT, JASR, semantic channel codec, VREM과 SM-DiT는 모두 `NOT_IMPLEMENTED`다.
+  - SV0/G2 receiver prompt path는 `IMPLEMENTED_UNVALIDATED`이나 이를 SAVER 핵심 모델
+    구현으로 계산하지 않는다.
+- **Oracle controllability가 아직 입증되지 않았다**
+  - G1은 effective seed 1개와 source-paired prevalence 한계 때문에 scientific gate가
+    `NOT_PASSED`다.
+  - SV0/G2 Oracle ABSENT runner/audit는 구현됐지만 GPU 결과가 없다. 이 gate가 실패하면
+    full SAVER 구현을 진행할 근거가 없다.
+- **signed state label의 오검출 위험이 있다**
+  - `not detected`를 `confirmed-absent`로 바꾸면 실제 객체를 억제하는 false
+    suppression이 생긴다.
+  - `present/confirmed-absent/unknown` calibration과 independent evaluator가 필요하다.
+- **Tx와 Rx memory 동기화 계약이 미정이다**
+  - no-feedback에서 Tx가 실제 Rx state를 안다고 가정하면 Rx-legal contract를 위반한다.
+  - ACK 사용 여부, transmitter belief state와 feedback/retransmission byte·지연을
+    profile별로 동결해야 한다.
+- **rate 단위가 두 profile로 나뉜다**
+  - `saver_source`는 exact binary byte, `saver_wireless`는 actual complex channel use를
+    사용한다.
+  - 실제 modulation/FEC 없이 두 값을 합치거나 TWC 수준의 PHY claim을 할 수 없다.
+- **memory 자체는 신규성이 충분하지 않다**
+  - 최종 기여는 signed rate-bearing operation, versioned dual-bank memory와 SM-DiT
+    내부 비대칭 연산의 결합으로 입증해야 한다.
+- **학습 비용과 안정성이 확인되지 않았다**
+  - full video diffusion end-to-end 학습 전에 frozen backbone + zero-init adapter로
+    SV1/SV2를 분리 검증한다.
+  - negative residual의 과도한 억제, slot identity swap과 memory accumulation을 별도
+    failure mode로 기록한다.
 
 ## 시간축·영상
 
@@ -91,15 +124,16 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     4개 bit-depth가 모두 품질 허용 기준을 통과했고 `fixed_int4`가 최소 bit-depth로 선택됐다.
   - [full 실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md),
     [진단 프로토콜](../protocols/float32_digital_diagnostics.md).
-- **신규 `fixed_int6` ETRI 운용점의 both-omit·공개 데이터 검증이 남았다**
-  - 2026-09-04부터 신규 ETRI 기본 bit-depth를 `fixed_int6`로 정했지만 근거가 된
-    양자화 비교는 기존 개발 영상 10개와 baseline guide 조건이다.
-  - `int6 + both-omit`의 exact bundle byte, additional-object, ghost-track, latency는
-    아직 실측하지 않았다. 기존 int4 절감률·hallucination 수치를 int6에 전용하면 안 된다.
-  - G1 v1.1이 완료됐으므로 같은 OVIS Pilot·seed·diffusion step의 paired bridge
-    코드·설정·테스트를 준비했다(**실행 준비 완료, GPU 실행은 미실시**). 상세:
-    [int6 결정](../experiments/2026-09-04_int6_etri_operating_point_decision.md),
-    [bridge 준비 기록](../experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md).
+- **fixed_int4 primary 운용점은 Pilot 결정이며 held-out 일반화가 아니다**
+  - int4–int6 bridge는 OVIS Pilot 40영상에서 정식 완료됐고 int6 quality gate 통과,
+    bytes +44.217%, H_add 유의차 없음으로 fixed_int4를 primary development
+    bit-depth로 재결정했다.
+  - bridge는 effective seed 1개이고 G1과 같은 Pilot/evaluator를 사용했다. 따라서
+    다른 데이터·backbone·채널에서도 int4가 최종 우위라고 일반화할 수 없다.
+  - int6 ghost 비교는 정책당 jointly-uncensored EXIT event가 4개뿐이라 동등성
+    근거가 아니다. fixed_int6는 핵심 결론의 sensitivity ablation으로 유지한다.
+  - 상세: [bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md),
+    [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md).
 - **VAE-direct는 통합 개발평가의 strict SSIM gate를 실패했다**
   - both-omit에서 23.4885s/video로 full50보다 4.60배 빠르고 PSNR·LPIPS 및 semantic
     지표는 양호했지만, 평균 SSIM 하락 0.01129가 사전 margin 0.01을 넘었다.
@@ -110,8 +144,8 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     맞췄지만, 10/10 영상에서 fixed/SKEM keyframe·transmitting index가 같았다.
   - PSNR/SSIM/LPIPS 차이 0은 SKEM 우위가 아니라 동일 schedule 결과다. raw 100
     byte/video 차이도 config label의 manifest 길이뿐이라 padding 후 완전 동률이다.
-  - 이 결과는 selector를 fixed로 유지한다는 근거다. 당시 bit-depth는 `fixed_int4`였지만
-    2026-09-04 이후 신규 ETRI bit-depth는 별도 Pareto 결정에 따라 `fixed_int6`다.
+  - 이 결과는 selector를 fixed로 유지한다는 근거다. 당시 bit-depth와 2026-09-07
+    이후 primary development bit-depth는 모두 `fixed_int4`다.
     다른 semantic schedule의 효용을 보려면 exact-count 후보 중 fixed와 다른 index를
     강제하거나 실제 MLLM PSSS로 재검증해야 한다. 상세:
     [실험 결과](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md).
@@ -167,11 +201,9 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     같은 gate threshold를 정직하게(seed 중복 제거) 재적용하면 few10 기준
     `NOT_PASSED`로 뒤집힌다. (3) source-carried additional-object를 제외한
     source-paired h_add는 raw 대비 약 47~51% 낮고 full50은 `h_add_min` 미달이다.
-    (4) `results/…_derived_v1_2b`는 checksum-frozen이지만 그 결과를 만든
-    derivation 코드(`derive_negative_semantics_g1_v1_2.py` 등)가 당시 git에
-    commit되지 않은 code-dirty 상태였다 — 코드가 clean commit된 뒤
-    `v1_2c` 경로로 재파생해야 provenance 한계가 해소된다(결론 자체는
-    바뀔 것으로 예상하지 않음).
+    (4) code-clean 상태의 `outputs/…_derived_v1_2c` 재파생은 완료됐고
+    `score_and_hash_dual_verified`와 effective-seed `NOT_PASSED` 결론이 유지됐다.
+    다만 v1_2c는 아직 `results/` manifest/checksum/registry로 보존되지 않았다.
   - 근거: [G0 v1.2 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md),
     [G1 v1.1 결과·감사](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md),
     [G1 v1.2 amendment](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md)
@@ -200,6 +232,7 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   - 미지원: e2e faithful 재학습
 
 ## 관련 문서
+- [saver_jscc_model_plan.md](./saver_jscc_model_plan.md) — SAVER 구조·gate·claim 경계
 - [status.md](./status.md) — 현재 구현 상태
 - [roadmap.md](./roadmap.md) — 이 한계들을 해소하기 위한 향후 계획
 - [architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md) — 설계 차원의 근사 지점

@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 8fbe6d98
 supersedes: docs/video_extension_lgvsc.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -155,7 +155,7 @@ SegmentGenerationRequest(
 
 - `reuse`/`recompute`는 생성기를 거치지 않는다. `generate`만 위 5.2 계약을 탄다.
 
-### 5.4 최종 시스템 블록 다이어그램
+### 5.4 현재 LGVSC-inspired 시스템 블록 다이어그램
 
 ```text
                 ┌─ 송신단 ─────────────────────┐   ┌─ 채널 ──────────┐   ┌─ 수신단 ──────────────────────────────────────┐
@@ -176,7 +176,100 @@ SegmentGenerationRequest(
   - 지표: `temporal_srs`, `srs_flicker`, `PTC`, `SFR`, `SDI`
   - 정의: [metrics.md](./metrics.md)
 
-## 6. 전제와 리스크 (설계 차원에서 항상 유효)
+## 6. SAVER-JSCC Tx/Rx 계약 (`DESIGN_ONLY`)
+
+상세 module과 gate는
+[SAVER-JSCC 모델 계획](../current/saver_jscc_model_plan.md)을 따른다. 이 절은 송수신
+경계와 불변조건만 정의하며 구현 완료를 뜻하지 않는다.
+
+### 6.1 송신단 정보 집합
+
+송신단이 사용할 수 있는 입력:
+
+- 현재·과거 source GOP
+- 송신단 source-side semantic state
+- profile에서 허용한 CSI 또는 SNR estimate
+- 명시적 feedback profile에서 실제 수신한 ACK/NACK
+
+송신단이 사용할 수 없는 입력:
+
+- 현재 전송으로 생성될 미래 receiver output
+- 수신되지 않은 ACK를 이용해 구성한 실제 Rx memory 단정
+- held-out GT 또는 final evaluator output
+
+`no_feedback` profile에서 JASR는 source-side state와 사전 정의한 channel model만 사용한다.
+Rx state를 사용하려면 transmitter belief state로 이름을 분리하고 업데이트 근거를
+manifest에 남긴다.
+
+### 6.2 Signed action packet
+
+최소 header:
+
+```text
+schema_version
+scene_epoch
+entity_id / assertion_id
+operation: ASSERT | UPDATE | SUSPEND | RESUME | REVOKE | SCENE_RESET
+operation_version
+confidence/provenance class
+payload length and checksum
+```
+
+- `not detected`는 REVOKE 근거가 아니다.
+- `unknown`에서는 REVOKE를 만들 수 없다.
+- learned embedding payload와 deterministic state header를 구분한다.
+- header/payload/protection/padding/feedback/retransmission을 rate에 모두 포함한다.
+
+### 6.3 수신단 VREM state transition
+
+```text
+decode packet
+  → checksum/schema validation
+  → scene_epoch validation
+  → version monotonicity validation
+  → deterministic operation application
+  → learned identity/render/negative bank update
+  → SM-DiT conditioning
+```
+
+필수 property:
+
+1. 같은 operation 재적용은 idempotent하다.
+2. 현재 version 이하 operation은 state를 바꾸지 않는다.
+3. REVOKE 뒤 늦은 ASSERT가 도착해도 entity가 부활하지 않는다.
+4. 이전 scene epoch packet은 새 scene state를 바꾸지 않는다.
+5. corrupt negative packet은 적용하지 않는다.
+6. `SUSPEND`는 identity bank를 지우지 않는다.
+7. VREM과 SM-DiT는 원본 target frame을 읽지 않는다.
+
+### 6.4 SM-DiT conditioning
+
+각 injection block은 다음 순서를 유지한다.
+
+```text
+channel-conditioned AdaLN
+  → self-attention
+  → active-memory cross-attention
+  → bounded absent/revoked signed residual
+  → feed-forward/temporal update
+```
+
+- 현재 config placeholder인 channel token은 learned projection 후 실제 block 입력으로
+  소비돼야 한다.
+- prompt-only, config scale 변경 또는 sampler step 변경은 SM-DiT 구현으로 세지 않는다.
+- base backbone freeze와 injection layer 집합을 checkpoint fingerprint에 기록한다.
+
+### 6.5 Rate profile
+
+| profile | 공식 rate | 허용 claim |
+|---|---|---|
+| `saver_source` | exact on-wire bytes/effective bpp | generative video source/semantic coding |
+| `saver_wireless` | actual complex channel uses와 실제 header/FEC/modulation overhead | wireless/PHY-aware JSCC |
+
+exact byte와 proxy channel symbol을 합산하지 않는다. `saver_wireless`가 구현되지 않은
+상태에서 fading/PHY 최적화를 SAVER의 완료 contribution으로 쓰지 않는다.
+
+## 7. 전제와 리스크 (설계 차원에서 항상 유효)
 
 | 구분 | 내용 |
 |---|---|
@@ -187,6 +280,7 @@ SegmentGenerationRequest(
 | 지표 순환 평가 위험 | 재생성 구동에 쓴 지표로 우위를 보고하면 결과가 부풀려진다 — loop-internal/held-out 분리 원칙([metrics.md](./metrics.md)) 필수. |
 
 ## 관련 문서
+- [current/saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md) — SAVER module·학습·gate 기준
 - [system.md](./system.md) — 전체 파이프라인 개요
 - [metrics.md](./metrics.md) — 이 설계가 검증하는 지표 정의
 - [current/status.md](../current/status.md) — 이 설계 중 무엇이 구현·검증됐는지

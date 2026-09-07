@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 8fbe6d98
 supersedes: docs/etri_overview.md
 ---
 
@@ -30,12 +30,21 @@ supersedes: docs/etri_overview.md
 3. **평가 체계 신뢰도**
    - 문제: PSNR/SSIM/CLIP만으로 의미 drift와 객체 깜빡임을 설명하기 어려움
    - 위험: 제어 지표와 보고 지표를 재사용하면 순환 평가 발생
+4. **SAVER-JSCC의 signed temporal state transmission**
+   - 문제: positive-only·append-only 생성 조건은 사라진 객체와 무효화된 assertion을
+     receiver memory에서 제거하지 못해 ghost persistence를 만들 수 있음
+   - 방향: signed assertion, 공동 rate routing, versioned dual-bank memory와
+     diffusion 내부 positive/negative 비대칭 연산
+   - 현재 상태: `DESIGN_ONLY`; 구현·학습·성능 근거 없음
 - 연결 문서
+  - SAVER 단일 기준: [current/saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md)
   - 현재 상태: [current/status.md](../current/status.md)
   - 향후 계획: [current/roadmap.md](../current/roadmap.md)
   - 원인·해법 설계: [tx_rx_contract.md](./tx_rx_contract.md)
 
 ## 시스템 파이프라인
+
+### 현재 구현된 baseline/extension 경로
 
 ```
 Original Image / Keyframe
@@ -47,6 +56,29 @@ Original Image / Keyframe
 ```
 
 - 공식 지표 정의(SRS, CSV 컬럼, `PTC`/`SFR`/`SDI`)는 [metrics.md](./metrics.md) 참고.
+
+### SAVER-JSCC 목표 경로 (`DESIGN_ONLY`)
+
+```text
+source GOP + previous Tx source state
+  → Signed Assertion Tokenizer(SAT)
+  → Joint Assertion-Symbol Router(JASR)
+  → visual/action-conditioned channel codec
+  → wireless channel
+  → version check + Versioned Revocable Entity Memory(VREM)
+       ├─ active identity/render bank
+       └─ confirmed-absent/revoked bank
+  → Signed-Memory Diffusion Transformer(SM-DiT)
+       + received visual latent
+       + learned channel-condition tokens
+  → reconstructed GOP
+```
+
+- SAVER는 기존 image/video path를 대체 구현한 상태가 아니라 opt-in 목표 구조다.
+- `saver_source`는 exact binary byte, `saver_wireless`는 actual complex channel-use
+  profile로 분리하며 두 단위를 합산하지 않는다.
+- 구조·tensor·loss·gate의 기준은
+  [SAVER-JSCC 모델 계획](../current/saver_jscc_model_plan.md)을 따른다.
 
 ## 저장소 & 모듈 구조
 
@@ -80,6 +112,9 @@ src/sgdjscc_lab/
 └── utils/          preprocessing · csv_logger · metrics_io · metric_profiles · packet_io · seed
 ```
 
+SAVER 통과 후 추가할 목표 위치는 `models/saver/`, `pipelines/saver_video_pipeline.py`,
+`training/saver_*`다. 현재 디렉터리나 파일이 존재한다고 해석하지 않는다.
+
 - 파일별 실행 흐름: [framework_file_roles.md](../reference/framework_file_roles.md)
 
 ## 개발 원칙
@@ -94,6 +129,10 @@ src/sgdjscc_lab/
    - 오케스트레이션: `pipelines/`
    - 지표: `evaluators/`
 3. **원본 읽기 전용** — 새 아이디어는 `SGDJSCC/`가 아니라 `sgdjscc_lab/`에 구현한다.
+4. **SAVER 상태 분리**
+   - master gate `use_saver_jscc`, 기본값 `false`
+   - gate off에서 기존 SGD-JSCC/LGVSC-inspired 수치 보존
+   - `design`, `implemented`, `trained`, `formal`, `held-out` 상태를 혼용하지 않음
 
 - 호환성 규칙
   - opt-in 확장: 패킷 검증·채널 조건화·영상 확장·저지연 샘플링
@@ -103,6 +142,7 @@ src/sgdjscc_lab/
   - 세부 규칙: [재현성 프로토콜](../protocols/reproducibility.md)
 
 ## 관련 문서
+- [current/saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md) — SAVER 구조·학습·gate 단일 기준
 - [metrics.md](./metrics.md) — SRS·CSV 컬럼·시간축 지표 정의
 - [tx_rx_contract.md](./tx_rx_contract.md) — Tx/Rx 모듈 설계, 영상 확장 시스템 구조
 - [reference/framework_file_roles.md](../reference/framework_file_roles.md) — 파일별 실행 흐름

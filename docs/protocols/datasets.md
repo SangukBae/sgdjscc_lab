@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 8fbe6d98
 supersedes:
 ---
 
@@ -67,6 +67,30 @@ data/_reports/dataset_status.md
   - 구조 가이드: 이미지별 MuGE edge sidecar
   - 준비 스크립트: `scripts/prepare_paper_like_stage23_data.sh`
   - config: `configs/experiments/paper_reproduction/custom_paper_like/`
+
+## SAVER-JSCC 데이터 역할
+
+SAVER stage 이름과 개봉 순서는
+[saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md)를 따른다. 현재 SAVER
+training runner가 구현됐다는 뜻은 아니다.
+
+| 역할 | 현재 자산 | 허용 용도 |
+|---|---|---|
+| Pilot | OVIS official-GT event 40영상 | SV0 mechanism 확인, protocol debugging |
+| Train | OVIS/YouTube-VOS training split | SAT/VREM/SM-DiT/JASR 학습 |
+| Development | ETRI 10영상 | 배선·비교·실패 분석, final threshold 선택 금지 |
+| Validation | 사전 고정한 validation 507영상 | early stopping·checkpoint/architecture 선택 |
+| Held-out | source-disjoint DAVIS 30영상 | 모든 선택 동결 후 SV5 최종 검증 |
+
+- `present`, `confirmed-absent`, `unknown` label을 분리한다.
+- ENTER/EXIT/OCCLUDE/REAPPEAR와 `SCENE_RESET` 근거를 보존한다.
+- detector 자동 label에는 detector/checkpoint/threshold와 source annotation provenance를
+  기록한다.
+- `not detected`를 absent GT로 저장하지 않는다.
+- Pilot 결과를 보고 threshold를 바꾼 뒤 같은 Pilot을 confirmatory split으로 재사용하지
+  않는다.
+- Held-out raw media와 label을 architecture/config/checkpoint 동결 전에 model 개발자가
+  열지 않는다.
 
 ## 변환 절차
 

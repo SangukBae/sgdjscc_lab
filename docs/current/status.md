@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-04
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: aae9e26
+source_commit: 8fbe6d98
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -14,15 +14,43 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   - 완료·PoC·스캐폴드 상태
   - 연구 목표 기준 현황
 - 연결 문서
+  - SAVER 단일 기준: [saver_jscc_model_plan.md](./saver_jscc_model_plan.md)
   - 설계: [architecture/](../architecture/)
   - 향후 작업: [roadmap.md](./roadmap.md)
   - 한계·기술 부채: [open_issues.md](./open_issues.md)
   - 실험 근거: `docs/experiments/`
   - 과거 구현 순서: [etri_implementation_log.md](../archive/etri_implementation_log.md)
 
-## 활성 논문 연구선과 G0
+## 활성 제안 모델: SAVER-JSCC
 
-- 기준 계획: [negative_semantic_paper_plan.md](./negative_semantic_paper_plan.md)
+- 모델명: **SAVER-JSCC — Signed Assertions and Versioned Entity Memory for
+  Revocation-Aware Generative Video JSCC**
+- 기준 계획: [saver_jscc_model_plan.md](./saver_jscc_model_plan.md)
+- 현재 상태: **핵심 모델 `DESIGN_ONLY`; SV0/G2 `IMPLEMENTED_UNVALIDATED`**
+- 구현 상태: SV0 Oracle ABSENT receiver-conditioning/runner/audit는 구현됨. SAVER 전용
+  SAT/JASR/channel codec/VREM/SM-DiT module은 없음
+- 학습 상태: SAVER checkpoint·optimizer run·formal training 모두 없음
+- 성능 근거: 없음. 기존 G0/G1과 int4/int6 bridge는 문제·데이터·운용점 근거이며
+  SAVER 성능 근거가 아니다.
+- 첫 gate: `SV0 Oracle signed-control feasibility`. 실행 경로는 구현됐고 GPU smoke와
+  40-video Pilot가 남았다. G1 effective-seed `NOT_PASSED`인 동안 탐색적 mechanism
+  evidence로만 쓴다.
+- 호환성 목표: 향후 `use_saver_jscc=false`에서 기존 baseline 경로와 수치를 보존한다.
+
+| SAVER 구성요소 | 현재 판정 |
+|---|---|
+| SV0/G2 Oracle ABSENT receiver path | `IMPLEMENTED_UNVALIDATED` |
+| Signed Assertion Tokenizer(SAT) | `NOT_IMPLEMENTED` |
+| Joint Assertion-Symbol Router(JASR) | `NOT_IMPLEMENTED` |
+| Action-Conditioned Semantic Channel Codec | `NOT_IMPLEMENTED` |
+| Versioned Revocable Entity Memory(VREM) | `NOT_IMPLEMENTED` |
+| Signed-Memory Diffusion Transformer(SM-DiT) | `NOT_IMPLEMENTED` |
+| SAVER 학습·checkpoint | `NOT_STARTED` |
+| SAVER formal/held-out evidence | `NOT_AVAILABLE` |
+
+## Negative-semantics 선행 연구선과 G0/G1
+
+- 선행 기준: [negative_semantic_paper_plan.md](./negative_semantic_paper_plan.md)
 - 2026-09-03 v1.2 완료: OVIS validation frame·official with-GT와 기존
   YouTube-VOS/DAVIS archive SHA-256·영상별 tree hash·사용 승인 기록 동결
 - 데이터 manifest: OVIS Pilot 40 / Train 3,471 / Development 10 / Validation 507 /
@@ -33,7 +61,8 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - 현재 gate: **G1 v1.1 정식 실행 완료, `runner PASSED` + `g1_summary.json.gate_status: PASSED`(declared-seed 정의)**.
   40영상 × `{few10,full50}` × 3 declared seed, child run 6개 × 40영상 =
   240/240 완료, 실패 0, held-out 미접근. 독립 감사는
-  `scripts/audit_negative_semantics_g1.py --require-pass`(exit 0)가 수행한다.
+  `scripts/audit_negative_semantics_g1.py --require-runner-complete`(exit 0)와
+  `--require-scientific-gate`(exit 5)를 분리해 기록한다.
 - **v1.2 amendment(2026-09-06)로 한계 3가지를 정량화했다**: (1) 이
   reconstruction 경로는 seed를 소비하지 않아 `effective_seed_count=1`(선언
   3-seed 대비)이며, 같은 gate threshold를 effective-seed 지표에 재적용하면
@@ -44,14 +73,21 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   미달이다. (3) ghost survival uncensored 표본은 effective-seed 기준
   policy당 4개뿐이다. GPU 재실행 없이 기존 `detection_rows.jsonl`만으로
   재계산했다(`scripts/derive_negative_semantics_g1_v1_2.py`).
+- code-clean 재파생 `outputs/…_derived_v1_2c`에서도
+  `score_and_hash_dual_verified`와 effective-seed `NOT_PASSED`가 유지됐다.
+  v1_2c의 `results/` 보존은 아직 남아 있다.
 - G1은 GPU 학습이 아니라 frozen checkpoint 추론·자동 평가다. smoke output은 논문 근거가
   아니며 정식 Pilot 결과만 G1 gate에 사용한다.
-- 2026-09-04 ETRI 신규 개발·시연의 기본 양자화 운용점은 `fixed_int6`로 변경했다.
-  G1 v1.1은 비교 가능성을 위해 `fixed_int4` stress configuration을 유지한다.
-  `fixed_int4 vs fixed_int6` paired bridge(동일 OVIS Pilot·both-omit·
-  few10/full50·effective seed 1개)는 코드·설정·테스트를 완료해 **실행 준비
-  상태**이며, GPU 실행은 아직 하지 않았다 — 정확한 명령은
-  [bridge 준비 기록](../experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md) 참고.
+- **fixed_int4–fixed_int6 paired bridge 정식 실행을 완료했다**. 동일 OVIS Pilot
+  40영상·both-omit·few10/full50·effective seed 1개에서 int6 신규 reconstruction은
+  정책당 40/40, 실패 0, held-out 미접근이며 10,589개 산출물의 SHA-256·크기 검증도
+  통과했다. int6는 PSNR/SSIM/LPIPS quality gate를 통과했지만 int4 대비 bundle
+  bytes가 44.217% 증가했고, raw/source-paired H_add paired CI는 모두 0을 포함했다.
+- 이 결과와 통신 효율 우선순위를 반영해 **2026-09-07부터 논문 primary development
+  bit-depth를 `fixed_int4`로 재결정했다**. `fixed_int6`는 품질 민감도·robustness
+  ablation과 명시적 시연 opt-in 조건으로 유지한다. 근거:
+  [bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md),
+  [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md).
 - 첫 formal v1.0 시도는 비정상 overlapping-patch 증가에 따른 RTX 4080 OOM으로 전체
   무효화했다. v1.1은 resize 후 128-grid padding, 평가 전 padding crop을 동결했고 실제
   실패 영상 smoke를 통과한 뒤 정식 240/240을 완료했다. v1.0에서는 검증된 source-only
@@ -75,13 +111,14 @@ historical artifact이므로 재작성하지 않았다.
 
 ## 핵심 연구 문제별 대응 현황
 
-- [architecture/system.md](../architecture/system.md)의 세 핵심 연구 문제에 대한 현재 대응.
+- [architecture/system.md](../architecture/system.md)의 네 핵심 연구 문제에 대한 현재 대응.
 
 | 연구 문제 | 현재 대응 |
 |---|---|
 | 1. 시간축·영상 신뢰성 | keyframe pipeline, scene change, temporal evaluator, semantic delta + motion 이중 게이트, `PTC`/`SFR`/`SDI`, LGVSC 참고 3-way 생성 분기 — **기본 파이프라인 완료**. real MLLM PSSS·10영상×4모드 재현·학습형 개선선은 미완(아래 "영상 확장" 참고) |
 | 2. 할루시네이션 | semantic packet verifier, 오류 유형별 regeneration controller, OWLv2/VQA 보강 — 판정·로그까지 완료, 실제 sampler 개입은 미구현(아래 "할루시네이션 완화" 참고) |
 | 3. 평가 체계 신뢰도 | loop-internal/held-out 지표 분리, `PTC`/`SFR`/`SDI`, Presence Calibration — 구조·기존 실측 완료. GT/VLM 기반 Temporal SRS Calibration·DISTS/downstream·최종 paired held-out 검증은 미완(아래 "평가 체계" 참고) |
+| 4. SAVER signed temporal state | SV0/G2 receiver-control runner까지 **`IMPLEMENTED_UNVALIDATED`**; SAT/JASR/VREM/SM-DiT는 **`DESIGN_ONLY`**, 구현·학습·성능 근거 없음 |
 
 ## 기능별 구현 상태
 
@@ -210,10 +247,10 @@ historical artifact이므로 재작성하지 않았다.
 |---|---|
 | Semantic-unit 절감 (키프레임+델타 재사용) | 완료 |
 | Channel-symbol/bit accounting PoC (`accounting/bit_accounting.py`) | 완료 — proxy 상수 기반, 실제 CBR/표준 bitstream 검증 아님 |
-| 실제 binary packet 전송 (`transmission/`, 4/6/8/16/32-bit 양자화) | **전송 안정성 검증 완료·ETRI 기본 운용점 `fixed_int6`** — 10영상×6설정 60/60 pair, 실패·NaN/Inf 0건. `fixed_float32` 대비 int16/int8/int6/int4가 모두 품질 허용 기준을 통과했다. 당시 rate-first 규칙은 최소 bit-depth `fixed_int4`를 선택했지만, 2026-09-04 ETRI 운용 목적에서는 679.936 bytes/frame의 추가 전송으로 baseline에 더 가까운 PSNR·SSIM을 얻는 `fixed_int6`를 신규 기본값으로 결정했다. AWGN은 참고행이며 digital Pareto baseline에서 제외 — [10dB 재평가](../experiments/2026-08-28_quantization_reevaluation_10db.md), [int6 결정](../experiments/2026-09-04_int6_etri_operating_point_decision.md), [보존 결과](../../results/quantization_reevaluation_10db_20260828/README.md) |
+| 실제 binary packet 전송 (`transmission/`, 4/6/8/16/32-bit 양자화) | **전송 안정성·int4/int6 bridge 검증 완료, primary development 운용점 `fixed_int4`** — 10영상×6설정 60/60 pair에서 모든 integer bit-depth가 품질 budget을 통과했고 int4가 최소 bit-depth였다. 후속 OVIS Pilot 40영상 bridge에서도 int6는 품질이 소폭 개선됐지만 int4 대비 bytes가 44.217% 증가하고 H_add의 유의한 개선은 없었다. 따라서 2026-09-07부터 fixed_int4를 primary로 복원하고 int6는 ablation/시연 opt-in으로 유지한다. AWGN은 참고행이며 digital Pareto baseline에서 제외 — [10dB 재평가](../experiments/2026-08-28_quantization_reevaluation_10db.md), [bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md), [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md), [보존 결과](../../results/quantization_reevaluation_10db_20260828/README.md) |
 | float32 digital 품질 저하 진단 harness (`diagnostics/`, `scripts/diagnose_float32_digital_quality.py`) | **10dB step 정상화·full 검증·결과 고정 완료** — 3 core condition×100프레임에서 digital wire가 AWGN 대비 PSNR `+0.721dB`, SSIM `+0.00552`, LPIPS `-0.00223`; `-1dB` 이하 저하 0/300. in-process/wire 최대 PSNR 차이 `0.000752dB`, wire round-trip 300/300 bit-exact, 실패·NaN/Inf·conflict 0건. instrumented 20/20과 metric-only stage 6 300/300 모두 `no_issue_detected`; 핵심 원본 50개·보정 report·checksum을 registry에 고정 — [full 실측](../experiments/2026-08-28_float32_digital_step_normalization_full.md), [보존 결과](../../results/float32_digital_normalization_full_20260827/README.md) |
 | 10dB 양자화 재평가 실행 환경 | **3-GPU full 실행·원격 회수·결과 registry 고정 완료** — fixed selector에서 AWGN 참고 + float32/int16/int8/int6/int4 비교, seed 2025. 원격·로컬 13,144개 파일/1,210,877,488 bytes와 전 파일 SHA-256 일치. worker `cuda:0/1/2` provenance 및 10dB plan/signature/resolved-config 계약 확인 |
-| fixed–SKEM exact matched-rate 재평가 | **3-GPU full 실행·결과 registry 고정 완료** — 100/100 pair, 50/50 rate row, 실패·NaN/Inf 0; actual transmitting count exact, raw byte 최대 차이 0.004953%, padding 후 effective byte exact. 단, proxy SKEM은 10/10 영상에서 fixed와 keyframe/transmitting index가 같아 품질 차이도 정확히 0이었다. SKEM 우위가 아니라 fixed schedule로 수렴한 null 결과다. 당시 int4 실험은 historical evidence로 유지하고 신규 ETRI bit-depth는 별도 결정에 따라 int6를 사용한다 — [실험](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md), [int6 결정](../experiments/2026-09-04_int6_etri_operating_point_decision.md), [보존 결과](../../results/fixed_skem_matched_rate_10db_20260828/README.md) |
+| fixed–SKEM exact matched-rate 재평가 | **3-GPU full 실행·결과 registry 고정 완료** — 100/100 pair, 50/50 rate row, 실패·NaN/Inf 0; actual transmitting count exact, raw byte 최대 차이 0.004953%, padding 후 effective byte exact. 단, proxy SKEM은 10/10 영상에서 fixed와 keyframe/transmitting index가 같아 품질 차이도 정확히 0이었다. SKEM 우위가 아니라 fixed schedule로 수렴한 null 결과다. 당시 int4 실험은 historical evidence이며 2026-09-07 primary bit-depth도 fixed_int4로 확정됐다 — [실험](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md), [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md), [보존 결과](../../results/fixed_skem_matched_rate_10db_20260828/README.md) |
 | edge·uncertainty 전송 절감 ablation | **16-profile·3-GPU full 실행·결과 registry 고정 완료** — 160/160 pair, 실패·NaN/Inf 0. 시험한 후보 중 `combined_ds4`가 356,824.7 bytes/video로 `fixed_int4` baseline 대비 85.11% 절감했고 pixel quality gate를 통과했다. 단, uncertainty-only 5종은 모든 영상에서 지표가 baseline과 정확히 같았으며 reliable-digital decoder가 uncertainty를 소비하지 않는 경로가 확인됐다. edge 영향도 수치적으로 매우 작아 혼합 omit/downsample과 semantic·시간축 검증 전까지 조건부 후보로만 유지 — [실험](../experiments/2026-08-28_edge_uncertainty_ablation_10db.md), [보존 결과](../../results/edge_uncertainty_ablation_10db_20260828/README.md) |
 | 통합 semantic·hallucination·temporal 평가 | **3-GPU full 완료·결과 registry 고정, held-out은 데이터 준비 전까지 연기** — 4 guide × 3 decoder × 10영상의 120/120 pair, 총 12,000 frame, 실패·non-finite 0. CLIP·OWLv2·VQA가 각각 47,744건 기여했다. 평균 gate의 개발셋 잠정 후보는 `few10 + both-omit`: 219,459.7 bytes/video(-90.843%), 39.454s/video(-63.486%), PSNR -0.2435dB, SSIM -0.00188, LPIPS +0.01558. hallucination/additional-object CI 상한 0.0525/0.0570이 margin 0.05를 넘어 최종 운영점은 확정하지 않는다. 새 독립 데이터가 준비될 때까지 guide 계약·verifier 폐루프·동적 controller를 먼저 진행 — [결과](../experiments/2026-08-29_integrated_semantic_validation_10db.md), [보존 결과](../../results/integrated_semantic_validation_10db_20260829/README.md), [연기 결정과 작업 순서](./roadmap.md#held-out-연기-결정-2026-08-29) |
 | VAE-direct 후보 | **통합 개발평가에서 strict SSIM gate 실패** — both-omit에서 23.4885s/video로 full50보다 4.60배 빠르고 PSNR·LPIPS는 개선됐지만 SSIM 하락 0.01129가 margin 0.01을 넘었다. primary held-out 후보에서는 제외하고 탐색적 비교로 유지 — [통합 결과](../experiments/2026-08-29_integrated_semantic_validation_10db.md) |
@@ -234,6 +271,7 @@ historical artifact이므로 재작성하지 않았다.
 - 상세: [학습 프로토콜](../protocols/training.md)
 
 ## 관련 문서
+- [saver_jscc_model_plan.md](./saver_jscc_model_plan.md) — SAVER 구조·학습·gate 단일 기준
 - [roadmap.md](./roadmap.md) — 향후 연구개발 계획
 - [open_issues.md](./open_issues.md) — 알려진 한계·기술 부채
 - [architecture/](../architecture/) — 장기 시스템 설계

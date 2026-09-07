@@ -886,11 +886,12 @@ def _run_diffusion(
     from sgdjscc_lab.utils import profiling
     profiling.record_diffusion_call(steps=int(diffusion_step))
 
-    negative_prompt = [
-        "distorted, discontinuous, ugly, blurry, low resolution, "
-        "deformed, bad quality, deformed"
-        for _ in range(len(semantic_text))
-    ]
+    # Historical quality negatives remain the default.  G2 can opt in to a
+    # receiver-side semantic suffix through cfg.negative_conditioning; the
+    # resolver validates/broadcasts it once and every sampler route below
+    # consumes the exact same resolved prompt list.
+    from sgdjscc_lab.guidance.negative_conditioning import resolve_negative_prompts
+    negative_prompt = resolve_negative_prompts(semantic_text, cfg)
 
     latent_init = (
         encode_features_hat / power_scalar

@@ -1,20 +1,38 @@
 ---
 status: active
-updated: 2026-09-06
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: aae9e26
+source_commit: 8fbe6d98
 ---
 
 > [← 문서 색인](../README.md)
 
 # 다음 채팅용 연구개발 인계 요약
 
-## 2026-09-06 G1 v1.1 완료·감사, v1.2 amendment, int6 bridge 실행 준비
+## 2026-09-07 SAVER-JSCC 연구선 등록
+
+- 활성 제안 모델을 **SAVER-JSCC: Signed Assertions and Versioned Entity Memory for
+  Revocation-Aware Generative Video JSCC**로 정했다.
+- 단일 기준: [saver_jscc_model_plan.md](./saver_jscc_model_plan.md).
+- SAVER 핵심 모델은 `DESIGN_ONLY`다. SV0/G2 Oracle ABSENT receiver path와 runner/audit는
+  `IMPLEMENTED_UNVALIDATED`이나, SAT/JASR/channel codec/VREM/SM-DiT,
+  checkpoint/training/formal evidence는 없다.
+- 기존 [negative-semantics 계획](./negative_semantic_paper_plan.md)은 삭제하지 않고
+  SAVER SV0/SV1의 데이터·Oracle·packet/RSM 선행 gate로 유지한다.
+- 첫 작업은 구현된 `SV0 = G2 Oracle ABSENT`의 GPU smoke/Pilot 검증이다. 통과하기 전
+  SAT/VREM/SM-DiT 전체 구현으로 넘어가지 않는다.
+- 호환성 목표는 `use_saver_jscc=false`에서 기존 SGD-JSCC/LGVSC-inspired 경로와
+  수치를 보존하는 것이다.
+- 문서 역할: 설계·gate는 SAVER plan, 실제 상태는 `status.md`, 다음 작업은
+  `roadmap.md`, 실행 결과는 새 날짜 기반 `docs/experiments/` 문서에 기록한다.
+
+## 2026-09-07 int6 bridge 완료와 fixed_int4 primary 재결정
 
 - **G1 v1.1 정식 실행이 완료됐다**: OVIS Pilot 40영상 × `{few10,full50}` ×
   3 declared seed, child run 6개 × 40영상 = **240/240**, 실패 0, held-out
-  미접근. 신규 `scripts/audit_negative_semantics_g1.py --require-pass`(exit 0)로
-  독립 재검증했다. `g1_summary.json.gate_status: PASSED`(declared-seed 정의).
+  미접근. `scripts/audit_negative_semantics_g1.py --require-runner-complete`는
+  exit 0, `--require-scientific-gate`는 exit 5다.
+  `g1_summary.json.gate_status: PASSED`는 declared-seed 정의에만 해당한다.
   보존: [results/negative_semantics_g1_pilot_rtx4080_v1_1](../../results/negative_semantics_g1_pilot_rtx4080_v1_1/),
   해석: [실험 문서](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md).
 - **v1.2 amendment로 세 가지 한계를 GPU 재실행 없이 정량화했다**
@@ -35,31 +53,35 @@ source_commit: aae9e26
   v1.1의 원본 파일은 전혀 수정하지 않았다. 보존:
   [results/…_derived_v1_2](../../results/negative_semantics_g1_pilot_rtx4080_v1_1_derived_v1_2/),
   해석: [v1.2 amendment 문서](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md).
-- **`fixed_int4 vs fixed_int6` paired bridge를 실행 준비까지 완료했다** —
-  코드(`scripts/run_negative_semantics_int6_bridge.py`,
-  `src/sgdjscc_lab/evaluators/int6_bridge.py`), 동결 protocol
-  (`configs/experiments/negative_semantics/g1_int6_bridge_protocol.yaml`),
-  테스트 11개(합성 fixture + 실제 v1.1 run에 대한 GPU-free 검증)를 완료했다.
-  **GPU 실험·GPU smoke는 이 세션에서 실행하지 않았다** — 정확한 tmux
-  명령과 preflight/smoke/formal 구분, 판독 절차는
-  [bridge 준비 기록](../experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md)에
-  있다. 사용자가 직접 실행해야 한다.
-- 회귀 없음: `python -m pytest tests/` — **1552 passed** (기존 1541 + 신규
-  11).
-- 다음 채팅에서 int6 bridge formal 결과가 나오면: (1) `int6_bridge_summary.json`을
-  판독하고 (2) `docs/experiments/`에 날짜 문서·`results/`에 보존 사본을
-  추가하고 (3) 이 문서·`status.md`·`roadmap.md`를 갱신하고 (4) G2 Oracle
-  ABSENT 진입 여부를 v1.2/int6 bridge 결과를 반영해 재검토한다.
+- code-clean 상태에서 `outputs/…_derived_v1_2c`를 재파생했고
+  `score_and_hash_dual_verified`, effective-seed `NOT_PASSED` 결론이 유지됐다.
+  v1_2c의 최소 artifact를 `results/`에 보존하는 작업은 남아 있다.
+- bridge hardening까지 포함한 회귀 검증은 `python -m pytest tests/` 기준
+  **1652 passed, 0 failed**였다.
+- **`fixed_int4 vs fixed_int6` paired bridge formal을 완료했다** — OVIS Pilot
+  40영상 × `{few10,full50}`, seed 2025, int6 child run 정책당 40/40, 실패 0,
+  held-out 미접근. 실행 상태와 두 품질 gate는 `PASSED`다.
+- int6는 int4 대비 PSNR +0.100~0.146dB, SSIM +0.00168~0.00228,
+  LPIPS -0.00123~-0.00171로 소폭 개선됐지만 bundle bytes가 두 정책 모두
+  **44.217% 증가**했다. raw/source-paired H_add delta의 95% CI는 모두 0을
+  포함한다. ghost는 정책당 uncensored EXIT event가 4개뿐이다.
+- 10,589개 immutable artifact, 1,217,972,224 bytes를 독립 재해시해 mismatch
+  0을 확인했다. formal wall time은 약 8시간 49분이다.
+- 위 결과로 2026-09-04의 int6 임시 결정을 대체하고 **논문 primary development
+  bit-depth를 `fixed_int4`로 확정**했다. int6는 robustness/품질 민감도
+  ablation과 시연 opt-in으로만 유지한다.
+- 근거: [bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md),
+  [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md).
+- 다음 작업은 구현된 fixed_int4 기반 G2 Oracle ABSENT의 GPU smoke/Pilot 검증이다.
+  G1 effective-seed gate가 `NOT_PASSED`인 동안 G2 결과는 mechanism feasibility를 보는
+  탐색 근거로만 기록한다.
 
-## 2026-09-04 ETRI 양자화 운용점 변경
+## 2026-09-04 int6 임시 결정 — superseded
 
-- 신규 ETRI 개발·시연·최종 후보의 기본 bit-depth는 `fixed_int6`다.
-- 기존 `fixed_int4` 선택은 최소-byte rate-first 결정이었으며 완료 실험과 G1 v1.1
-  stress configuration은 역사적 비교 가능성을 위해 그대로 보존한다.
-- `int6 + both-omit`의 exact byte와 hallucination 결과는 아직 없으므로 G1 뒤 G2 전에
-  동일 공개 데이터·seed·diffusion step의 paired bridge validation을 수행한다.
-- 근거와 적용 범위:
-  [int6 ETRI 운용점 결정](../experiments/2026-09-04_int6_etri_operating_point_decision.md)
+- 당시 baseline-guide 10영상 결과만으로 int6를 신규 기본값으로 정했으나,
+  2026-09-07 OVIS both-omit bridge와 통신 효율 우선순위에 따라 superseded됐다.
+- 과거 결정과 산출물은 역사적 artifact로 보존한다. 현재 적용 기준은
+  [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md)이다.
 
 ## 2026-09-03 최우선 변경
 
@@ -130,8 +152,9 @@ source_commit: aae9e26
 - 최소 bit-depth `fixed_int4`: byte -28.45%, PSNR -0.0526dB,
   SSIM -0.00201, LPIPS 변화 -0.000487.
 - AWGN은 참고 기준이며 digital Pareto baseline으로 사용하지 않는다.
-- 당시 결론: **rate-first operating point는 `fixed_int4`.** 2026-09-04부터 신규 ETRI
-  기본 운용점은 baseline에 더 가까운 PSNR·SSIM을 보인 `fixed_int6`로 변경했다.
+- 당시 결론은 **rate-first operating point `fixed_int4`**였다. 2026-09-04의
+  fixed_int6 임시 결정은 후속 OVIS bridge 결과로 superseded됐고 현재 primary도
+  `fixed_int4`다.
 - 근거: [실험 문서](../experiments/2026-08-28_quantization_reevaluation_10db.md),
   [보존 결과](../../results/quantization_reevaluation_10db_20260828/README.md)
 
@@ -142,7 +165,7 @@ source_commit: aae9e26
 - proxy SKEM이 10/10 영상에서 fixed와 같은 keyframe/transmission schedule로 수렴해
   품질 차이도 정확히 0이었다.
 - 결론: **현재 proxy SKEM은 fixed 대비 이점이 없다.** 이 실험의 int4 조건은
-  historical evidence로 유지하며 신규 ETRI bit-depth 결정은 int6 기록을 따른다.
+  historical evidence이자 현재 primary bit-depth와 일치한다.
 - 근거: [실험 문서](../experiments/2026-08-28_fixed_skem_matched_rate_10db.md),
   [보존 결과](../../results/fixed_skem_matched_rate_10db_20260828/README.md)
 
@@ -209,16 +232,25 @@ source_commit: aae9e26
   [v1.2 amendment](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md),
   [보존 결과](../../results/negative_semantics_g1_pilot_rtx4080_v1_1/README.md)
 
-## 현재 임시 결정
+### 7. fixed_int4–fixed_int6 formal bridge
 
-- ETRI 신규 기본 bit-depth: `fixed_int6`
-- G1 v1.1 stress bit-depth: `fixed_int4` 유지
+- OVIS Pilot 40영상 × `{few10,full50}`, seed 2025, int6 reconstruction 실패 0.
+- int6 quality gate는 모두 통과했지만 exact bundle bytes가 int4 대비 44.217%
+  증가했다.
+- raw/source-paired H_add의 video-paired 95% CI는 모두 0을 포함했다.
+- 결론: int6는 작은 화질 이득이 있지만 통신 효율과 negative-semantics 측면에서
+  primary를 바꿀 근거가 없다.
+- 근거: [bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md)
+
+## 현재 결정
+
+- 논문 primary development bit-depth: `fixed_int4`
+- robustness/품질 민감도 및 시연 opt-in: `fixed_int6`
 - selector: fixed. proxy SKEM은 현재 이점 없음.
 - guide: `candidate_both_omit`을 opt-in 개발 후보로 사용.
 - decoder: `few10`을 잠정 후보, `full50`을 보수적 기준으로 유지.
-- 실측된 과거 잠정 후보: **`fixed_int4 + candidate_both_omit + few10`**.
-- 신규 ETRI 목표 조합: **`fixed_int6 + candidate_both_omit + few10`**이며 bridge
-  validation 전에는 실측 후보나 final/best generalized operating point라고 부르지 않는다.
+- primary 개발 조합: **`fixed_int4 + candidate_both_omit + few10`**.
+- held-out 전에는 이를 final/best generalized operating point라고 부르지 않는다.
 
 ## held-out 검증 상태
 
@@ -226,43 +258,36 @@ source_commit: aae9e26
   명시적으로 연기**했다. 취소하거나 통과한 것으로 간주하지 않는다.
 - 기존 개발 10영상으로 threshold를 더 튜닝하지 않는다.
 - 새 데이터가 준비되면 권장 20영상 이상, 영상당 100 frame으로 다음 3조건을 비교한다.
-  1. `fixed_int6 + baseline + full50`
-  2. `fixed_int6 + both-omit + full50`
-  3. `fixed_int6 + both-omit + few10`
-- `fixed_int4 + both-omit`은 G1 stress reference와 int6 bridge 비교점으로 별도 보존한다.
+  1. `fixed_int4 + baseline + full50`
+  2. `fixed_int4 + both-omit + full50`
+  3. `fixed_int4 + both-omit + few10`
+- 핵심 결론의 bit-depth sensitivity는 위 조건의 선택된 subset만 `fixed_int6`로
+  반복하고 primary 판정과 분리한다.
 - 최종 판정에서는 평균뿐 아니라 hallucination/additional-object paired CI 상한까지
   margin 안에 들어와야 한다.
 
 ## 바로 이어서 할 작업
 
-1. **int6 bridge 정식 GPU 실행 (코드·설정·테스트는 완료, 실행만 남음)**
-   - `docs/experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md`의
-     명령대로 preflight → smoke → 정식 실행 순서를 tmux에서 수행한다.
-   - `int6_bridge_summary.json`을 판독해 exact byte/PSNR·SSIM·LPIPS/latency
-     delta와 quality gate, raw/source-paired additional-object, ghost를
-     확인하고 날짜 문서·`results/`에 보존한다.
-   - G1 v1.1(240/240 완료, declared-seed `PASSED`)과 v1.2 amendment
-     (effective-seed 기준 `NOT_PASSED`, full50 source-paired h_add 미달)는
-     이미 끝났다 — 재실행하지 않는다.
-2. **guide Tx/Rx 계약 정리**
-   - both-omit을 명시적 opt-in 정책으로 고정한다.
-   - baseline 동작을 유지하고 manifest, packet accounting, resume signature에 정책을
-     기록한다.
-3. **verifier를 실제 sampler에 연결**
-   - 현재 결정·로그만 하는 action을 retry, stop, negative prompt, prompt emphasis,
-     fallback에 실제 반영한다.
-   - 최대 retry, 실패 fallback, 추가 지연·시도 횟수·추가 전송 byte를 기록한다.
-4. **verifier 폐루프 ablation**
-   - OFF / 로그 전용 / retry·stop / prompt 제어 포함 조건을 비교한다.
-   - 품질, hallucination, temporal, 추가 연산량과 지연을 함께 본다.
-5. **동적 전송 예산 controller**
-   - 채널 상태, uncertainty, verifier 위험도로 전송량과 복원 연산량을 결정한다.
-   - feedback, retransmission byte, RTT를 accounting에 포함한다.
-6. **데이터 준비 후 held-out과 최종 문서 마감**
+1. **SAVER SV0 / G2 Oracle ABSENT GPU 검증**
+   - receiver injection, four-arm runner, matched-compute check와 read-only audit 구현 완료
+   - GPU smoke 후 40-video Pilot를 실행하고 provisional gate를 판정
+   - `fixed_int4 + candidate_both_omit`에서 no negative / random / frequency /
+     oracle negative를 동일 generation·step budget으로 비교한다.
+   - H_add 상대 감소, paired one-sided CI, false suppression, PSNR/SSIM/LPIPS와
+     추가 compute를 함께 기록한다.
+   - G1 effective-seed gate가 `NOT_PASSED`인 동안 탐색적 mechanism feasibility로만
+     판정하고 held-out은 열지 않는다.
+2. **int6 bridge 결과 보존 마감**
+   - 날짜 결과 문서는 작성됐다. 필요한 최소 artifact를 `results/`에 복사하고
+     manifest/checksum/registry를 추가한다. 1.2GB 원본 전체를 Git에 넣지 않는다.
+3. **SV0 전반부 통과 시 G3 RSM-lite·Oracle REVOKE**
+   - G2 Oracle ABSENT가 사전 기준을 만족할 때만 RSM/REVOKE 구현으로 이동한다.
+4. **데이터 준비 후 held-out과 최종 문서 마감**
    - 최종 operating point, paired CI, Pareto 표·그래프·재현 명령·checksum을 확정한다.
 
 ## 작업 시 주의할 과학적 경계
 
+- SAVER는 아직 설계이며 기존 G0/G1/int4-int6 결과를 SAVER 성능으로 인용하지 않는다.
 - both-omit의 무손실 결론은 현재 reliable-digital checkpoint/config 개발 조건에 한정한다.
 - few10은 학습된 distilled/consistency model이 아니라 production sampler의 10-step
   근사다.

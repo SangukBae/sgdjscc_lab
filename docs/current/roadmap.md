@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-04
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: aae9e26
+source_commit: 8fbe6d98
 supersedes:
 ---
 
@@ -12,19 +12,41 @@ supersedes:
 
 - 문서 범위
   - 미완료 연구개발 과제
-  - 기준: 시간축·영상, 할루시네이션, 평가 신뢰도, 전송량
+  - 기준: SAVER 구조, 시간축·영상, 할루시네이션, 평가 신뢰도, 전송량
   - 제외: 과거 Phase·차수별 구현 순서
 - 연결 문서
   - 완료 상태: [status.md](./status.md)
+  - SAVER 단일 기준: [saver_jscc_model_plan.md](./saver_jscc_model_plan.md)
   - 과거 이력: [etri_implementation_log.md](../archive/etri_implementation_log.md)
   - 한계·기술 부채: [open_issues.md](./open_issues.md)
   - 목표 정의: [system.md](../architecture/system.md)
 
-## 공식 논문 연구선 (2026-09-03)
+## 공식 SAVER-JSCC 연구선 (2026-09-07 등록)
 
-[negative semantic paper plan](./negative_semantic_paper_plan.md)을 활성 논문 실행 기준으로
-등록했다. 이전 [paper writing notes](../reference/paper_writing_notes.md)는 reliability-layer
-연구선의 historical artifact이며 현재 논문의 claim 경계가 아니다.
+[SAVER-JSCC 모델 계획](./saver_jscc_model_plan.md)을 활성 모델·논문 단일 기준으로
+등록했다. [negative semantic paper plan](./negative_semantic_paper_plan.md)은 SAVER의
+SV0/SV1 진입을 판정하는 데이터·Oracle·packet/RSM 선행 계획으로 유지한다. 이전
+[paper writing notes](../reference/paper_writing_notes.md)는 reliability-layer 연구선의
+historical artifact이며 현재 논문의 claim 경계가 아니다.
+
+현재 SAVER 핵심 모델은 `DESIGN_ONLY`다. 다만 SV0/G2 Oracle ABSENT 실행·감사 경로는
+`IMPLEMENTED_UNVALIDATED`이며 전용 GPU smoke/Pilot 결과는 없다. SAT/JASR/VREM/SM-DiT,
+checkpoint, formal training과 SAVER 성능 근거도 없다. 다음 순서를 건너뛰지 않는다.
+
+| 순서 | SAVER 단계 | 완료 조건 |
+|---:|---|---|
+| 진행 | SV0 Oracle signed control | G2 Oracle ABSENT 구현 완료; GPU smoke/Pilot와 source-paired 개선·false-suppression·품질 gate 판정 필요 |
+| 대기 | SV1 SAT + VREM | No-memory < Append-only, 그리고 Revocable이 identity 이득을 유지하며 ghost 감소 |
+| 대기 | SV2 SM-DiT | prompt/token-only보다 matched-rate·matched-compute paired 개선 |
+| 대기 | SV3 JASR + channel codec | 최소 4개 budget에서 heuristic보다 Pareto 개선 |
+| 대기 | SV4 channel/packet robustness | loss/reorder/corruption/fading protocol 통과 |
+| 대기 | SV5 held-out/generalization | 동결 후 held-out과 독립 backbone에서 방향 재현 |
+
+SV0가 실패하면 full SAVER 구현을 중단한다. SV1 또는 SV2가 실패하면 해당 module을
+최종 contribution에서 제거하고 범위를 줄인다. SV3가 실패하면 learned allocation
+claim을 제거한다.
+
+### Negative-semantics 선행 gate 상태
 
 G0 v1.2에서 프로토콜·실제 split·아카이브와 영상별 hash·사용 승인·Held-out 봉인을
 완료하고 **`PASSED`**했다. G1은 정식 OVIS Pilot 240/240 run을 완료해
@@ -34,8 +56,10 @@ source-carried additional-object 혼입을 확인해 같은 gate를 정직하게
 재적용하면 `NOT_PASSED`로 뒤집힌다
 ([v1.1 결과](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md),
 [v1.2 amendment](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md)).
-다음 우선순위는 `fixed_int6` bridge 실측(실행 준비 완료, GPU 대기)과, 그
-결과를 반영한 G2 Oracle ABSENT 제어 진입 여부 재검토다.
+후속 fixed_int4–fixed_int6 bridge도 정식 완료했다. int6는 품질이 소폭
+개선됐지만 int4 대비 bytes가 44.217% 증가했고 H_add의 유의한 개선은 없었다.
+따라서 이후 primary development bit-depth는 `fixed_int4`이며, 다음 우선순위는
+G1의 `NOT_PASSED` 경계를 유지한 구현 완료 G2 Oracle ABSENT의 GPU 검증이다.
 
 | 순서 | G0 후속 작업 | 완료 조건 |
 |---:|---|---|
@@ -46,18 +70,20 @@ source-carried additional-object 혼입을 확인해 같은 gate를 정직하게
 | 완료 | G0 재감사 | `audit_negative_semantics_g0.py --require-pass` exit 0, v1.2 amendment 기록 |
 | 완료 | G1 실행 준비 | source-only OWLv2 calibration, fixed_int4+both-omit, few10/full50, 3 seeds, resume 계약 구현 |
 | 완료 | G1 정식 GPU run | Pilot 40영상 전체 완료(240/240, 실패 0), `g1_summary.json` gate: declared-seed `PASSED` |
-| 완료 | G1 v1.2 amendment | effective-seed 재계산 결과 few10 gate `NOT_PASSED`; source-paired h_add로 full50 prevalence 미달 확인 |
-| 실행 준비 완료, GPU 대기 | int6 bridge | 코드·설정·테스트 완료, 정식 실행은 사용자가 직접 수행 |
+| 완료 | G1 v1.2 amendment | effective-seed 재계산 결과 few10 gate `NOT_PASSED`; source-paired h_add로 full50 prevalence 미달 확인; code-clean v1_2c 결론 동일 |
+| 완료 | int4–int6 bridge | OVIS Pilot 40영상 formal 완료, 실패 0, 품질 gate 통과, int6 bytes +44.217%, H_add 유의차 없음 |
+| 진행 | G2 Oracle ABSENT Pilot | runner/audit 구현 완료; fixed_int4 no/random/frequency/oracle GPU smoke와 matched-compute Pilot 미실행. G1 미통과 상태에서는 탐색 근거로만 판정 |
 
 상세 동결값과 자동 annotation 규칙은
 [G0 v1.2 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md)에 있다.
 G1에서는 selector와 독립인 자동 evaluator를 먼저 고정한 뒤 GPU smoke와 정식 paired run을 구분한다.
 명령과 결과 판독은 [G1 실행 준비 기록](../experiments/2026-09-03_negative_semantics_g1_preparation.md)을 따른다.
 
-2026-09-04부터 ETRI 신규 개발·시연의 기본 양자화 운용점은 `fixed_int6`다.
-이미 동결된 G1 v1.1의 `fixed_int4`는 현상 확인용 stress configuration으로 유지하고,
-G1 통과 후 G2 전에 `int4`/`int6 + both-omit` paired bridge validation을 추가한다.
-근거와 증거 경계는 [int6 운용점 결정](../experiments/2026-09-04_int6_etri_operating_point_decision.md)을 따른다.
+2026-09-07부터 논문 primary development 양자화 운용점은 `fixed_int4`다. 2026-09-04의
+int6 결정은 후속 bridge 전 임시 판단으로 보존하되 현재 기준으로는 superseded다.
+int6는 품질 민감도·robustness ablation과 명시적 시연 opt-in에만 사용한다. 근거는
+[bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md)와
+[fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md)을 따른다.
 
 - 관리 규칙
   - 메인 계획: 이 문서
@@ -140,12 +166,12 @@ gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-dire
   - 수정된 10dB fixed-selector 양자화 재평가와 당시 rate-first `fixed_int4` operating point 확정
 - 현재 판정
   - float32 10dB baseline: full 300프레임에서 AWGN 동등 이상, transport bit-exact 확인 완료
-  - `fixed_int4`: float32 대비 28.45% byte 절감, 세 품질 허용 기준을 모두 통과한 최소 bit-depth이자 G1 stress 비교점
-  - `fixed_int6`: float32 대비 26.42% byte 절감, PSNR -0.002218dB·SSIM -0.000108로 baseline에 더 가까워 2026-09-04 이후 ETRI 신규 기본 운용점
+  - `fixed_int4`: float32 대비 28.45% byte 절감, 세 품질 허용 기준을 모두 통과한 최소 bit-depth이자 2026-09-07 이후 primary development 운용점
+  - `fixed_int6`: float32에 더 가까운 품질의 secondary ablation/시연 opt-in 조건. OVIS bridge에서는 int4 대비 PSNR +0.100~0.146dB 대신 bytes +44.217%
   - exact matched-rate에서 proxy `skem_int4`는 fixed와 동일 schedule·품질로 수렴했다.
     raw 100 byte/video 차이도 manifest label 길이뿐이며 padding 후 동률이었다. 이 결과는
-    selector 비교에서 fixed를 유지한다는 뜻이며, 2026-09-04 bit-depth 운용점은 별도
-    결정에 따라 `fixed_int6`로 변경했다.
+    selector 비교에서 fixed를 유지한다는 뜻이다. bit-depth는 후속 bridge 결과에 따라
+    `fixed_int4`를 primary로 사용한다.
   - 통합 개발평가에서 `candidate_both_omit`은 full50 기준 semantic 지표를 유지하며
     baseline 대비 90.843% byte를 줄였다. `few10 + both-omit`은 평균 gate를 통과하고
     reconstruction 시간을 63.486% 줄였으나 hallucination/additional-object CI 상한이
@@ -156,22 +182,20 @@ gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-dire
   - 신뢰도 기반 동적 전송 대상·예산 결정
 
 - **int6 bridge validation**
-  - G1 v1.1이 완료됐으므로(240/240, [결과](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md))
-    동일 OVIS Pilot·both-omit·diffusion step에서 `fixed_int4`(재사용)와
-    `fixed_int6`(신규)를 paired 비교하는 코드·설정·테스트를 완료했다 —
-    **실행 준비 상태**, GPU 실행은 대기 중.
-  - exact bytes, PSNR·SSIM·LPIPS, latency, raw/source-paired
-    additional-object, ghost-track과 video-clustered bootstrap CI를
-    `int6_bridge_summary.json`에 기록하도록 구현했다
-    (`scripts/run_negative_semantics_int6_bridge.py`,
-    `src/sgdjscc_lab/evaluators/int6_bridge.py`).
+  - 동일 OVIS Pilot·both-omit·diffusion step에서 `fixed_int4`(G1 재사용)와
+    `fixed_int6`(신규)를 비교한 **formal 실행을 완료**했다. 40영상×2정책,
+    int6 실패 0, held-out 미접근, 산출물 10,589개 checksum 불일치 0이다.
+  - int6는 두 정책 모두 품질 gate를 통과했지만 bundle bytes가 44.217% 증가했다.
+    raw/source-paired H_add paired CI는 모두 0을 포함했고 ghost uncensored 표본은
+    정책당 4개뿐이다.
   - G1 v1.2 amendment가 확인한 effective_seed_count=1을 반영해 처음부터
     seed 1개(2025)로 설계했다 — 3-seed 재부풀리기를 반복하지 않는다.
   - 기존 int4 reconstruction·accounting·detector 점수는 v1.1 run에서
     그대로 재사용하고(재계산 없음), 새로운 결과 root
     (`outputs/negative_semantics_int6_bridge_rtx4080`)만 사용한다.
-  - 실행 명령·preflight/smoke/formal 구분·판독 절차:
-    [bridge 준비 기록](../experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md).
+  - 결과와 후속 결정:
+    [bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md),
+    [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md).
 
 - **Learnable keyframe/side-info selector**
   - 현재 SKEM/비트뎁스 선택은 오프라인 Pareto sweep으로 고정값을 고르는 방식.
@@ -219,12 +243,16 @@ gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-dire
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|
-| 9월 | ETRI 양자화 운용점과 G1 현상 검증 | `fixed_int6` 신규 기본값 결정; G1 v1.1 int4 stress run 240/240 완료 + v1.2 effective-seed amendment 완료; int6 bridge는 실행 준비 완료·GPU 실행 대기 |
-| 10월 | guide 경로 + verifier 폐루프 | both-omit opt-in Tx/Rx 계약, verifier sampler 배선과 ablation |
-| 11월 | 동적 제어 | 예산 controller ablation과 feedback/retransmission accounting |
-| 데이터 준비 후 | held-out + 최종 정리 | 독립 영상 paired 검증, 최종 operating point·보고서 |
+| 즉시 | SAVER SV0 | 구현된 G2 Oracle ABSENT의 GPU 검증, 통과 시 G3 Oracle REVOKE; 실패 시 Stop Track |
+| SV0 통과 후 | SAVER SV1 | SAT/VREM interface, state property test, No/Append-only/Revocable 비교 |
+| SV1 통과 후 | SAVER SV2 | frozen backbone + SM-DiT adapter 학습과 prompt/token-only ablation |
+| SV2 통과 후 | SAVER SV3/SV4 | JASR·channel codec, common-budget Pareto와 packet/channel robustness |
+| 구조 동결 후 | SAVER SV5 | Validation·held-out·독립 backbone, 최종 operating point·논문 |
 
 ## 신규 연구 아이템 확장 가능성
+
+아래 항목은 이제 SAVER-JSCC의 하위 후보이며, 각 SV gate를 통과하기 전에는 별도
+완료 과제로 표현하지 않는다.
 
 1. **전송률 적응형 영상 시맨틱 통신**
    - 입력: 채널 상태·영상 변화량
@@ -251,6 +279,8 @@ gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-dire
 
 ## 관련 문서
 
+- [saver_jscc_model_plan.md](./saver_jscc_model_plan.md) — 활성 모델·논문 단일 기준
+- [negative_semantic_paper_plan.md](./negative_semantic_paper_plan.md) — SV0/SV1 선행 gate
 - [status.md](./status.md) — 현재 상태
 - [open_issues.md](./open_issues.md) — 알려진 한계·기술 부채
 - [../archive/etri_implementation_log.md](../archive/etri_implementation_log.md) — 상세 구현 이력

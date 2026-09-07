@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: d0d3bfb
+source_commit: 8fbe6d98
 supersedes:
 ---
 
@@ -17,6 +17,8 @@ supersedes:
 
 - 대상 논문
   - *Semantics-Guided Diffusion for Deep Joint Source-Channel Coding in Wireless Image Transmission*
+  - *LGVSC: A Large-Model-Driven Generative Video Semantic Communication Framework*
+  - 제안 모델: SAVER-JSCC
 
 ## 큰 그림
 
@@ -27,6 +29,10 @@ supersedes:
   - 평가 체계
   - 분류: paper-like·scaffold·ETRI 확장 혼합
 - `paper_mode: true`는 논문 재현 경로만 허용하도록 non-faithful 대체물을 차단한다.
+- SAVER-JSCC는 두 논문의 faithful reproduction이 아니라 ETRI 신규 제안 구조다.
+- SAVER 핵심 모델의 현재 상태는 `DESIGN_ONLY`, SV0/G2 receiver-control 경로는
+  `IMPLEMENTED_UNVALIDATED`다. 기존 extension이나 SV0 prompt path를 SAVER 핵심 모델
+  구현 또는 성능으로 재분류하지 않는다.
 
 ## 원본 코드 vs `sgdjscc_lab`
 
@@ -53,6 +59,8 @@ supersedes:
 - **paper-like**: 의도와 구조는 같지만 일부 세부값·구현이 근사
 - **scaffold**: 배선과 인터페이스는 있으나 학습된 수치나 완성형 동작은 미보장
 - **ETRI 확장**: 논문에 없고 과제 목적을 위해 추가한 기능
+- **SAVER target**: [SAVER 단일 기준](../current/saver_jscc_model_plan.md)에 정의됐으나
+  아직 구현·학습·검증되지 않은 목표 구조
 
 ## 핵심 정합 표
 
@@ -67,6 +75,21 @@ supersedes:
 | MMSE equalization / fast-fading 배선 | 연결 | paper-faithful(실수 gain 기준) / scaffold |
 | complex phase / joint CSI | 일부 필드·연산만 | 부분/미구현 |
 | FID / SRS / temporal / packet 기반 평가 | 논문 밖 확장 포함 | ETRI 확장 |
+
+## LGVSC와 SAVER 정합 경계
+
+| 항목 | LGVSC-inspired 현재 대응 | SAVER 목표 | 현재 판정 |
+|---|---|---|---|
+| keyframe/segment 선택 | PSSS/SKEM | JASR의 visual/state 공동 budget action | SAVER 미구현 |
+| side information | caption + motion residual interface | signed entity/event token | Wan `side_infos` 실제 미사용 |
+| variable-length generation | segment length contract | VREM state와 SM-DiT가 GOP 간 직접 연결 | SAVER 미구현 |
+| receiver memory | persistent neural memory 없음 | versioned identity/render/negative dual bank | SAVER 미구현 |
+| diffusion condition | prompt/keyframe 중심 | channel AdaLN + active/negative signed block operation | SAVER 미구현 |
+| rate control | fixed/proxy SKEM과 offline 선택 | learned JASR, positive/negative/protection common budget | SAVER 미구현 |
+
+PSSS, SKEM, segment-length interface 또는 negative prompt만 사용한 결과는 SAVER 결과가
+아니다. SAVER checkpoint에는 SAT/VREM/SM-DiT/JASR 중 실제 포함된 module과 architecture
+fingerprint를 기록한다.
 
 ## `paper_mode`
 
@@ -122,6 +145,7 @@ supersedes:
 
 ## 관련 문서
 
+- [../current/saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md) — 신규 모델 구조와 claim 경계
 - [../protocols/training.md](../protocols/training.md) — 학습 CLI + real-model smoke 검증
 - [framework_file_roles.md](./framework_file_roles.md)
 - [../architecture/tx_rx_contract.md](../architecture/tx_rx_contract.md) — 채널 조건화 설계(구 phase5)

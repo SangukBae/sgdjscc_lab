@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-08-26
+updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 63b7b23
+source_commit: 8fbe6d98
 supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -12,6 +12,7 @@ supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
 
 - 연결 문서
   - 지표 정의: [metrics.md](../architecture/metrics.md)
+  - SAVER gate: [saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md)
   - 데이터 준비: [datasets.md](./datasets.md)
   - 코덱 비교: [video_rate_benchmark.md](./video_rate_benchmark.md)
 
@@ -76,6 +77,79 @@ supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
 - 데이터 분리
   - ETRI 10영상: 개발·비교
   - 별도 영상 split: 최종 held-out 검증
+
+## SAVER-JSCC 평가 계약 (`TARGET`)
+
+현재 SAVER 핵심 module은 미구현이다. SV0/G2 전용 runner와 audit는 구현됐으나
+`IMPLEMENTED_UNVALIDATED`이며, 아래 계약은 GPU run에 적용하고 기존 결과에 소급하지
+않는다.
+
+SV0 실행·판독:
+
+```bash
+python scripts/run_negative_semantics_g2.py \
+  --run-root outputs/negative_semantics_g2_smoke_<run_id> --device cuda:0 --smoke
+python scripts/run_negative_semantics_g2.py \
+  --run-root outputs/negative_semantics_g2_pilot_<run_id> --device cuda:0
+python scripts/audit_negative_semantics_g2.py \
+  --run-root outputs/negative_semantics_g2_pilot_<run_id> --require-runner-complete
+```
+
+`--require-provisional-gate`는 실행 완결성이 아니라 결과 gate를 요구하는 별도 옵션이다.
+G1 scientific gate가 `NOT_PASSED`이면 G2 provisional 결과가 좋아도 confirmatory
+scientific gate로 승격하지 않는다.
+
+### 단계별 비교
+
+| gate | 최소 비교 | 핵심 판정 |
+|---|---|---|
+| SV0 | no/random/frequency/oracle ABSENT·REVOKE | source-paired H_add, false suppression, 품질 non-inferiority |
+| SV1 | no-memory/append-only/revocable | identity consistency 선행 개선 + ghost survival 감소 |
+| SV2 | prompt-only/token-only/regular attention/full SM-DiT | matched-rate·matched-compute paired 개선 |
+| SV3 | positive-only/fixed ratio/heuristic/learned/oracle router | 최소 4개 budget Pareto frontier |
+| SV4 | loss/reorder/duplicate/corrupt/fading sweep | protocol violation 0 + 품질 robustness |
+| SV5 | frozen Validation/Held-out + 독립 backbone | 동결된 방향의 재현 |
+
+### Matched-rate와 matched-compute
+
+- positive-only baseline은 SAVER의 negative/state bit를 extra keyframe, latent precision,
+  positive entity 또는 protection에 사용할 수 있어야 한다.
+- padding만 추가한 baseline은 matched-rate 비교가 아니다.
+- `saver_source`는 `total_on_wire_bytes`/effective bpp를 공식 rate로 사용한다.
+- `saver_wireless`는 실제 digital header/FEC/modulation을 포함한 complex channel uses를
+  공식 rate로 사용한다.
+- exact byte와 proxy symbol을 합산하지 않는다.
+- sampling step, trainable parameter 수, retry와 latency를 함께 기록한다.
+
+### 통계 단위와 seed
+
+- frame iid CI를 사용하지 않고 video/event clustered paired bootstrap을 사용한다.
+- stochastic training은 최소 3개의 independent training seed를 사용한다.
+- stochastic generation은 실제 output/hash가 다른 effective seed만 반복 수로 센다.
+- deterministic decoder를 쓰면 seed 수를 부풀리지 않고 video/event uncertainty를
+  주 분석 단위로 둔다.
+- Pilot threshold를 본 뒤 같은 Pilot을 confirmatory evidence로 재사용하지 않는다.
+
+### Evaluator 독립성
+
+- SAT/JASR label 생성 또는 training loss에 사용한 detector/critic은 `loop_internal`이다.
+- final `source_paired_h_add`, false suppression과 ghost survival은 frozen independent
+  evaluator 또는 GT로 측정한다.
+- evaluator threshold, weight hash와 calibration split을 manifest에 기록한다.
+- 최종 우위는 단일 SRS가 아니라 rate/quality/hallucination/memory/cost 축을 분리해
+  판정한다.
+
+### Fail-closed 조건
+
+- Rx input에 원본 target/future frame이 포함됨
+- SAVER checkpoint/fingerprint 불일치
+- rate component 누락 또는 exact/proxy 단위 혼합
+- stale ASSERT가 REVOKE 이후 entity를 재활성화함
+- corrupt negative packet이 state에 적용됨
+- held-out seal을 architecture 선택 전에 열었음
+- declared seed 수와 effective seed 수가 다르지만 반복으로 집계함
+
+하나라도 발생한 run은 성능과 무관하게 formal evidence에서 제외한다.
 
 ## 이미지 평가
 
@@ -175,6 +249,7 @@ python scripts/batch_remeasure_owlv2_vqa_10videos.py --device cuda:0
 - 결과: [OWLv2/VQA 보강 실험](../experiments/2026-07-28_owlv2_vqa_calibration.md)
 
 ## 관련 문서
+- [current/saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md) — SAVER gate·ablation·claim 경계
 - [architecture/metrics.md](../architecture/metrics.md) — 지표 정의
 - [datasets.md](./datasets.md) — 데이터셋 역할·준비
 - [video_rate_benchmark.md](./video_rate_benchmark.md) — 코덱 대비 전송량·화질 비교
