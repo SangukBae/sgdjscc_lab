@@ -2,7 +2,7 @@
 status: supporting_active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 primary_venue: IEEE Transactions on Multimedia
 fallback_venue: IEEE Transactions on Circuits and Systems for Video Technology
 g0_gate: PASSED
@@ -845,7 +845,8 @@ versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
   옵션이 없으면 baseline 문자열과 수치 경로를 유지한다.
 - Oracle condition은 `ORACLE_EVAL_ONLY`, `serialized_in_packet=false`,
   `rate_accounted=false`로 기록한다.
-- CPU 단위/회귀 테스트만 통과했으며 GPU smoke·Pilot 및 gate 판정은 아직 수행하지 않았다.
+- 1-video GPU smoke는 완료됐고 smoke이므로 `NOT_EVIDENCE`로 기록됐다. 40-video Pilot는
+  2026-09-07 현재 clean commit `6f9593d`에서 실행 중이며 gate 판정은 아직 없다.
 
 **작업**
 
@@ -867,10 +868,17 @@ feasibility를 보는 탐색 근거로 기록한다. 이를 G1 통과나 confirm
 
 **실패 시**
 
-- RSM, packet codec, allocator 개발 중단
+- 구현된 RSM/packet/allocator prototype의 formal 학습·최종 contribution 채택 중단
 - receiver control mechanism을 바꾸는 별도 연구로 재정의하지 않는 한 본 계획 종료
 
 ### G3. RSM-lite와 P2/Oracle REVOKE
+
+**구현 상태: `PARTIAL_PROTOTYPE_IMPLEMENTED_UNTRAINED`**
+
+- versioned receiver ledger, deterministic ledger-to-prompt compiler와 Wan
+  `prompt`/`negative_prompt` 연결은 구현됐다.
+- No/append-only/revocable 실행 matrix, Oracle REVOKE evaluator와 real-Wan 출력 검증은
+  아직 없다.
 
 **작업**
 
@@ -896,6 +904,12 @@ feasibility를 보는 탐색 근거로 기록한다. 이를 G1 통과나 confirm
 
 ### G4. Packet schema와 protocol property
 
+**구현 상태: `IMPLEMENTED_CPU_TESTED`; protocol/final evidence 없음**
+
+- deterministic schema/CRC/serializer/ACK/exact byte, epoch/version ledger와
+  loss/reorder/duplicate/corruption/repetition simulator/property test가 구현됐다.
+- formal rate profile, RTT 정책과 실제 modulation/FEC는 아직 동결되지 않았다.
+
 **작업**
 
 - schema/version/ontology/ID 계약 동결
@@ -913,6 +927,11 @@ feasibility를 보는 탐색 근거로 기록한다. 이를 G1 통과나 confirm
 - lost REVOKE test는 미보장 상태를 명시적으로 기록
 
 ### G5. Oracle joint allocator
+
+**구현 상태: learned JASR tensor prototype만 `IMPLEMENTED_UNTRAINED`**
+
+- differentiable hard/soft common-budget router는 구현됐다.
+- exhaustive/ILP Oracle upper bound와 네 budget formal Pareto 실행은 아직 없다.
 
 **작업**
 

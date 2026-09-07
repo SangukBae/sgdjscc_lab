@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 supersedes: docs/video_extension_lgvsc.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -176,11 +176,12 @@ SegmentGenerationRequest(
   - 지표: `temporal_srs`, `srs_flicker`, `PTC`, `SFR`, `SDI`
   - 정의: [metrics.md](./metrics.md)
 
-## 6. SAVER-JSCC Tx/Rx 계약 (`DESIGN_ONLY`)
+## 6. SAVER-JSCC Tx/Rx 계약 (`PROTOTYPE_IMPLEMENTED_UNTRAINED`)
 
 상세 module과 gate는
 [SAVER-JSCC 모델 계획](../current/saver_jscc_model_plan.md)을 따른다. 이 절은 송수신
-경계와 불변조건만 정의하며 구현 완료를 뜻하지 않는다.
+경계와 불변조건을 정의한다. deterministic packet/ledger와 neural tensor path는
+CPU-test된 prototype으로 구현됐지만 formal 학습·성능 완료를 뜻하지 않는다.
 
 ### 6.1 송신단 정보 집합
 

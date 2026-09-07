@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 supersedes:
 ---
 
@@ -130,10 +130,10 @@ evaluate.py → eval config → eval_pipeline.py → infer_pipeline.py
 | `scripts/audit_negative_semantics_g2.py` | 완료 run의 grid/hash/rate/held-out 경계 read-only 감사 |
 | `configs/experiments/negative_semantics/g2_oracle_absent_protocol.yaml` | SV0/G2 frozen 조건과 provisional gate |
 
-### 5.2 SAVER 핵심 모델 목표 (`DESIGN_ONLY`)
+### 5.2 SAVER 핵심 모델 prototype (`IMPLEMENTED_UNTRAINED`)
 
-아래 경로는 [SAVER 단일 기준](../current/saver_jscc_model_plan.md)의 구현 목표다. 현재
-파일이 존재하거나 동작한다는 뜻이 아니며, 구현 시 이 역할 경계를 유지한다.
+아래 경로는 [SAVER 단일 기준](../current/saver_jscc_model_plan.md)에 따라 구현됐다.
+CPU 구조 검증을 통과했지만 학습 checkpoint나 성능 근거는 없다.
 
 | 목표 파일 | 책임 |
 |---|---|
@@ -142,9 +142,16 @@ evaluate.py → eval config → eval_pipeline.py → infer_pipeline.py
 | `models/saver/semantic_channel_codec.py` | signed action payload의 source/wireless profile codec |
 | `models/saver/versioned_entity_memory.py` | identity/render/negative bank의 learned update |
 | `models/saver/signed_memory_dit.py` | channel AdaLN과 positive/negative 비대칭 diffusion block |
+| `models/saver/backbone_bridge.py` | 선택 Transformer block에 SM-DiT adapter를 opt-in hook으로 삽입 |
+| `models/saver/rsm_conditioning.py` | delivered-packet ledger를 deterministic positive/negative prompt로 컴파일 |
+| `data/saver_states.py` | source annotation의 tri-state/action target과 stable slot 생성 |
+| `data/saver_dataset.py` | source-only checksummed GOP tensor sequence manifest와 leakage 검사 |
+| `transmission/saver_packet.py` | signed action packet/ACK, exact byte와 versioned receiver ledger |
+| `transmission/saver_channel.py` | loss/reorder/duplicate/corruption/repetition fault channel |
 | `pipelines/saver_video_pipeline.py` | Tx/channel/Rx 경계 조립, 원본 target의 Rx 유입 차단 |
 | `training/saver_losses.py` | state/memory/ghost/preserve/rate/channel loss |
-| `training/saver_stage_runner.py` | SV1~SV4 freeze·gradient·checkpoint 계약 |
+| `training/saver_stage_runner.py` | SV1/SV2/SV3/end-to-end freeze·gradient·checkpoint 계약 |
+| `scripts/train_saver_jscc.py` | clean-checkout·manifest-hash 기반 stage 실행/resume 진입점 |
 
 deterministic packet schema/version/tombstone 검사는 `transmission/` 또는 별도 state
 protocol 계층에 두며 neural memory update와 섞어 구현하지 않는다. master gate

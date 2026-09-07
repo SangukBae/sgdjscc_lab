@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -78,11 +78,11 @@ supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
   - ETRI 10영상: 개발·비교
   - 별도 영상 split: 최종 held-out 검증
 
-## SAVER-JSCC 평가 계약 (`TARGET`)
+## SAVER-JSCC 평가 계약 (`PROTOTYPE IMPLEMENTED; FORMAL NOT RUN`)
 
-현재 SAVER 핵심 module은 미구현이다. SV0/G2 전용 runner와 audit는 구현됐으나
-`IMPLEMENTED_UNVALIDATED`이며, 아래 계약은 GPU run에 적용하고 기존 결과에 소급하지
-않는다.
+SAVER 핵심 module과 packet/channel simulator는 CPU-test된 prototype이다. SV0/G2
+1-video smoke는 완료됐으나 `NOT_EVIDENCE`, 40-video Pilot는 실행 중이다. 아래 계약은
+formal GPU run에 적용하고 기존 결과나 CPU test에 소급하지 않는다.
 
 SV0 실행·판독:
 

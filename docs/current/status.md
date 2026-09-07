@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -26,26 +26,35 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - 모델명: **SAVER-JSCC — Signed Assertions and Versioned Entity Memory for
   Revocation-Aware Generative Video JSCC**
 - 기준 계획: [saver_jscc_model_plan.md](./saver_jscc_model_plan.md)
-- 현재 상태: **핵심 모델 `DESIGN_ONLY`; SV0/G2 `IMPLEMENTED_UNVALIDATED`**
-- 구현 상태: SV0 Oracle ABSENT receiver-conditioning/runner/audit는 구현됨. SAVER 전용
-  SAT/JASR/channel codec/VREM/SM-DiT module은 없음
-- 학습 상태: SAVER checkpoint·optimizer run·formal training 모두 없음
+- 현재 상태: **핵심 모델 `PROTOTYPE_IMPLEMENTED_UNTRAINED`; SV0/G2 Pilot 실행 중**
+- 구현 상태: SAT, JASR, action-conditioned codec, VREM, SM-DiT adapter와 backbone
+  bridge, signed-state dataset, packet/ACK/fault channel, staged runner/checkpoint가 별도
+  opt-in 경로에 구현됐다. prompt-only RSM은 수신 ledger에서만 생성해 Wan worker가
+  실제 positive/negative prompt로 소비한다.
+- 검증 상태: SAVER 관련 CPU 단위·통합 및 baseline 인접 회귀 **371 passed**,
+  Git-ignored 자산을 읽기 전용 연결한 전체 suite **1703 passed, 9 skipped**. 이는
+  tensor/상태/배선·회귀 검증이며 실제 Wan 가중치·GPU 학습 또는 성능 근거가 아니다.
+- 학습 상태: runner와 resume 가능한 checkpoint 형식은 구현됐지만 SAVER 실데이터
+  manifest, optimizer run, 학습된 checkpoint와 formal training 결과는 아직 없다.
 - 성능 근거: 없음. 기존 G0/G1과 int4/int6 bridge는 문제·데이터·운용점 근거이며
   SAVER 성능 근거가 아니다.
-- 첫 gate: `SV0 Oracle signed-control feasibility`. 실행 경로는 구현됐고 GPU smoke와
-  40-video Pilot가 남았다. G1 effective-seed `NOT_PASSED`인 동안 탐색적 mechanism
-  evidence로만 쓴다.
-- 호환성 목표: 향후 `use_saver_jscc=false`에서 기존 baseline 경로와 수치를 보존한다.
+- 첫 gate: `SV0 Oracle signed-control feasibility`. 1-video smoke는 완료됐고
+  `NOT_EVIDENCE`로 올바르게 분류됐다. 40-video Pilot는 2026-09-07 현재 기존 clean
+  commit `6f9593d`에서 실행 중이다. G1 effective-seed `NOT_PASSED`인 동안 탐색적
+  mechanism evidence로만 쓴다.
+- 호환성: SAVER config는 별도 파일에서만 opt-in되며 기존 package export와 baseline
+  production default를 변경하지 않는다.
 
 | SAVER 구성요소 | 현재 판정 |
 |---|---|
-| SV0/G2 Oracle ABSENT receiver path | `IMPLEMENTED_UNVALIDATED` |
-| Signed Assertion Tokenizer(SAT) | `NOT_IMPLEMENTED` |
-| Joint Assertion-Symbol Router(JASR) | `NOT_IMPLEMENTED` |
-| Action-Conditioned Semantic Channel Codec | `NOT_IMPLEMENTED` |
-| Versioned Revocable Entity Memory(VREM) | `NOT_IMPLEMENTED` |
-| Signed-Memory Diffusion Transformer(SM-DiT) | `NOT_IMPLEMENTED` |
-| SAVER 학습·checkpoint | `NOT_STARTED` |
+| SV0/G2 Oracle ABSENT receiver path | smoke 완료(`NOT_EVIDENCE`), formal Pilot `RUNNING` |
+| Signed-state builder·SAT | `PROTOTYPE_IMPLEMENTED_UNTRAINED` |
+| Joint Assertion-Symbol Router(JASR) | `PROTOTYPE_IMPLEMENTED_UNTRAINED` |
+| Action-Conditioned Semantic Channel Codec | `PROTOTYPE_IMPLEMENTED_UNTRAINED` |
+| packet/ACK·version ledger·fault channel | `IMPLEMENTED_CPU_TESTED` |
+| Versioned Revocable Entity Memory(VREM) | `PROTOTYPE_IMPLEMENTED_UNTRAINED` |
+| Signed-Memory DiT adapter·generic backbone bridge | `PROTOTYPE_IMPLEMENTED_UNTRAINED`; real Wan 미검증 |
+| SAVER dataset·loss·stage runner·checkpoint | `IMPLEMENTED_CPU_TESTED`; formal training 없음 |
 | SAVER formal/held-out evidence | `NOT_AVAILABLE` |
 
 ## Negative-semantics 선행 연구선과 G0/G1
@@ -92,10 +101,11 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   무효화했다. v1.1은 resize 후 128-grid padding, 평가 전 padding crop을 동결했고 실제
   실패 영상 smoke를 통과한 뒤 정식 240/240을 완료했다. v1.0에서는 검증된 source-only
   caption만 명시적 provenance 검사 후 재사용했다.
-- 구현 경계: negative packet codec, RSM, joint allocator, sampler의 object-level negative
-  control은 아직 미구현이다. G1은 additional-object 현상 확인이고 Oracle ABSENT 제어는
-  통과 후 G2에서 수행한다. G2 진입 전 위 v1.2 결과(effective-seed NOT_PASSED,
-  full50 source-paired h_add 미달)를 논문 claim 경계에 반영해야 한다.
+- 구현 경계: SAVER signed packet/ledger, prompt-only RSM, joint router와 SM-DiT tensor
+  prototype은 구현됐지만 학습되지 않았다. 기존 verifier action의 baseline sampler
+  폐루프와 real-Wan SM-DiT 가중치 삽입은 여전히 별도 미검증 항목이다. G1은
+  additional-object 현상 확인이며 G2 결과도 G1 effective-seed `NOT_PASSED` 경계 때문에
+  confirmatory evidence로 자동 승격하지 않는다.
 - 근거: [G0 v1.2 official-GT amendment](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md),
   [G1 v1.1 결과·감사](../experiments/2026-09-06_negative_semantics_g1_v1_1_pilot_results.md),
   [G1 v1.2 amendment](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md)
@@ -118,7 +128,7 @@ historical artifact이므로 재작성하지 않았다.
 | 1. 시간축·영상 신뢰성 | keyframe pipeline, scene change, temporal evaluator, semantic delta + motion 이중 게이트, `PTC`/`SFR`/`SDI`, LGVSC 참고 3-way 생성 분기 — **기본 파이프라인 완료**. real MLLM PSSS·10영상×4모드 재현·학습형 개선선은 미완(아래 "영상 확장" 참고) |
 | 2. 할루시네이션 | semantic packet verifier, 오류 유형별 regeneration controller, OWLv2/VQA 보강 — 판정·로그까지 완료, 실제 sampler 개입은 미구현(아래 "할루시네이션 완화" 참고) |
 | 3. 평가 체계 신뢰도 | loop-internal/held-out 지표 분리, `PTC`/`SFR`/`SDI`, Presence Calibration — 구조·기존 실측 완료. GT/VLM 기반 Temporal SRS Calibration·DISTS/downstream·최종 paired held-out 검증은 미완(아래 "평가 체계" 참고) |
-| 4. SAVER signed temporal state | SV0/G2 receiver-control runner까지 **`IMPLEMENTED_UNVALIDATED`**; SAT/JASR/VREM/SM-DiT는 **`DESIGN_ONLY`**, 구현·학습·성능 근거 없음 |
+| 4. SAVER signed temporal state | 전체 tensor prototype·packet·학습 골격 **`IMPLEMENTED_CPU_TESTED`**, 모델 **`UNTRAINED`**; G2 smoke 완료·Pilot 실행 중, 성능·formal 근거 없음 |
 
 ## 기능별 구현 상태
 

@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
 ---
 
@@ -37,21 +37,21 @@ supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
   4. `controlnet`
 - 확장 실험: baseline 이후 `end_to_end_ft`
 
-## SAVER-JSCC 학습 계약 (`PLANNED`; SV0 inference runner만 구현)
+## SAVER-JSCC 학습 계약 (`RUNNER IMPLEMENTED; FORMAL TRAINING NOT STARTED`)
 
 모델 구조와 gate는
 [saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md)를 따른다. Stage 0은 학습이
-없는 Oracle inference이며 `run_negative_semantics_g2.py`로 구현됐다. Stage 1~4의
-training config와 runner는 아직 없으므로 해당 명령 예시를 실행 가능 경로로 해석하지
-않는다.
+없는 Oracle inference이며 `run_negative_semantics_g2.py`로 구현됐다. `sv1`, `sv2`,
+`sv3`, `end_to_end` freeze 정책, seven-loss runner, sequence dataloader와 versioned
+checkpoint는 구현됐다. 실제 source-only tensor manifest와 학습 결과는 없다.
 
 | 순서 | 계획 stage | 학습 대상 | 시작 조건 |
 |---:|---|---|---|
 | 0 | `saver_sv0_oracle` | 학습 없음, Oracle condition 실험 — `IMPLEMENTED_UNVALIDATED` | negative-semantics G2 protocol 동결 |
-| 1 | `saver_sv1_memory` | SAT + VREM updater/state heads | SV0 통과 |
-| 2 | `saver_sv2_dit` | SM-DiT zero-init adapters, SAT/VREM | SV1 통과 |
-| 3 | `saver_sv3_router` | JASR + semantic codec, 필요 시 SAT/VREM/adapter | SV2 통과 |
-| 4 | `saver_sv4_robust` | 선택된 SAVER trainable modules | SV3 구조·rate 단위 동결 |
+| 1 | `sv1` | SAT + VREM updater/state heads | runner 구현; formal 시작은 SV0 통과 후 |
+| 2 | `sv2` | SM-DiT zero-init adapters | runner 구현; formal 시작은 SV1 통과 후 |
+| 3 | `sv3` | JASR + semantic codec | runner 구현; formal 시작은 SV2 통과 후 |
+| 4 | `end_to_end` | SAT/VREM/SM-DiT/JASR/codec | runner 구현; formal 시작은 구조·rate 단위 동결 후 |
 
 학습 순서를 건너뛰지 않는다.
 
@@ -103,6 +103,20 @@ rate_profile: saver_source | saver_wireless
 
 기존 baseline checkpoint와 SAVER checkpoint 사이의 partial load는 명시적 migration
 script 없이는 거부한다.
+
+Prototype 실행 형식:
+
+```bash
+python scripts/train_saver_jscc.py \
+  --config configs/experiments/saver_jscc/model_v1.yaml \
+  --manifest /path/to/source_only_saver_tensor_manifest.jsonl \
+  --output-dir outputs/checkpoints/saver/sv1/<run_id> \
+  --stage sv1 --device cuda:0
+```
+
+`<run_id>`는 실제 이름으로 치환한다. loader는 tensor SHA-256, source-only provenance,
+receiver/future leakage와 split 권한을 fail-closed 검사한다. 현 시점에는 공식 manifest가
+없으므로 위 명령은 인터페이스 예시이지 완료된 formal run이 아니다.
 
 ## 기본 실행
 

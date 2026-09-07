@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 supersedes:
 ---
 
@@ -29,22 +29,24 @@ SV0/SV1 진입을 판정하는 데이터·Oracle·packet/RSM 선행 계획으로
 [paper writing notes](../reference/paper_writing_notes.md)는 reliability-layer 연구선의
 historical artifact이며 현재 논문의 claim 경계가 아니다.
 
-현재 SAVER 핵심 모델은 `DESIGN_ONLY`다. 다만 SV0/G2 Oracle ABSENT 실행·감사 경로는
-`IMPLEMENTED_UNVALIDATED`이며 전용 GPU smoke/Pilot 결과는 없다. SAT/JASR/VREM/SM-DiT,
-checkpoint, formal training과 SAVER 성능 근거도 없다. 다음 순서를 건너뛰지 않는다.
+SAVER 핵심 모델의 독립 tensor prototype, signed packet/ledger, fault channel,
+prompt-only receiver-state bridge, dataset/loss/stage runner/checkpoint 형식은
+`PROTOTYPE_IMPLEMENTED_UNTRAINED`이다. 이 선행 구현은 gate를 통과했다는 뜻이 아니며,
+실험·claim 순서는 아래 표를 그대로 따른다. 실제 SAVER 학습 checkpoint와 formal 성능
+근거는 없다.
 
 | 순서 | SAVER 단계 | 완료 조건 |
 |---:|---|---|
-| 진행 | SV0 Oracle signed control | G2 Oracle ABSENT 구현 완료; GPU smoke/Pilot와 source-paired 개선·false-suppression·품질 gate 판정 필요 |
-| 대기 | SV1 SAT + VREM | No-memory < Append-only, 그리고 Revocable이 identity 이득을 유지하며 ghost 감소 |
-| 대기 | SV2 SM-DiT | prompt/token-only보다 matched-rate·matched-compute paired 개선 |
-| 대기 | SV3 JASR + channel codec | 최소 4개 budget에서 heuristic보다 Pareto 개선 |
-| 대기 | SV4 channel/packet robustness | loss/reorder/corruption/fading protocol 통과 |
+| 진행 | SV0 Oracle signed control | 1-video smoke 완료(`NOT_EVIDENCE`); 40-video Pilot 실행 중, source-paired 개선·false-suppression·품질 gate 판정 필요 |
+| 구현 완료·실험 대기 | SV1 SAT + VREM | tensor module/property test는 완료; No-memory < Append-only, 그리고 Revocable이 identity 이득을 유지하며 ghost 감소 |
+| 구현 완료·실험 대기 | SV2 SM-DiT | zero-init adapter와 generic backbone bridge 완료; real backbone 학습 후 prompt/token-only보다 matched-rate·matched-compute paired 개선 |
+| 구현 완료·실험 대기 | SV3 JASR + channel codec | common-budget router/codec 완료; 최소 4개 budget에서 heuristic보다 Pareto 개선 |
+| 구현 완료·실험 대기 | SV4 channel/packet robustness | loss/reorder/duplicate/corruption 및 AWGN/Rayleigh simulator 완료; formal protocol 통과 |
 | 대기 | SV5 held-out/generalization | 동결 후 held-out과 독립 backbone에서 방향 재현 |
 
-SV0가 실패하면 full SAVER 구현을 중단한다. SV1 또는 SV2가 실패하면 해당 module을
-최종 contribution에서 제거하고 범위를 줄인다. SV3가 실패하면 learned allocation
-claim을 제거한다.
+SV0가 실패하면 구현된 full SAVER prototype의 formal 학습·최종 채택을 중단한다.
+SV1 또는 SV2가 실패하면 해당 module을 최종 contribution에서 제거하고 범위를 줄인다.
+SV3가 실패하면 learned allocation claim을 제거한다.
 
 ### Negative-semantics 선행 gate 상태
 
@@ -72,7 +74,7 @@ G1의 `NOT_PASSED` 경계를 유지한 구현 완료 G2 Oracle ABSENT의 GPU 검
 | 완료 | G1 정식 GPU run | Pilot 40영상 전체 완료(240/240, 실패 0), `g1_summary.json` gate: declared-seed `PASSED` |
 | 완료 | G1 v1.2 amendment | effective-seed 재계산 결과 few10 gate `NOT_PASSED`; source-paired h_add로 full50 prevalence 미달 확인; code-clean v1_2c 결론 동일 |
 | 완료 | int4–int6 bridge | OVIS Pilot 40영상 formal 완료, 실패 0, 품질 gate 통과, int6 bytes +44.217%, H_add 유의차 없음 |
-| 진행 | G2 Oracle ABSENT Pilot | runner/audit 구현 완료; fixed_int4 no/random/frequency/oracle GPU smoke와 matched-compute Pilot 미실행. G1 미통과 상태에서는 탐색 근거로만 판정 |
+| 진행 | G2 Oracle ABSENT Pilot | 1-video smoke 완료, formal 요구를 의도적으로 충족하지 않아 `NOT_EVIDENCE`; fixed_int4 no/random/frequency/oracle 40-video Pilot가 clean commit `6f9593d`에서 실행 중. G1 미통과 상태에서는 탐색 근거로만 판정 |
 
 상세 동결값과 자동 annotation 규칙은
 [G0 v1.2 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md)에 있다.
@@ -243,10 +245,10 @@ gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-dire
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|
-| 즉시 | SAVER SV0 | 구현된 G2 Oracle ABSENT의 GPU 검증, 통과 시 G3 Oracle REVOKE; 실패 시 Stop Track |
-| SV0 통과 후 | SAVER SV1 | SAT/VREM interface, state property test, No/Append-only/Revocable 비교 |
-| SV1 통과 후 | SAVER SV2 | frozen backbone + SM-DiT adapter 학습과 prompt/token-only ablation |
-| SV2 통과 후 | SAVER SV3/SV4 | JASR·channel codec, common-budget Pareto와 packet/channel robustness |
+| 즉시 | SAVER SV0 | 실행 중 G2 Oracle ABSENT Pilot 완료·감사, 통과 시 G3 Oracle REVOKE; 실패 시 Stop Track 또는 구조 재설계 |
+| SV0 판정 후 | SAVER SV1 | 구현된 SAT/VREM을 실제 source-only sequence manifest로 학습; No/Append-only/Revocable 비교 |
+| SV1 통과 후 | SAVER SV2 | 구현된 bridge로 frozen real backbone + SM-DiT adapter 학습과 prompt/token-only ablation |
+| SV2 통과 후 | SAVER SV3/SV4 | 구현된 JASR·codec·fault channel의 common-budget Pareto와 packet/channel formal robustness |
 | 구조 동결 후 | SAVER SV5 | Validation·held-out·독립 backbone, 최종 operating point·논문 |
 
 ## 신규 연구 아이템 확장 가능성

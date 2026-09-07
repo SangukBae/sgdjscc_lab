@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 ---
 
 > [← 문서 색인](../README.md)
@@ -14,15 +14,17 @@ source_commit: 8fbe6d98
 - 활성 제안 모델을 **SAVER-JSCC: Signed Assertions and Versioned Entity Memory for
   Revocation-Aware Generative Video JSCC**로 정했다.
 - 단일 기준: [saver_jscc_model_plan.md](./saver_jscc_model_plan.md).
-- SAVER 핵심 모델은 `DESIGN_ONLY`다. SV0/G2 Oracle ABSENT receiver path와 runner/audit는
-  `IMPLEMENTED_UNVALIDATED`이나, SAT/JASR/channel codec/VREM/SM-DiT,
-  checkpoint/training/formal evidence는 없다.
+- SAVER 핵심 모델은 `PROTOTYPE_IMPLEMENTED_UNTRAINED`다. SAT/JASR/action-conditioned
+  codec/VREM/SM-DiT, generic backbone bridge, signed packet/fault channel,
+  source-only tensor dataset, seven-loss stage runner와 versioned checkpoint가 별도 branch에
+  구현됐다. 실제 SAVER 학습 checkpoint와 formal 성능 근거는 없다.
 - 기존 [negative-semantics 계획](./negative_semantic_paper_plan.md)은 삭제하지 않고
   SAVER SV0/SV1의 데이터·Oracle·packet/RSM 선행 gate로 유지한다.
-- 첫 작업은 구현된 `SV0 = G2 Oracle ABSENT`의 GPU smoke/Pilot 검증이다. 통과하기 전
-  SAT/VREM/SM-DiT 전체 구현으로 넘어가지 않는다.
-- 호환성 목표는 `use_saver_jscc=false`에서 기존 SGD-JSCC/LGVSC-inspired 경로와
-  수치를 보존하는 것이다.
+- `SV0 = G2 Oracle ABSENT` 1-video smoke는 완료됐고 `NOT_EVIDENCE`다. 40-video formal
+  Pilot는 기존 clean commit `6f9593d`에서 실행 중이다. 구조 코드는 선행 구현했지만,
+  Pilot 판정 전에 대규모 SAVER 학습을 시작하지 않는다.
+- 호환성은 production default와 기존 package export를 바꾸지 않고 SAVER 전용 config와
+  import로만 opt-in하도록 구현했다.
 - 문서 역할: 설계·gate는 SAVER plan, 실제 상태는 `status.md`, 다음 작업은
   `roadmap.md`, 실행 결과는 새 날짜 기반 `docs/experiments/` 문서에 기록한다.
 
@@ -268,9 +270,9 @@ source_commit: 8fbe6d98
 
 ## 바로 이어서 할 작업
 
-1. **SAVER SV0 / G2 Oracle ABSENT GPU 검증**
+1. **SAVER SV0 / G2 Oracle ABSENT GPU 검증 마감**
    - receiver injection, four-arm runner, matched-compute check와 read-only audit 구현 완료
-   - GPU smoke 후 40-video Pilot를 실행하고 provisional gate를 판정
+   - 1-video smoke는 완료(`NOT_EVIDENCE`); 실행 중 40-video Pilot 종료 후 감사를 수행
    - `fixed_int4 + candidate_both_omit`에서 no negative / random / frequency /
      oracle negative를 동일 generation·step budget으로 비교한다.
    - H_add 상대 감소, paired one-sided CI, false suppression, PSNR/SSIM/LPIPS와
@@ -280,14 +282,20 @@ source_commit: 8fbe6d98
 2. **int6 bridge 결과 보존 마감**
    - 날짜 결과 문서는 작성됐다. 필요한 최소 artifact를 `results/`에 복사하고
      manifest/checksum/registry를 추가한다. 1.2GB 원본 전체를 Git에 넣지 않는다.
-3. **SV0 전반부 통과 시 G3 RSM-lite·Oracle REVOKE**
-   - G2 Oracle ABSENT가 사전 기준을 만족할 때만 RSM/REVOKE 구현으로 이동한다.
-4. **데이터 준비 후 held-out과 최종 문서 마감**
+3. **SV0 통과 시 실제 SAVER 학습 데이터와 SV1/SV2 실행**
+   - prompt-only receiver RSM, signed packet/ledger, SAT/VREM/SM-DiT code는 구현됐다.
+   - OVIS/YouTube-VOS source-only GOP tensor manifest를 만들고 SV1 memory ablation부터
+     실행한다. 이후 real frozen backbone에 SM-DiT bridge를 연결한다.
+4. **SV2 통과 시 JASR/codec 및 channel robustness formal**
+   - 구현된 router/codec/fault simulator를 실제 학습해 네 budget Pareto와
+     loss/reorder/corruption/fading을 평가한다.
+5. **데이터 준비 후 held-out과 최종 문서 마감**
    - 최종 operating point, paired CI, Pareto 표·그래프·재현 명령·checksum을 확정한다.
 
 ## 작업 시 주의할 과학적 경계
 
-- SAVER는 아직 설계이며 기존 G0/G1/int4-int6 결과를 SAVER 성능으로 인용하지 않는다.
+- SAVER는 구현됐지만 미학습 prototype이다. 기존 G0/G1/int4-int6 결과와 CPU test를
+  SAVER 성능으로 인용하지 않는다.
 - both-omit의 무손실 결론은 현재 reliable-digital checkpoint/config 개발 조건에 한정한다.
 - few10은 학습된 distilled/consistency model이 아니라 production sampler의 10-step
   근사다.

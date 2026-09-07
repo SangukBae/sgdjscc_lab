@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -20,23 +20,31 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 
 ## SAVER-JSCC 구조
 
-- **핵심 모델은 설계만 있고 전용 학습 module이 없다**
-  - SAT, JASR, semantic channel codec, VREM과 SM-DiT는 모두 `NOT_IMPLEMENTED`다.
-  - SV0/G2 receiver prompt path는 `IMPLEMENTED_UNVALIDATED`이나 이를 SAVER 핵심 모델
-    구현으로 계산하지 않는다.
+- **핵심 모델은 구현됐지만 아직 학습·실가중치 통합·성능 검증되지 않았다**
+  - SAT, JASR, semantic channel codec, VREM, SM-DiT, packet/fault channel과 stage runner는
+    `PROTOTYPE_IMPLEMENTED_UNTRAINED`이다.
+  - generic Transformer hook bridge는 CPU dummy backbone으로만 검증했다. 실제 Wan/MDTv2
+    block signature, timestep embedding과 channel token 연결은 GPU에서 확인해야 한다.
+  - prompt-only receiver-state bridge는 Wan 호출 인자에 연결됐지만 SM-DiT contribution이
+    아니며 real weights 출력은 아직 확인하지 않았다.
 - **Oracle controllability가 아직 입증되지 않았다**
   - G1은 effective seed 1개와 source-paired prevalence 한계 때문에 scientific gate가
     `NOT_PASSED`다.
-  - SV0/G2 Oracle ABSENT runner/audit는 구현됐지만 GPU 결과가 없다. 이 gate가 실패하면
-    full SAVER 구현을 진행할 근거가 없다.
+  - 1-video smoke는 완료됐지만 `NOT_EVIDENCE`다. 40-video Pilot는 실행 중이며 이 gate가
+    실패하면 구현된 prototype을 그대로 학습하기보다 Stop Track 또는 재설계를 우선한다.
 - **signed state label의 오검출 위험이 있다**
   - `not detected`를 `confirmed-absent`로 바꾸면 실제 객체를 억제하는 false
     suppression이 생긴다.
   - `present/confirmed-absent/unknown` calibration과 independent evaluator가 필요하다.
-- **Tx와 Rx memory 동기화 계약이 미정이다**
+- **Tx와 Rx memory 동기화 정책 선택이 미정이다**
   - no-feedback에서 Tx가 실제 Rx state를 안다고 가정하면 Rx-legal contract를 위반한다.
-  - ACK 사용 여부, transmitter belief state와 feedback/retransmission byte·지연을
-    profile별로 동결해야 한다.
+  - deterministic ACK/no-ACK, Tx belief와 feedback/retransmission byte accounting 코드는
+    구현됐다. 어느 profile을 논문의 primary로 사용할지와 RTT 정책은 동결해야 한다.
+- **실제 source-only SAVER 학습 데이터가 materialize되지 않았다**
+  - checksummed tensor manifest loader와 leakage guard는 구현됐지만 OVIS/YouTube-VOS에서
+    GOP feature, stable entity slot, tri-state/action target을 생성한 실제 manifest는 없다.
+  - training detector와 final evaluator 분리, false-absence calibration을 데이터 생성
+    단계에서 동결해야 한다.
 - **rate 단위가 두 profile로 나뉜다**
   - `saver_source`는 exact binary byte, `saver_wireless`는 actual complex channel use를
     사용한다.
@@ -61,8 +69,10 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   - decoder 조건화(단일 vs 두 keyframe)만 다르고, 그 외 재현 baseline 4모드(`mock_baseline`/ `svd_start_only`/`wan_skim_sfa`/`wan_skem_dsa`)는 keyframe 선택 로직을 공유한다(이후 `skim_sfa_fixed`/`skem_dsa_psss` 계열에서 실제로 분리됨 — [experiments/2026-07_lgvsc_psss_skem.md](../experiments/2026-07_lgvsc_psss_skem.md)).
 - **PSSS `real` backend는 실제 MLLM 가중치로 실행된 적이 없다**
   - device placement 버그는 fake model로 GPU에서 재현·수정했지만, 실제 keyframe 선택 품질은 검증되지 않았다.
-- **side-info(모션/캡션)는 실제 생성 조건화에 쓰이지 않는다**
-  - Wan backend도 `side_infos`를 accept만 하고 조건화에 반영하지 않는다.
+- **일반 side-info(모션 수치)는 여전히 실제 생성 조건화에 쓰이지 않는다**
+  - Wan backend는 검증된 `saver_receiver_condition_v1`만 positive/negative prompt로
+    소비한다. legacy motion dict는 계속 무시하며, SAVER bridge도 real weights에서
+    검증되지 않았다.
 - **학습된 DSA adapter 없음**
   - Wan은 세그먼트 길이와 무관하게 동일 아키텍처를 재사용한다(체크포인트 자동 선택 ≠ 가변 차원 학습 adapter).
 
@@ -72,8 +82,10 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
   - `verifier_controller`의 negative-prompt/prompt-emphasis 결정은 로그만 남기고, 실제 diffusion 샘플러 호출에 주입하는 배선이 없다.
 - **단계적 디노이징은 prompt 레벨 연결뿐**
   - 샘플러 루프 내부의 스텝별 prompt 전환은 SGD-JSCC 샘플러 수정이 필요해(알고리즘 보존 불변식과 충돌) 구현하지 않았다.
-- **패킷은 평가/제어 메타데이터일 뿐**
-  - 실제 semantic packet의 채널 코딩/drop 시뮬레이션은 없다(패킷 자체가 채널을 통과하며 손상되는 시나리오는 미구현).
+- **기존 semantic packet과 SAVER signed packet의 증거 범위가 다르다**
+  - SAVER packet은 CRC, loss/reorder/duplicate/corruption/repetition과 exact wire byte를
+    구현했지만 표준 modulation/FEC가 아니다. 기존 baseline packet은 여전히 평가·제어
+    메타데이터 중심이며 두 경로의 결과를 혼합하면 안 된다.
 
 ## 평가 체계
 

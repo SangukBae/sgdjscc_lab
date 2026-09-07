@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 supersedes: docs/etri_overview.md
 ---
 
@@ -35,7 +35,7 @@ supersedes: docs/etri_overview.md
      receiver memory에서 제거하지 못해 ghost persistence를 만들 수 있음
    - 방향: signed assertion, 공동 rate routing, versioned dual-bank memory와
      diffusion 내부 positive/negative 비대칭 연산
-   - 현재 상태: `DESIGN_ONLY`; 구현·학습·성능 근거 없음
+   - 현재 상태: `PROTOTYPE_IMPLEMENTED_UNTRAINED`; CPU 구조 검증만 있으며 학습·성능 근거 없음
 - 연결 문서
   - SAVER 단일 기준: [current/saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md)
   - 현재 상태: [current/status.md](../current/status.md)
@@ -57,7 +57,7 @@ Original Image / Keyframe
 
 - 공식 지표 정의(SRS, CSV 컬럼, `PTC`/`SFR`/`SDI`)는 [metrics.md](./metrics.md) 참고.
 
-### SAVER-JSCC 목표 경로 (`DESIGN_ONLY`)
+### SAVER-JSCC opt-in prototype 경로 (`IMPLEMENTED_UNTRAINED`)
 
 ```text
 source GOP + previous Tx source state
@@ -74,7 +74,8 @@ source GOP + previous Tx source state
   → reconstructed GOP
 ```
 
-- SAVER는 기존 image/video path를 대체 구현한 상태가 아니라 opt-in 목표 구조다.
+- SAVER는 독립 tensor pipeline으로 구현된 opt-in prototype이며 기존 image/video
+  production path를 대체하지 않는다.
 - `saver_source`는 exact binary byte, `saver_wireless`는 actual complex channel-use
   profile로 분리하며 두 단위를 합산하지 않는다.
 - 구조·tensor·loss·gate의 기준은
@@ -112,8 +113,10 @@ src/sgdjscc_lab/
 └── utils/          preprocessing · csv_logger · metrics_io · metric_profiles · packet_io · seed
 ```
 
-SAVER 통과 후 추가할 목표 위치는 `models/saver/`, `pipelines/saver_video_pipeline.py`,
-`training/saver_*`다. 현재 디렉터리나 파일이 존재한다고 해석하지 않는다.
+SAVER prototype은 `models/saver/`, `pipelines/saver_video_pipeline.py`,
+`data/saver_*`, `transmission/saver_*`, `training/saver_*`와
+`scripts/train_saver_jscc.py`에 분리돼 있다. 실제 backbone과 production pipeline에는
+자동 합성되지 않는다.
 
 - 파일별 실행 흐름: [framework_file_roles.md](../reference/framework_file_roles.md)
 

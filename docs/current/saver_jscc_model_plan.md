@@ -1,9 +1,9 @@
 ---
-status: active_design
+status: active_implementation
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
-implementation_status: SV0_IMPLEMENTED_UNVALIDATED
+source_commit: c96b538
+implementation_status: PROTOTYPE_IMPLEMENTED_UNTRAINED
 training_status: NOT_STARTED
 formal_evidence_status: NOT_AVAILABLE
 primary_venue: IEEE Transactions on Multimedia
@@ -27,10 +27,13 @@ supersedes:
 
 현재 판정은 다음과 같다.
 
-- SAVER-JSCC 핵심 모델은 **설계만 확정된 제안 모델**이다.
-- SV0/G2 Oracle ABSENT receiver-control 경로와 전용 runner/audit는 구현됐지만 GPU
-  smoke·Pilot 결과는 아직 없다. SAT/JASR/VREM/SM-DiT, SAVER checkpoint와 training
-  result도 아직 없다.
+- SAVER-JSCC 핵심 module, tensor pipeline, signed packet/fault channel, dataset/loss,
+  stage runner와 checkpoint 계약은 **prototype으로 구현됐지만 학습되지 않았다**.
+- SV0/G2 Oracle ABSENT 1-video smoke는 완료됐으며 `NOT_EVIDENCE`다. 40-video Pilot는
+  2026-09-07 현재 clean commit `6f9593d`에서 실행 중이다.
+- prompt-only RSM은 receiver-applied ledger에서만 condition을 만들고 Wan의
+  `prompt`/`negative_prompt`로 연결한다. SM-DiT는 generic Transformer block bridge까지
+  구현됐지만 실제 Wan/MDTv2 가중치에 삽입·학습된 상태는 아니다.
 - 기존 negative-semantics G0/G1, int4/int6 bridge는 문제 설정과 운용점의 선행
   근거이며 SAVER의 성능 증거가 아니다.
 - 기존 `SGDJSCC/` baseline과 게이트-off 경로는 보존한다.
@@ -290,21 +293,35 @@ neural memory라고 부르지 않는다. 학습에 사용한 detector/critic과 
 
 ## 5. 구현 위치와 호환성
 
-아래 SAVER 핵심 모델 경로는 제안이며 현재 파일이 존재한다는 뜻이 아니다.
+아래 SAVER 핵심 모델 경로는 현재 prototype으로 존재한다.
 
 ```text
 src/sgdjscc_lab/models/saver/
+  contracts.py
   signed_assertion_tokenizer.py
   joint_assertion_symbol_router.py
   semantic_channel_codec.py
   versioned_entity_memory.py
   signed_memory_dit.py
+  backbone_bridge.py
+  rsm_conditioning.py
 
 src/sgdjscc_lab/pipelines/saver_video_pipeline.py
+src/sgdjscc_lab/data/saver_states.py
+src/sgdjscc_lab/data/saver_dataset.py
+src/sgdjscc_lab/transmission/saver_packet.py
+src/sgdjscc_lab/transmission/saver_channel.py
 src/sgdjscc_lab/training/saver_losses.py
 src/sgdjscc_lab/training/saver_stage_runner.py
+scripts/train_saver_jscc.py
 configs/experiments/saver_jscc/
 ```
+
+구현 판정은 `PROTOTYPE_IMPLEMENTED_UNTRAINED`이다. CPU test는 state/action mask,
+version/epoch monotonicity, stale ASSERT 차단, exact byte, loss/reorder/duplicate/corruption,
+budget projection, gradient, checkpoint mismatch와 baseline import isolation을 검사한다.
+실제 데이터 materialization, 학습 checkpoint, real-backbone GPU 연결과 formal 성능은
+아직 없다.
 
 SV0에 한해 다음 실행 경로가 구현되어 있다.
 
@@ -322,19 +339,20 @@ packet으로 계산하지 않는다.
 
 호환성 불변조건:
 
-- master gate는 `use_saver_jscc`, 기본값은 `false`다.
+- SAVER 전용 config에서만 `use_saver_jscc: true`를 명시하며 production default에는
+  해당 key를 추가하지 않는다.
 - gate off에서 기존 SGD-JSCC image/video 결과를 변경하지 않는다.
 - checkpoint에는 architecture version, `K`, `d_m`, injection layers, action vocabulary와
   packet schema fingerprint를 저장한다.
 - SAVER checkpoint를 기존 baseline checkpoint로 조용히 로드하지 않는다.
-- 구현 전 config key를 production default에 추가하지 않는다.
+- prototype config를 production default나 baseline recipe에 합성하지 않는다.
 
 ## 6. 단계와 go/no-go gate
 
 ### SV0. Oracle signed-control feasibility
 
-- 구현 상태: `IMPLEMENTED_UNVALIDATED` — CPU 단위/회귀 테스트만 완료, GPU smoke와
-  40-video Pilot는 미실행
+- 구현 상태: `IMPLEMENTED_UNVALIDATED` — 1-video GPU smoke 완료(`NOT_EVIDENCE`),
+  40-video Pilot 실행 중
 - negative-semantics G2 Oracle ABSENT와 G3 Oracle REVOKE를 재사용한다.
 - no/random/frequency/oracle condition을 matched generation compute로 비교한다.
 - G1 effective-seed가 `NOT_PASSED`인 동안 결과는 mechanism feasibility다.
@@ -346,7 +364,8 @@ packet으로 계산하지 않는다.
 - false suppression 증가 `1%p` 이내
 - PSNR/SSIM/LPIPS non-inferiority budget 통과
 
-Oracle이 실패하면 SAVER full model 구현을 중단하고 Stop Track으로 기록한다.
+Oracle이 실패하면 구현된 prototype의 formal 학습·최종 모델 채택을 중단하고 Stop
+Track으로 기록한다.
 
 ### SV1. SAT와 VREM
 
@@ -463,12 +482,16 @@ cost
 
 ## 9. 구현·문서 진행 순서
 
-1. 구현된 SV0/G2 Oracle ABSENT path를 GPU smoke와 Pilot에서 검증하고 feasibility를
-   판정한다.
-2. 통과 시 SAT/VREM interface와 deterministic state property test를 구현한다.
-3. Oracle action으로 SM-DiT만 먼저 학습해 decoder 구조 효과를 분리한다.
-4. SM-DiT 통과 후 JASR와 semantic channel codec을 연결한다.
-5. packet disorder/channel robustness를 추가한다.
+구조 prototype은 병렬 준비를 위해 먼저 구현됐지만 과학적 실행 순서는 바뀌지 않는다.
+
+1. 실행 중 SV0/G2 Pilot를 완료·감사하고 feasibility를 판정한다.
+2. 통과 시 source-only sequence tensor manifest를 materialize하고 구현된 SAT/VREM으로
+   No-memory/Append-only/Revocable 학습 비교를 수행한다.
+3. Oracle action으로 구현된 SM-DiT bridge를 real frozen backbone에 연결·학습해 decoder
+   구조 효과를 분리한다.
+4. SM-DiT 통과 후 구현된 JASR와 semantic channel codec을 학습하고 네 budget Pareto를
+   평가한다.
+5. 구현된 packet/fault simulator로 formal disorder/channel robustness를 수행한다.
 6. architecture와 threshold를 동결한 뒤 Validation, 마지막으로 Held-out을 실행한다.
 7. 완료된 각 gate는 새 `docs/experiments/YYYY-MM-DD_saver_*.md`에 기록한다.
 

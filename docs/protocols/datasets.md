@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: c96b538
 supersedes:
 ---
 
@@ -71,8 +71,10 @@ data/_reports/dataset_status.md
 ## SAVER-JSCC 데이터 역할
 
 SAVER stage 이름과 개봉 순서는
-[saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md)를 따른다. 현재 SAVER
-training runner가 구현됐다는 뜻은 아니다.
+[saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md)를 따른다. source-only
+checksummed tensor manifest loader와 고정 shape sequence collator는
+`data/saver_dataset.py`에 구현됐지만 실제 Train/Validation tensor manifest는 아직
+materialize되지 않았다.
 
 | 역할 | 현재 자산 | 허용 용도 |
 |---|---|---|
