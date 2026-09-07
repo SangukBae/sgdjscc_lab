@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from sgdjscc_lab.models.saver.contracts import (
@@ -139,3 +142,13 @@ def test_loss_duplicate_corruption_and_ack_accounting_are_explicit():
 def test_unknown_revoke_rejected_before_serialization():
     with pytest.raises(ValueError, match="UNKNOWN.*REVOKE"):
         packet(action=AssertionAction.REVOKE, state=SemanticState.UNKNOWN)
+
+
+def test_packet_module_imports_in_a_fresh_interpreter_without_codec_cycle():
+    completed = subprocess.run(
+        [sys.executable, "-c", "from sgdjscc_lab.transmission.saver_packet import SignedStatePacket"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
