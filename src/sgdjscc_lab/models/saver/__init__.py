@@ -23,6 +23,12 @@ from .contracts import (
 )
 
 _LAZY_EXPORTS = {
+    "SignedMemoryBackboneBridge": ("backbone_bridge", "SignedMemoryBackboneBridge"),
+    "SignedMemoryCondition": ("backbone_bridge", "SignedMemoryCondition"),
+    "ReceiverStateCondition": ("rsm_conditioning", "ReceiverStateCondition"),
+    "compile_receiver_state_condition": (
+        "rsm_conditioning", "compile_receiver_state_condition"
+    ),
     "SignedAssertionOutput": ("signed_assertion_tokenizer", "SignedAssertionOutput"),
     "SignedAssertionTokenizer": ("signed_assertion_tokenizer", "SignedAssertionTokenizer"),
     "JointAssertionSymbolRouter": ("joint_assertion_symbol_router", "JointAssertionSymbolRouter"),
@@ -61,6 +67,10 @@ __all__ = [
     "SignedEntityEvent",
     "is_state_action_allowed",
     "stable_entity_numeric_id",
+    "SignedMemoryBackboneBridge",
+    "SignedMemoryCondition",
+    "ReceiverStateCondition",
+    "compile_receiver_state_condition",
     "SignedAssertionOutput",
     "SignedAssertionTokenizer",
     "JointAssertionSymbolRouter",
