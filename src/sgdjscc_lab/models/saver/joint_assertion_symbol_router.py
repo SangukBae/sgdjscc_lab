@@ -149,11 +149,25 @@ class JointAssertionSymbolRouter(nn.Module):
         if semantic_states is not None:
             if tuple(semantic_states.shape) != (batch, slots):
                 raise ValueError("semantic_states must be [B,K]")
-            unknown = semantic_states.eq(int(SemanticState.UNKNOWN))
             action_logits = action_logits.clone()
-            action_logits[..., int(AssertionAction.REVOKE)] = action_logits[
-                ..., int(AssertionAction.REVOKE)
-            ].masked_fill(unknown, torch.finfo(action_logits.dtype).min)
+            allowed_by_state = {
+                SemanticState.PRESENT: (
+                    AssertionAction.SKIP, AssertionAction.ASSERT,
+                    AssertionAction.UPDATE, AssertionAction.RESUME,
+                ),
+                SemanticState.CONFIRMED_ABSENT: (
+                    AssertionAction.SKIP, AssertionAction.ASSERT, AssertionAction.REVOKE,
+                ),
+                SemanticState.UNKNOWN: (AssertionAction.SKIP, AssertionAction.SUSPEND),
+            }
+            for state, allowed in allowed_by_state.items():
+                rows = semantic_states.eq(int(state))
+                for action in AssertionAction:
+                    if action.value >= ENTITY_ACTION_COUNT or action in allowed:
+                        continue
+                    action_logits[..., int(action)] = action_logits[..., int(action)].masked_fill(
+                        rows, torch.finfo(action_logits.dtype).min
+                    )
 
         invalid = ~valid_mask
         action_logits = action_logits.masked_fill(invalid.unsqueeze(-1), torch.finfo(action_logits.dtype).min)
@@ -215,8 +229,9 @@ class JointAssertionSymbolRouter(nn.Module):
                 action = int(hard_actions[b, index].item())
                 if not bool(valid_mask[b, index]) or action == int(AssertionAction.SKIP):
                     continue
-                cost = int(hard_rates[b, index].item() + hard_protection_cost[b, index].item())
-                if cost <= 0 or cost > remaining:
+                rate = int(hard_rates[b, index].item())
+                cost = int(rate + hard_protection_cost[b, index].item())
+                if rate <= 0 or cost > remaining:
                     continue
                 projected_actions[b, index] = action
                 projected_rates[b, index] = hard_rates[b, index]

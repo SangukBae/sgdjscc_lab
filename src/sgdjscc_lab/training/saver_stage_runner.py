@@ -160,6 +160,7 @@ class SaverStageRunner:
         return {
             "kind": "saver_jscc_checkpoint",
             "contract": self.contract.to_dict(),
+            "contract_fingerprint": self.contract.fingerprint,
             "stage": self.stage,
             "global_step": self.global_step,
             "model": self.pipeline.state_dict(),
@@ -179,6 +180,8 @@ class SaverStageRunner:
         if payload.get("kind") != "saver_jscc_checkpoint":
             raise RuntimeError("not a SAVER-JSCC checkpoint")
         self.contract.assert_compatible(payload["contract"])
+        if payload.get("contract_fingerprint") != self.contract.fingerprint:
+            raise RuntimeError("SAVER checkpoint contract fingerprint mismatch")
         if payload.get("stage") != self.stage:
             raise RuntimeError(
                 f"checkpoint stage={payload.get('stage')!r} does not match runner stage={self.stage!r}"

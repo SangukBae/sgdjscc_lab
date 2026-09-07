@@ -8,6 +8,8 @@ from .contracts import (
     SaverCheckpointContract,
     SemanticState,
     SignedEntityEvent,
+    is_state_action_allowed,
+    stable_entity_numeric_id,
 )
 from .signed_assertion_tokenizer import SignedAssertionOutput, SignedAssertionTokenizer
 from .joint_assertion_symbol_router import JointAssertionSymbolRouter, RouterOutput
@@ -35,6 +37,8 @@ __all__ = [
     "SaverCheckpointContract",
     "SemanticState",
     "SignedEntityEvent",
+    "is_state_action_allowed",
+    "stable_entity_numeric_id",
     "SignedAssertionOutput",
     "SignedAssertionTokenizer",
     "JointAssertionSymbolRouter",

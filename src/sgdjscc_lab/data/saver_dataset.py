@@ -155,7 +155,10 @@ class SaverTensorManifestDataset(Dataset):
                 raise ValueError(f"{name} must match entity_ids [S,K]")
         if tensors["event_target_features"].shape[:2] != (sequence_length, slots):
             raise ValueError("event_target_features must match entity_ids [S,K]")
-        for optional in ("memory_positive", "memory_negative", "entity_presence_logits", "scene_epochs", "scene_reset_mask"):
+        for optional in (
+            "memory_positive", "memory_negative", "entity_presence_logits",
+            "scene_epochs", "scene_reset_mask", "scene_reset_versions",
+        ):
             if optional in value:
                 tensor = value[optional]
                 if not isinstance(tensor, torch.Tensor) or tensor.shape[0] != sequence_length:
@@ -209,6 +212,7 @@ def make_saver_sequence_batches(
     for step in range(sequence_length):
         scene_epochs = values.get("scene_epochs")
         scene_reset = values.get("scene_reset_mask")
+        scene_reset_versions = values.get("scene_reset_versions")
         pipeline_inputs = {
             "source_features": values["source_features"][:, step],
             "visual_tokens": values["visual_tokens"][:, step],
@@ -230,6 +234,11 @@ def make_saver_sequence_batches(
             "scene_reset_mask": (
                 scene_reset[:, step].bool() if scene_reset is not None else None
             ),
+            "scene_reset_versions": (
+                scene_reset_versions[:, step].long()
+                if scene_reset_versions is not None
+                else None
+            ),
             "teacher_actions": values["teacher_actions"][:, step].long(),
             "teacher_allocated_symbols": values["teacher_allocated_symbols"][:, step].long(),
             "snr_db": snr_db,
@@ -250,4 +259,3 @@ def make_saver_sequence_batches(
             "sequence_step": step,
         })
     return batches
-

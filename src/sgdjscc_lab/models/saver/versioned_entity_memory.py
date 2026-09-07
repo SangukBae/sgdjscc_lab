@@ -22,6 +22,7 @@ class VersionedMemoryState:
     render_status: torch.Tensor
     occupied: torch.Tensor
     scene_epoch: torch.Tensor
+    scene_reset_version: torch.Tensor
 
     def detach(self) -> "VersionedMemoryState":
         return VersionedMemoryState(**{
@@ -97,6 +98,9 @@ class VersionedRevocableEntityMemory(nn.Module):
             scene_epoch=torch.full(
                 (batch_size,), scene_epoch, device=device, dtype=torch.long
             ),
+            scene_reset_version=torch.full(
+                (batch_size,), -1, device=device, dtype=torch.long
+            ),
         )
 
     def _validate_state(self, state: VersionedMemoryState, batch: int) -> None:
@@ -110,6 +114,8 @@ class VersionedRevocableEntityMemory(nn.Module):
                 raise ValueError(f"memory {name} must have shape {slot_shape}")
         if tuple(state.scene_epoch.shape) != (batch,):
             raise ValueError("memory scene_epoch must have shape [B]")
+        if tuple(state.scene_reset_version.shape) != (batch,):
+            raise ValueError("memory scene_reset_version must have shape [B]")
 
     def forward(
         self,
@@ -122,6 +128,7 @@ class VersionedRevocableEntityMemory(nn.Module):
         *,
         scene_epochs: Optional[torch.Tensor] = None,
         scene_reset_mask: Optional[torch.Tensor] = None,
+        scene_reset_versions: Optional[torch.Tensor] = None,
         confidence: Optional[torch.Tensor] = None,
         valid_mask: Optional[torch.Tensor] = None,
     ) -> MemoryUpdateOutput:
@@ -146,23 +153,53 @@ class VersionedRevocableEntityMemory(nn.Module):
             scene_epochs = state.scene_epoch
         if scene_reset_mask is None:
             scene_reset_mask = torch.zeros(batch, dtype=torch.bool, device=device)
+        if scene_reset_versions is None:
+            scene_reset_versions = torch.zeros(batch, dtype=torch.long, device=device)
         if confidence is None:
             confidence = torch.ones(slot_shape, dtype=entity_features.dtype, device=device)
         if valid_mask is None:
             valid_mask = torch.ones(slot_shape, dtype=torch.bool, device=device)
-        if tuple(scene_epochs.shape) != (batch,) or tuple(scene_reset_mask.shape) != (batch,):
-            raise ValueError("scene_epochs and scene_reset_mask must have shape [B]")
+        if (
+            tuple(scene_epochs.shape) != (batch,)
+            or tuple(scene_reset_mask.shape) != (batch,)
+            or tuple(scene_reset_versions.shape) != (batch,)
+        ):
+            raise ValueError("scene epoch/reset tensors must have shape [B]")
 
+        allowed = torch.zeros_like(valid_mask, dtype=torch.bool)
+        allowed |= semantic_states.eq(int(SemanticState.PRESENT)) & (
+            operations.eq(int(AssertionAction.SKIP))
+            | operations.eq(int(AssertionAction.ASSERT))
+            | operations.eq(int(AssertionAction.UPDATE))
+            | operations.eq(int(AssertionAction.RESUME))
+        )
+        allowed |= semantic_states.eq(int(SemanticState.CONFIRMED_ABSENT)) & (
+            operations.eq(int(AssertionAction.SKIP))
+            | operations.eq(int(AssertionAction.ASSERT))
+            | operations.eq(int(AssertionAction.REVOKE))
+        )
+        allowed |= semantic_states.eq(int(SemanticState.UNKNOWN)) & (
+            operations.eq(int(AssertionAction.SKIP))
+            | operations.eq(int(AssertionAction.SUSPEND))
+        )
         invalid_unknown_revoke = (
-            semantic_states.eq(int(SemanticState.UNKNOWN))
+            valid_mask
+            & semantic_states.eq(int(SemanticState.UNKNOWN))
             & operations.eq(int(AssertionAction.REVOKE))
-            & valid_mask
         )
         if invalid_unknown_revoke.any():
             raise ValueError("UNKNOWN evidence cannot issue REVOKE")
+        if (valid_mask & ~allowed).any():
+            raise ValueError("invalid semantic state/action combination")
 
         # A new epoch is valid only with an explicit reset. Reset all banks first.
-        reset = scene_reset_mask.bool() & scene_epochs.ge(state.scene_epoch)
+        reset = scene_reset_mask.bool() & (
+            scene_epochs.gt(state.scene_epoch)
+            | (
+                scene_epochs.eq(state.scene_epoch)
+                & scene_reset_versions.gt(state.scene_reset_version)
+            )
+        )
         reset_slots = reset.unsqueeze(-1)
         reset_vectors = reset_slots.unsqueeze(-1)
         identity = torch.where(reset_vectors, torch.zeros_like(state.identity), state.identity)
@@ -182,6 +219,9 @@ class VersionedRevocableEntityMemory(nn.Module):
         )
         occupied = torch.where(reset_slots, torch.zeros_like(state.occupied), state.occupied)
         effective_epoch = torch.where(reset, scene_epochs, state.scene_epoch)
+        effective_reset_version = torch.where(
+            reset, scene_reset_versions.long(), state.scene_reset_version
+        )
 
         # Slot binding is explicit. Reusing an occupied slot for a different ID
         # without a scene reset/eviction would silently create identity swaps.
@@ -249,5 +289,6 @@ class VersionedRevocableEntityMemory(nn.Module):
             render_status=render_status,
             occupied=occupied,
             scene_epoch=effective_epoch,
+            scene_reset_version=effective_reset_version,
         )
         return MemoryUpdateOutput(next_state, accepted, stale)

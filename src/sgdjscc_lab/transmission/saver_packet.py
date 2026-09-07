@@ -21,6 +21,7 @@ from sgdjscc_lab.models.saver.contracts import (
     RenderStatus,
     SIGNED_PACKET_SCHEMA_VERSION,
     SemanticState,
+    is_state_action_allowed,
 )
 
 
@@ -106,8 +107,10 @@ class SignedStatePacket:
                 raise ValueError("SCENE_RESET must have an empty entity_id")
         elif not self.entity_id:
             raise ValueError("entity action requires a non-empty entity_id")
-        if self.state == SemanticState.UNKNOWN and self.action == AssertionAction.REVOKE:
-            raise ValueError("UNKNOWN evidence cannot issue REVOKE")
+        if not is_state_action_allowed(self.state, self.action):
+            raise ValueError(
+                f"state/action combination is invalid: {self.state.name}/{self.action.name}"
+            )
 
     @property
     def exact_wire_bytes(self) -> int:
@@ -294,13 +297,20 @@ class VersionedEntityLedger:
         if scene_epoch < 0:
             raise ValueError("scene_epoch must be non-negative")
         self.scene_epoch = int(scene_epoch)
+        self.scene_reset_version = -1
         self.entries: Dict[str, LedgerEntry] = {}
 
     def apply(self, packet: SignedStatePacket) -> ApplyStatus:
         if packet.action == AssertionAction.SCENE_RESET:
             if packet.scene_epoch < self.scene_epoch:
                 return ApplyStatus.STALE_EPOCH
+            if packet.scene_epoch == self.scene_epoch:
+                if packet.version == self.scene_reset_version:
+                    return ApplyStatus.DUPLICATE
+                if packet.version < self.scene_reset_version:
+                    return ApplyStatus.STALE_VERSION
             self.scene_epoch = packet.scene_epoch
+            self.scene_reset_version = packet.version
             self.entries.clear()
             return ApplyStatus.APPLIED
         if packet.scene_epoch < self.scene_epoch:
@@ -399,4 +409,3 @@ class VersionedStateSynchronizer:
             retransmission_bytes=self.accounting.retransmission_bytes + nbytes,
         )
         return nbytes
-

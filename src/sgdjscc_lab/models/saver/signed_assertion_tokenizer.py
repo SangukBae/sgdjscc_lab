@@ -141,11 +141,25 @@ class SignedAssertionTokenizer(nn.Module):
             evidence_states = state_logits.detach().argmax(dim=-1)
         if tuple(evidence_states.shape) != (batch, self.slot_count):
             raise ValueError(f"evidence_states must be [B,{self.slot_count}]")
-        unknown = evidence_states.eq(int(SemanticState.UNKNOWN))
         action_logits = action_logits.clone()
-        action_logits[..., int(AssertionAction.REVOKE)] = action_logits[
-            ..., int(AssertionAction.REVOKE)
-        ].masked_fill(unknown, torch.finfo(action_logits.dtype).min)
+        allowed_by_state = {
+            SemanticState.PRESENT: (
+                AssertionAction.SKIP, AssertionAction.ASSERT,
+                AssertionAction.UPDATE, AssertionAction.RESUME,
+            ),
+            SemanticState.CONFIRMED_ABSENT: (
+                AssertionAction.SKIP, AssertionAction.ASSERT, AssertionAction.REVOKE,
+            ),
+            SemanticState.UNKNOWN: (AssertionAction.SKIP, AssertionAction.SUSPEND),
+        }
+        for state, allowed in allowed_by_state.items():
+            rows = evidence_states.eq(int(state))
+            for action in AssertionAction:
+                if action.value >= ENTITY_ACTION_COUNT or action in allowed:
+                    continue
+                action_logits[..., int(action)] = action_logits[..., int(action)].masked_fill(
+                    rows, torch.finfo(action_logits.dtype).min
+                )
 
         # Padded slots deterministically select SKIP and contribute no confidence.
         invalid = ~slot_mask
@@ -164,4 +178,3 @@ class SignedAssertionTokenizer(nn.Module):
             confidence=confidence,
             valid_mask=slot_mask,
         )
-

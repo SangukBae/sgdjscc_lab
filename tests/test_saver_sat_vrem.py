@@ -140,3 +140,30 @@ def test_vrem_rejects_unknown_revoke():
             **_event_tensors(AssertionAction.REVOKE, SemanticState.UNKNOWN, 0, slots=1),
         )
 
+
+def test_vrem_duplicate_scene_reset_does_not_clear_new_state():
+    memory = VersionedRevocableEntityMemory(memory_dim=4, slot_count=1)
+    feature = torch.randn(1, 1, 4)
+    event = _event_tensors(AssertionAction.ASSERT, SemanticState.PRESENT, 0, slots=1)
+    state = memory(
+        memory.initial_state(1, device="cpu"),
+        feature,
+        scene_epochs=torch.tensor([1]),
+        scene_reset_mask=torch.tensor([True]),
+        scene_reset_versions=torch.tensor([2]),
+        **event,
+    ).state
+    duplicate = memory(
+        state,
+        feature,
+        scene_epochs=torch.tensor([1]),
+        scene_reset_mask=torch.tensor([True]),
+        scene_reset_versions=torch.tensor([2]),
+        valid_mask=torch.tensor([[False]]),
+        entity_ids=torch.tensor([[-1]]),
+        semantic_states=torch.tensor([[int(SemanticState.UNKNOWN)]]),
+        operations=torch.tensor([[int(AssertionAction.SKIP)]]),
+        versions=torch.tensor([[-1]]),
+    ).state
+    assert duplicate.occupied.item()
+    assert duplicate.scene_reset_version.item() == 2

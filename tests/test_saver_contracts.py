@@ -11,6 +11,7 @@ from sgdjscc_lab.models.saver.contracts import (
     SaverCheckpointContract,
     SemanticState,
     SignedEntityEvent,
+    stable_entity_numeric_id,
 )
 
 
@@ -102,3 +103,8 @@ def test_target_builder_rejects_implicit_eviction():
             slot_count=1,
         )
 
+
+def test_entity_numeric_id_is_stable_and_epoch_scoped():
+    assert stable_entity_numeric_id(2, "person:7") == stable_entity_numeric_id(2, "person:7")
+    assert stable_entity_numeric_id(2, "person:7") != stable_entity_numeric_id(3, "person:7")
+    assert 0 <= stable_entity_numeric_id(2, "person:7") < 2**63

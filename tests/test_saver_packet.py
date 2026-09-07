@@ -95,6 +95,22 @@ def test_scene_epoch_requires_reset_and_old_epoch_cannot_leak_back():
     assert ledger.apply(packet(scene_epoch=2)) == ApplyStatus.STALE_EPOCH
 
 
+def test_duplicate_scene_reset_cannot_erase_new_epoch_entities():
+    ledger = VersionedEntityLedger()
+    reset = SignedStatePacket(
+        scene_epoch=1,
+        entity_id="",
+        version=3,
+        state=SemanticState.UNKNOWN,
+        action=AssertionAction.SCENE_RESET,
+        confidence=1.0,
+    )
+    assert ledger.apply(reset) == ApplyStatus.APPLIED
+    assert ledger.apply(packet(scene_epoch=1, version=4)) == ApplyStatus.APPLIED
+    assert ledger.apply(reset) == ApplyStatus.DUPLICATE
+    assert "person:7" in ledger.entries
+
+
 def test_loss_duplicate_corruption_and_ack_accounting_are_explicit():
     sync = VersionedStateSynchronizer(FeedbackMode.ACK)
     p = packet(ack_requested=True)
@@ -123,4 +139,3 @@ def test_loss_duplicate_corruption_and_ack_accounting_are_explicit():
 def test_unknown_revoke_rejected_before_serialization():
     with pytest.raises(ValueError, match="UNKNOWN.*REVOKE"):
         packet(action=AssertionAction.REVOKE, state=SemanticState.UNKNOWN)
-

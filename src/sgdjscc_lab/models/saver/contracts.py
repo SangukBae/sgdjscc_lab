@@ -8,6 +8,8 @@ schema version if the vocabulary changes.
 from __future__ import annotations
 
 import math
+import hashlib
+import json
 from dataclasses import dataclass, field
 from enum import IntEnum
 from typing import Any, Mapping, Optional, Tuple
@@ -40,6 +42,41 @@ class AssertionAction(IntEnum):
 
 
 ENTITY_ACTION_COUNT = 6  # SCENE_RESET is a scene-level packet, not a slot head.
+
+_ALLOWED_ENTITY_ACTIONS = {
+    SemanticState.PRESENT: frozenset({
+        AssertionAction.SKIP,
+        AssertionAction.ASSERT,
+        AssertionAction.UPDATE,
+        AssertionAction.RESUME,
+    }),
+    SemanticState.CONFIRMED_ABSENT: frozenset({
+        AssertionAction.SKIP,
+        AssertionAction.ASSERT,
+        AssertionAction.REVOKE,
+    }),
+    SemanticState.UNKNOWN: frozenset({
+        AssertionAction.SKIP,
+        AssertionAction.SUSPEND,
+    }),
+}
+
+
+def is_state_action_allowed(state: SemanticState, action: AssertionAction) -> bool:
+    state = SemanticState(state)
+    action = AssertionAction(action)
+    if action == AssertionAction.SCENE_RESET:
+        return state == SemanticState.UNKNOWN
+    return action in _ALLOWED_ENTITY_ACTIONS[state]
+
+
+def stable_entity_numeric_id(scene_epoch: int, entity_id: str) -> int:
+    """Map a string entity ID to a stable non-negative signed-int64 slot ID."""
+
+    if scene_epoch < 0 or not entity_id:
+        raise ValueError("scene_epoch must be non-negative and entity_id non-empty")
+    digest = hashlib.sha256(f"{scene_epoch}\0{entity_id}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") & 0x7FFF_FFFF_FFFF_FFFF
 
 
 class RenderStatus(IntEnum):
@@ -111,8 +148,10 @@ class SignedEntityEvent:
                 raise ValueError("SCENE_RESET must use an empty entity_id")
         elif not self.entity_id:
             raise ValueError("entity action requires a non-empty entity_id")
-        if self.state == SemanticState.UNKNOWN and self.action == AssertionAction.REVOKE:
-            raise ValueError("UNKNOWN evidence cannot issue REVOKE")
+        if not is_state_action_allowed(self.state, self.action):
+            raise ValueError(
+                f"state/action combination is invalid: {self.state.name}/{self.action.name}"
+            )
 
 
 @dataclass(frozen=True)
@@ -143,6 +182,11 @@ class SaverCheckpointContract:
             "injection_layers": list(self.injection_layers),
             "action_vocabulary": list(self.action_vocabulary),
         }
+
+    @property
+    def fingerprint(self) -> str:
+        encoded = json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> "SaverCheckpointContract":
@@ -184,4 +228,3 @@ def infer_action(
     if previous == SemanticState.CONFIRMED_ABSENT:
         return AssertionAction.RESUME
     return AssertionAction.UPDATE
-

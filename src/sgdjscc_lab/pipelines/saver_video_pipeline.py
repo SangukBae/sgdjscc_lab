@@ -87,6 +87,7 @@ class SaverVideoPipeline(nn.Module):
         valid_mask: Optional[torch.Tensor] = None,
         source_mask: Optional[torch.Tensor] = None,
         scene_reset_mask: Optional[torch.Tensor] = None,
+        scene_reset_versions: Optional[torch.Tensor] = None,
         teacher_actions: Optional[torch.Tensor] = None,
         teacher_allocated_symbols: Optional[torch.Tensor] = None,
         snr_db: float = 10.0,
@@ -157,6 +158,7 @@ class SaverVideoPipeline(nn.Module):
             versions,
             scene_epochs=scene_epochs,
             scene_reset_mask=scene_reset_mask,
+            scene_reset_versions=scene_reset_versions,
             confidence=assertion.confidence * observation.reliability,
             valid_mask=delivered,
         )
@@ -198,4 +200,3 @@ class SaverVideoPipeline(nn.Module):
             memory_update=memory_update,
             adapter_outputs=adapter_outputs,
         )
-

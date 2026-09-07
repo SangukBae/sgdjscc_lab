@@ -156,6 +156,7 @@ def test_stage_runner_freezes_exact_modules_and_checkpoint_fails_closed():
     assert runner.global_step == 1
     assert metrics["loss"] > 0
     payload = runner.checkpoint_payload({"effective_seed": 2025})
+    assert payload["contract_fingerprint"] == contract.fingerprint
     restored = SaverStageRunner(small_pipeline(enabled=True), SaverLoss(), contract, stage="sv1")
     restored.load_checkpoint_payload(payload)
     assert restored.global_step == 1
@@ -197,4 +198,3 @@ def test_config_factory_is_opt_in_and_preserves_contract_fields():
     pipeline = build_saver_video_pipeline(cfg)
     assert contract.slot_count == 3 and contract.injection_layers == (1, 3)
     assert not pipeline.enabled
-
