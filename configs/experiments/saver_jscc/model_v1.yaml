@@ -1,0 +1,57 @@
+# Opt-in tensor contract for SAVER-JSCC architecture development.
+# This file does not modify any baseline production default. It has no paper
+# evidence status until the corresponding SV gates are run and audited.
+use_saver_jscc: true
+
+saver:
+  architecture_version: saver-jscc-v1
+  packet_schema_version: 1
+  source_feature_dim: 512
+  slot_count: 16
+  memory_dim: 512
+  num_heads: 8
+
+  router:
+    channel_feature_dim: 8
+    hidden_dim: 128
+    temperature: 1.0
+    rate_options: [0, 8, 16, 32, 64]
+    visual_rate_options: [0, 128, 256, 512]
+    # NONE, REPETITION, PIGGYBACK, SNAPSHOT
+    protection_extra_symbols: [0, 8, 4, 16]
+
+  codec:
+    max_symbols: 64
+    hidden_dim: 256
+    source_profile:
+      rate_unit: exact_binary_bytes
+      bit_depth: 4
+    wireless_profile:
+      rate_unit: actual_complex_channel_uses
+      channel: awgn
+      snr_db: 10.0
+
+  dit:
+    hidden_dim: 512
+    timestep_dim: 512
+    channel_token_dim: 8
+    bottleneck_dim: 512
+    injection_layers: [1, 2, 3]
+    base_backbone_frozen: true
+    bounded_negative_residual: true
+    zero_initialized_output: true
+
+  training:
+    stage: sv1
+    learning_rate: 0.0001
+    weight_decay: 0.00001
+    effective_seeds: [2025, 2026, 2027]
+    loss_weights:
+      diffusion: 1.0
+      state: 1.0
+      memory: 0.2
+      ghost: 0.5
+      preserve: 0.5
+      rate: 0.05
+      channel: 0.2
+
