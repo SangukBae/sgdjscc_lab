@@ -222,6 +222,11 @@ class TemporalPipeline:
         Used to build a default keyframe extractor when one is not supplied.
     delta:
         A ``SemanticDelta`` (defaults to a fresh instance).
+    receiver_condition_rows:
+        Optional frame-aligned receiver-only SAVER conditions. They are passed
+        only to generated target frames; callers should wrap the keyframe
+        extractor with ``ReceiverStateBoundaryExtractor`` so one segment never
+        spans two different receiver snapshots.
     cfg:
         Optional base run config passed to ``reconstruct_fn`` (copied per frame).
     reuse_threshold:
@@ -363,11 +368,13 @@ class TemporalPipeline:
         conditioning_mode: str = "start_only",
         force_interframe_reuse: bool = False,
         fps: Optional[float] = None,
+        receiver_condition_rows: Optional[List[Optional[Dict]]] = None,
     ) -> None:
         self.reconstruct_fn = reconstruct_fn
         self.packet_fn = packet_fn
         self.cfg = cfg
         self.fps = None if fps is None else float(fps)
+        self.receiver_condition_rows = receiver_condition_rows
         self.reuse_threshold = reuse_threshold
         self.motion_threshold = None if motion_threshold is None else float(motion_threshold)
         self.motion_weight = float(motion_weight)
@@ -527,10 +534,24 @@ class TemporalPipeline:
         target_indices = [p["index"] for p in pending]
         captions = [(p["packet"] or {}).get("caption") or None for p in pending]
         packets = [p["packet"] for p in pending]
-        side_infos = [
-            {"delta": p["delta"], "motion": p["motion"], "motion_score": p["motion_score"]}
-            for p in pending
-        ]
+        side_infos = []
+        for p in pending:
+            legacy = {
+                "delta": p["delta"], "motion": p["motion"],
+                "motion_score": p["motion_score"],
+            }
+            if self.receiver_condition_rows is None:
+                side_infos.append(legacy)
+                continue
+            condition = self.receiver_condition_rows[p["index"]]
+            if condition is None:
+                side_infos.append(legacy)
+                continue
+            if not isinstance(condition, dict):
+                raise TypeError("receiver_condition_rows entries must be dict or None")
+            merged = dict(condition)
+            merged["legacy_temporal_side_info"] = legacy
+            side_infos.append(merged)
         reference_prev_recons = [p["reference_prev_recon"] for p in pending]
         request = SegmentGenerationRequest(
             segment_id=first["segment_id"],
@@ -644,6 +665,11 @@ class TemporalPipeline:
                           vs naive per-frame full transmission.
         """
         n = len(frames)
+        if self.receiver_condition_rows is not None and len(self.receiver_condition_rows) != n:
+            raise ValueError(
+                "receiver_condition_rows must align one-to-one with input frames "
+                f"({len(self.receiver_condition_rows)} != {n})"
+            )
         structure = self.keyframe_extractor.extract(frames)
         roles = structure["frame_roles"]
 

@@ -1189,6 +1189,28 @@ class TestSegmentGenerateBranch:
         assert spy.calls[0].target_indices == [1]
         assert spy.calls[0].segment_id == 0
 
+    def test_receiver_state_condition_reaches_segment_worker_side_info(self):
+        from sgdjscc_lab.video.video_generator import CopyGenerator
+        spy = _CountingSegmentGenerator(CopyGenerator())
+        conditions = [None] * 4
+        conditions[1] = {
+            "schema": "saver_receiver_condition_v1",
+            "scene_epoch": 0,
+            "max_version": 2,
+            "positive_prompt": "Currently visible entities: car.",
+            "negative_prompt": "Do not render absent or revoked entities: dog.",
+            "snapshot_fingerprint": "a" * 64,
+        }
+        _run_generate_branch_pipeline(
+            enable_generate=True,
+            video_generator=spy,
+            receiver_condition_rows=conditions,
+        )
+        side_info = spy.calls[0].side_infos[0]
+        assert side_info["schema"] == "saver_receiver_condition_v1"
+        assert side_info["negative_prompt"].endswith("dog.")
+        assert "legacy_temporal_side_info" in side_info
+
     def test_mixed_reuse_recompute_generate_in_one_segment_single_call(self):
         from sgdjscc_lab.video.video_generator import CopyGenerator
         spy = _CountingSegmentGenerator(CopyGenerator())

@@ -141,6 +141,13 @@ def _parse_args() -> argparse.Namespace:
         "never cached across runs (they depend on the stochastic diffusion output).",
     )
     p.add_argument(
+        "--receiver-condition-manifest", default=None,
+        help="Opt-in G3 receiver-state manifest from prepare_negative_semantics_g3.py. "
+        "The input path basename selects its video row. Receiver snapshot changes "
+        "force GOP boundaries so one Wan call never mixes different states. Oracle "
+        "manifests are evaluation-only and are not rate-accounted.",
+    )
+    p.add_argument(
         "--profile", action="store_true",
         help="Enable frame-level diffusion/BLIP2/CLIP call-count + timing "
         "instrumentation: writes progress.json (streamed during the run) and "
@@ -176,6 +183,30 @@ def _load_captions(captions_arg, files):
         return caps
     logger.warning("Captions path not found: %s", captions_arg)
     return None
+
+
+def _load_receiver_conditions(path_arg, input_path: str, frame_count: int):
+    if path_arg is None:
+        return None
+    path = Path(path_arg).resolve()
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    videos = manifest.get("videos") or {}
+    input_name = Path(input_path).stem if Path(input_path).suffix else Path(input_path).name
+    if input_name in videos:
+        video_id = input_name
+    elif len(videos) == 1:
+        video_id = next(iter(videos))
+    else:
+        raise ValueError(
+            f"cannot select receiver condition for input={input_name!r}; "
+            f"manifest videos={sorted(videos)}"
+        )
+    from sgdjscc_lab.guidance.saver_receiver_state import validate_g3_receiver_condition_manifest
+    selected = dict(manifest)
+    selected["videos"] = {video_id: videos[video_id]}
+    return validate_g3_receiver_condition_manifest(
+        selected, {video_id: int(frame_count)}
+    )[video_id]
 
 
 def _load_frames(cfg, input_path: str):
@@ -235,6 +266,15 @@ def main() -> None:
     if captions is not None:
         logger.info("Loaded %d captions from %s", len(captions), args.captions)
 
+    receiver_condition_rows = _load_receiver_conditions(
+        args.receiver_condition_manifest, cfg.input_path, len(frames)
+    )
+    if receiver_condition_rows is not None:
+        logger.info(
+            "Loaded %d receiver-only SAVER conditions from %s",
+            len(receiver_condition_rows), args.receiver_condition_manifest,
+        )
+
     if args.max_frames is not None and args.max_frames < len(frames):
         logger.warning(
             "--max-frames %d: truncating %d frames → recon.mp4/temporal_metrics.csv "
@@ -245,6 +285,8 @@ def main() -> None:
         frames = frames[: args.max_frames]
         if captions is not None:
             captions = captions[: args.max_frames]
+        if receiver_condition_rows is not None:
+            receiver_condition_rows = receiver_condition_rows[: args.max_frames]
 
     # ── Scene detector / keyframe extractor ──────────────────────────────────
     from sgdjscc_lab.video.scene_change_detector import SceneChangeDetector, SceneChangeConfig
@@ -341,6 +383,11 @@ def main() -> None:
     keyframe_extractor = build_keyframe_extractor(
         cfg, scene_detector=scene_detector, caption_fn=psss_caption_fn,
     )
+    if receiver_condition_rows is not None:
+        from sgdjscc_lab.video.receiver_state_conditioning import ReceiverStateBoundaryExtractor
+        keyframe_extractor = ReceiverStateBoundaryExtractor(
+            keyframe_extractor, receiver_condition_rows
+        )
 
     # Packet extractor
     from sgdjscc_lab.guidance.semantic_packet_extractor import SemanticPacketExtractor
@@ -454,6 +501,7 @@ def main() -> None:
         allow_ground_truth_reference=allow_ground_truth_reference,
         conditioning_mode=conditioning_mode,
         force_interframe_reuse=bool(args.force_interframe_reuse),
+        receiver_condition_rows=receiver_condition_rows,
     )
 
     # ── Profiling / progress instrumentation (utils/profiling.py) ────────────

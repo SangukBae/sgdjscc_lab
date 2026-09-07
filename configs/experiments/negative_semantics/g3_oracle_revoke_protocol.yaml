@@ -1,0 +1,42 @@
+# G3 implementation contract. Do not promote to a frozen formal protocol
+# until the running G2 Pilot is audited and its provisional gate passes.
+protocol_id: negative_semantics_g3_oracle_revoke_v0_1
+protocol_version: 0.1.0
+freeze_status: implementation_draft_waiting_for_g2
+
+scope:
+  gate: G3
+  purpose: compare_no_append_only_and_revocable_receiver_memory
+  training: false
+  oracle_claim_scope: mechanism_feasibility_only
+  heldout_access: prohibited
+  requires_g2_provisional_pass: true
+
+data:
+  ground_truth_index: data/negative_semantics/g1/pilot/ground_truth_index.json
+  ground_truth_index_sha256: 2ba1173e05c263bb00c83256d19776f9dc44bc6d7b1ac3c9438c1a1664350cee
+  expected_videos: 40
+  event_types: [ENTER, EXIT, OCCLUDE, REAPPEAR]
+  expected_events_per_type: 10
+
+conditions:
+  arms: [no_rsm, append_only_rsm, revocable_rsm]
+  receiver_condition_schema: saver_receiver_condition_v1
+  oracle_side_input: ORACLE_EVAL_ONLY
+  serialized_in_packet: false
+  rate_accounted: false
+  require_segment_split_at_snapshot_transition: true
+
+evaluator:
+  detection_threshold: 0.2
+  bootstrap_iterations: 5000
+  cluster_unit: event
+  required_row_fields:
+    [arm, event_id, event_type, event_frame, frame_index, gt_present,
+     score, identity_similarity]
+
+gate:
+  append_identity_ci_lower_above_zero: true
+  append_ghost_auc_min_exclusive: 0.0
+  ghost_auc_relative_reduction_min: 0.25
+  identity_retention_lower_one_sided_95_min: 0.90
