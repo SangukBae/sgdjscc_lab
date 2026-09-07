@@ -9,6 +9,12 @@ from .contracts import (
     SemanticState,
     SignedEntityEvent,
 )
+from .signed_assertion_tokenizer import SignedAssertionOutput, SignedAssertionTokenizer
+from .versioned_entity_memory import (
+    MemoryUpdateOutput,
+    VersionedMemoryState,
+    VersionedRevocableEntityMemory,
+)
 
 __all__ = [
     "AssertionAction",
@@ -18,4 +24,9 @@ __all__ = [
     "SaverCheckpointContract",
     "SemanticState",
     "SignedEntityEvent",
+    "SignedAssertionOutput",
+    "SignedAssertionTokenizer",
+    "MemoryUpdateOutput",
+    "VersionedMemoryState",
+    "VersionedRevocableEntityMemory",
 ]
