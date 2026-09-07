@@ -218,9 +218,8 @@ class TestRunWanBackendReferenceWiring:
     """Wan (diffusers.WanImageToVideoPipeline) genuinely supports the fuller
     LGVSC segment contract SVD cannot: image (start keyframe) + last_image
     (end keyframe, when present — real bidirectional conditioning) + prompt
-    (caption — real text conditioning). side_infos are still accepted but
-    intentionally NOT used (see run_wan_backend's docstring) — verified here
-    too, so that limitation stays enforced by a test, not just documentation.
+    (caption — real text conditioning). Generic side_infos remain ignored.
+    Only a validated SAVER receiver-ledger condition is consumed.
     """
 
     @staticmethod
@@ -308,6 +307,47 @@ class TestRunWanBackendReferenceWiring:
             assert meta["used_side_info"] is False        # documented limitation — never used
             assert meta["mock"] is False
             assert "not verified" in meta["notes"].lower() or "NOT verified" in meta["notes"]
+
+    def test_saver_receiver_condition_controls_positive_and_negative_prompts(
+        self, tmp_path, monkeypatch,
+    ):
+        calls = []
+        monkeypatch.setitem(sys.modules, "diffusers", self._fake_diffusers_module(calls))
+        side_info = {
+            "schema": "saver_receiver_condition_v1",
+            "scene_epoch": 2,
+            "max_version": 7,
+            "active_entities": ["red car"],
+            "negative_entities": ["dog"],
+            "positive_prompt": "Currently visible entities: red car.",
+            "negative_prompt": "Do not render absent or revoked entities: dog.",
+            "snapshot_fingerprint": "a" * 64,
+        }
+        _, manifest = _write_manifest(
+            tmp_path, [1, 2], captions=["a road", None], side_infos=[side_info, side_info]
+        )
+
+        result = worker.run_wan_backend(manifest, tmp_path, self._args())
+
+        assert calls[0]["prompt"] == "a road Currently visible entities: red car."
+        assert calls[0]["negative_prompt"] == side_info["negative_prompt"]
+        assert all(meta["used_side_info"] for meta in result["metadata"].values())
+        assert all("snapshot=aaaaaaaaaaaa" in meta["notes"] for meta in result["metadata"].values())
+
+    def test_wan_rejects_multiple_receiver_snapshots_in_one_segment(
+        self, tmp_path, monkeypatch,
+    ):
+        calls = []
+        monkeypatch.setitem(sys.modules, "diffusers", self._fake_diffusers_module(calls))
+        first = {
+            "schema": "saver_receiver_condition_v1", "scene_epoch": 0, "max_version": 1,
+            "positive_prompt": "", "negative_prompt": "dog", "snapshot_fingerprint": "a" * 64,
+        }
+        second = dict(first, snapshot_fingerprint="b" * 64)
+        _, manifest = _write_manifest(tmp_path, [1, 2], side_infos=[first, second])
+        with pytest.raises(ValueError, match="multiple SAVER receiver snapshots"):
+            worker.run_wan_backend(manifest, tmp_path, self._args())
+        assert calls == []
 
     def test_bidirectional_conditioning_uses_last_image(self, tmp_path, monkeypatch):
         calls = []

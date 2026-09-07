@@ -37,10 +37,12 @@ evaluation run:
   The closer match to LGVSC's segment-decoder contract: genuinely conditions
   on the start keyframe (``image``), the end keyframe when present
   (``last_image`` — real bidirectional conditioning), and the caption
-  (``prompt`` — real text conditioning). ``side_infos`` are still accepted
-  but not used (no established way to turn those numeric dicts into a useful
-  condition for this pipeline) — a documented limitation, not silently
-  dropped. Bidirectional (``last_image``) conditioning requires a Wan
+  (``prompt`` — real text conditioning). Generic numeric ``side_infos`` are
+  still ignored. A fail-closed ``saver_receiver_condition_v1`` object compiled
+  from the receiver's delivered-packet ledger is the only accepted exception:
+  its active-state prompt is appended to ``prompt`` and its absent/revoked-state
+  prompt is passed as ``negative_prompt``. Bidirectional (``last_image``)
+  conditioning requires a Wan
   first-last-frame (FLF2V) checkpoint, NOT the plain start-only I2V
   checkpoint — see ``run_wan_backend``'s docstring and
   ``extra_json.bidirectional_model_id`` for how this script picks the right
@@ -142,6 +144,62 @@ class WorkerBackendUnavailableError(RuntimeError):
     always caught by ``main()`` and reported via ``error.json`` with a
     human-readable message, never left as a bare traceback with no context.
     """
+
+
+SAVER_RECEIVER_CONDITION_SCHEMA = "saver_receiver_condition_v1"
+
+
+def resolve_saver_receiver_condition(side_infos) -> dict:
+    """Validate one segment-wide receiver condition, ignoring legacy extras.
+
+    A Wan segment is generated in one pipeline call, so multiple different
+    state snapshots cannot be represented faithfully. Such a manifest fails
+    rather than silently picking one target's state for every generated frame.
+    """
+
+    candidates = [
+        value for value in (side_infos or [])
+        if isinstance(value, dict) and value.get("schema") == SAVER_RECEIVER_CONDITION_SCHEMA
+    ]
+    if not candidates:
+        return {
+            "used": False,
+            "positive_prompt": "",
+            "negative_prompt": "",
+            "snapshot_fingerprint": None,
+        }
+    fingerprints = {value.get("snapshot_fingerprint") for value in candidates}
+    if len(fingerprints) != 1:
+        raise ValueError(
+            "Wan segment contains multiple SAVER receiver snapshots; split the "
+            "segment at state transitions before generation"
+        )
+    candidate = candidates[0]
+    required = {
+        "scene_epoch": int,
+        "max_version": int,
+        "positive_prompt": str,
+        "negative_prompt": str,
+        "snapshot_fingerprint": str,
+    }
+    for name, expected_type in required.items():
+        if not isinstance(candidate.get(name), expected_type):
+            raise ValueError(f"invalid SAVER receiver condition field {name!r}")
+    fingerprint = candidate["snapshot_fingerprint"]
+    if len(fingerprint) != 64 or any(ch not in "0123456789abcdef" for ch in fingerprint):
+        raise ValueError("invalid SAVER receiver snapshot_fingerprint")
+    if candidate["scene_epoch"] < 0 or candidate["max_version"] < -1:
+        raise ValueError("invalid SAVER receiver epoch/version")
+    positive = candidate["positive_prompt"].strip()
+    negative = candidate["negative_prompt"].strip()
+    if len(positive) > 4096 or len(negative) > 4096:
+        raise ValueError("SAVER receiver prompt exceeds the 4096-character limit")
+    return {
+        "used": bool(positive or negative),
+        "positive_prompt": positive,
+        "negative_prompt": negative,
+        "snapshot_fingerprint": fingerprint,
+    }
 
 
 # ── manifest / image IO (PIL + numpy only — no torch here on purpose, see
@@ -373,12 +431,12 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
       conditioning; ``used_caption`` reflects whether one was actually found
       and passed).
 
-    ``side_infos`` (semantic-delta/motion dicts) are accepted by the manifest
-    but **not** folded into the prompt or any other conditioning signal here
-    — there is no established, verified way to turn those numeric dicts into
-    a useful text/latent condition for this pipeline, so ``used_side_info``
-    is always ``False``. Documented as a known limitation rather than
-    overclaimed; see docs/lgvsc_1b_worker_readiness.md.
+    Generic ``side_infos`` (semantic-delta/motion dicts) are accepted but not
+    folded into conditioning. Only the versioned
+    ``saver_receiver_condition_v1`` schema is consumed: its receiver-derived
+    active prompt is appended to ``prompt`` and its receiver-derived revoked/
+    absent prompt becomes ``negative_prompt``. This is the prompt-only RSM
+    bridge, not evidence that the trainable SM-DiT adapter works on Wan.
 
     NOT verified against real weights/GPU in every configuration by this
     repo — read docs/lgvsc_1b_worker_readiness.md before trusting this path
@@ -568,10 +626,13 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
 
     captions = manifest.get("captions") or [None] * len(target_indices)
     side_infos = manifest.get("side_infos") or [None] * len(target_indices)
-    prompt = next((c for c in captions if c), None)
-    used_caption = prompt is not None
-    used_side_info = False  # accepted by the manifest, not used — see docstring
-    _ = side_infos  # explicitly unused; kept for readability at the call site
+    caption_prompt = next((c for c in captions if c), None)
+    used_caption = caption_prompt is not None
+    saver_condition = resolve_saver_receiver_condition(side_infos)
+    prompt_parts = [value for value in (caption_prompt, saver_condition["positive_prompt"]) if value]
+    prompt = " ".join(prompt_parts)
+    negative_prompt = saver_condition["negative_prompt"]
+    used_side_info = saver_condition["used"]
 
     conditioning_mode = "start_only"
     end_keyframe_index_raw = manifest.get("end_keyframe_index")
@@ -628,6 +689,8 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
         num_inference_steps=args.num_inference_steps or 30,
         generator=generator,
     )
+    if negative_prompt:
+        call_kwargs["negative_prompt"] = negative_prompt
     if end_img is not None:
         call_kwargs["last_image"] = end_img
 
@@ -654,7 +717,16 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
             "confirms this checkpoint's transformer was actually trained for "
             "two-image start+end conditioning, not a simulated/interpolated blend)"
         )
-    notes_caption = f", prompt=caption ({prompt[:60]!r})" if used_caption else ", no caption available (empty prompt)"
+    notes_caption = (
+        f", prompt includes caption ({caption_prompt[:60]!r})"
+        if used_caption else ", no caption available"
+    )
+    notes_saver = ""
+    if used_side_info:
+        notes_saver = (
+            ", SAVER receiver state used for positive/negative prompt conditioning "
+            f"(snapshot={saver_condition['snapshot_fingerprint'][:12]})"
+        )
     notes_placement = f", device_map={device_map}" if device_map is not None else ""
 
     frames_out, metadata = {}, {}
@@ -686,13 +758,13 @@ def run_wan_backend(manifest: dict, manifest_dir: Path, args: argparse.Namespace
             "mock": False,
             "notes": (
                 f"diffusers WanImageToVideoPipeline — {notes_conditioning}{notes_caption}"
-                f"{notes_placement}. "
+                f"{notes_saver}{notes_placement}. "
                 f"Generated an internal {n_frames}-frame Wan clip (segment span "
                 f"[{start_frame_index}, {span_end}]) and mapped target index {idx} "
                 f"(segment offset {idx - start_frame_index}) to clip position "
                 f"{pos}/{n_frames - 1} by its actual temporal position, not its "
-                "position in target_indices. side_infos accepted but NOT used "
-                "for conditioning (known limitation — see module docstring). Reference "
+                "position in target_indices. Generic side_infos are ignored; only a "
+                "validated receiver-ledger SAVER condition is consumed. Reference "
                 "wiring, NOT verified against real GPU output by this repo in every "
                 "configuration — see docs/lgvsc_1b_worker_readiness.md."
             ),
