@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 4544094
 supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -98,6 +98,32 @@ python scripts/audit_negative_semantics_g2.py \
 `--require-provisional-gate`는 실행 완결성이 아니라 결과 gate를 요구하는 별도 옵션이다.
 G1 scientific gate가 `NOT_PASSED`이면 G2 provisional 결과가 좋아도 confirmatory
 scientific gate로 승격하지 않는다.
+
+G3 구현 경로는 G2 통과 전 `implementation_draft_waiting_for_g2`다. 다음 명령은
+condition/harness를 점검하는 용도이며, protocol을 동결하거나 GPU 성능 근거를 만들지
+않는다.
+
+```bash
+python scripts/prepare_negative_semantics_g3.py \
+  --output-root outputs/negative_semantics_g3_smoke_<run_id> --smoke
+
+# G2 provisional pass와 protocol freeze 뒤에만 40-video manifest를 준비한다.
+python scripts/prepare_negative_semantics_g3.py \
+  --output-root outputs/negative_semantics_g3_pilot_<run_id>
+
+# 각 arm의 reconstruction에서 독립 detector/identity row를 만든 뒤 CPU 요약·감사한다.
+python scripts/evaluate_negative_semantics_g3.py \
+  --detection-rows outputs/negative_semantics_g3_pilot_<run_id>/evaluator/detection_rows.jsonl \
+  --output outputs/negative_semantics_g3_pilot_<run_id>/g3_summary.json
+python scripts/audit_negative_semantics_g3.py \
+  --run-root outputs/negative_semantics_g3_pilot_<run_id> --require-prepared
+```
+
+영상 arm 실행은 `scripts/evaluate_video.py --receiver-condition-manifest <arm.json>`을
+사용한다. manifest는 입력 video ID와 frame 수가 정확히 일치해야 하며 snapshot 전환
+프레임이 자동으로 새 GOP가 된다. Oracle condition은 packet 밖 입력이고 전송률에
+포함하지 않는다. 현재 G3 summary는 ghost/identity 구조 가설의 provisional check이며,
+formal freeze 때 quality non-inferiority와 false suppression 판정을 결합한다.
 
 ### 단계별 비교
 

@@ -105,7 +105,7 @@
 | [experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md](./experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md) | fixed_int4 vs fixed_int6 paired bridge 실행 준비(코드/설정/테스트 완료, GPU 실행은 미실시) — tmux 명령과 판독 절차 |
 | [experiments/2026-09-07_negative_semantics_int6_bridge_results.md](./experiments/2026-09-07_negative_semantics_int6_bridge_results.md) | OVIS Pilot 40영상 formal bridge 결과; int6 품질 gate 통과, bytes +44.217%, H_add 유의차 없음 |
 | [experiments/2026-09-07_negative_semantics_g2_implementation.md](./experiments/2026-09-07_negative_semantics_g2_implementation.md) | SV0/G2 Oracle ABSENT receiver path·four-arm runner·read-only audit 구현; CPU 회귀만 완료, GPU 결과 없음 |
-| [experiments/2026-09-07_saver_jscc_structural_implementation.md](./experiments/2026-09-07_saver_jscc_structural_implementation.md) | SAVER 전체 구조 prototype·packet·학습 기반 구현; 전체 1703 passed, 미학습·formal evidence 없음 |
+| [experiments/2026-09-07_saver_jscc_structural_implementation.md](./experiments/2026-09-07_saver_jscc_structural_implementation.md) | SAVER 전체 구조 prototype·packet·학습 기반과 G3 harness 구현; 전체 1708 passed, 미학습·formal evidence 없음 |
 | [experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md](./experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md) | bridge 결과와 통신 효율 목표를 반영해 fixed_int4를 primary development bit-depth로 재결정 |
 
 ## 5. 참조 문서 (`reference/`)

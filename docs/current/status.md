@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 4544094
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -30,9 +30,12 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 - 구현 상태: SAT, JASR, action-conditioned codec, VREM, SM-DiT adapter와 backbone
   bridge, signed-state dataset, packet/ACK/fault channel, staged runner/checkpoint가 별도
   opt-in 경로에 구현됐다. prompt-only RSM은 수신 ledger에서만 생성해 Wan worker가
-  실제 positive/negative prompt로 소비한다.
-- 검증 상태: SAVER 관련 CPU 단위·통합 및 baseline 인접 회귀 **371 passed**,
-  Git-ignored 자산을 읽기 전용 연결한 전체 suite **1703 passed, 9 skipped**. 이는
+  실제 positive/negative prompt로 소비한다. G3는 `no_rsm`/`append_only_rsm`/
+  `revocable_rsm` Oracle condition manifest, snapshot 전환 GOP 분할, event-level
+  ghost/identity evaluator와 read-only audit까지 구현됐다.
+- 검증 상태: G3 포함 SAVER 관련 집중 CPU 단위·통합 및 baseline 인접 회귀
+  **180 passed**, Git-ignored 자산을 읽기 전용 연결한 전체 suite
+  **1708 passed, 9 skipped**. 이는
   tensor/상태/배선·회귀 검증이며 실제 Wan 가중치·GPU 학습 또는 성능 근거가 아니다.
 - 학습 상태: runner와 resume 가능한 checkpoint 형식은 구현됐지만 SAVER 실데이터
   manifest, optimizer run, 학습된 checkpoint와 formal training 결과는 아직 없다.
@@ -48,6 +51,7 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 | SAVER 구성요소 | 현재 판정 |
 |---|---|
 | SV0/G2 Oracle ABSENT receiver path | smoke 완료(`NOT_EVIDENCE`), formal Pilot `RUNNING` |
+| G3 Oracle REVOKE 준비·평가 경로 | `IMPLEMENTED_UNVALIDATED`; protocol draft, GPU output 없음, G2 통과 전 실행 금지 |
 | Signed-state builder·SAT | `PROTOTYPE_IMPLEMENTED_UNTRAINED` |
 | Joint Assertion-Symbol Router(JASR) | `PROTOTYPE_IMPLEMENTED_UNTRAINED` |
 | Action-Conditioned Semantic Channel Codec | `PROTOTYPE_IMPLEMENTED_UNTRAINED` |

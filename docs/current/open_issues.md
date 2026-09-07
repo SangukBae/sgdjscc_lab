@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 4544094
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -32,6 +32,13 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     `NOT_PASSED`다.
   - 1-video smoke는 완료됐지만 `NOT_EVIDENCE`다. 40-video Pilot는 실행 중이며 이 gate가
     실패하면 구현된 prototype을 그대로 학습하기보다 Stop Track 또는 재설계를 우선한다.
+- **G3 Oracle REVOKE harness는 구현됐지만 실행 가능한 동결 protocol이 아니다**
+  - 공식 GT 기반 `no_rsm`/`append_only_rsm`/`revocable_rsm` manifest, receiver-state
+    snapshot 전환 GOP 분할, ghost survival/identity evaluator와 audit는 구현됐다.
+  - G2 provisional pass 전에는 `execution_authorized=false`이며 real-Wan reconstruction,
+    독립 detector/identity row, 품질·false-suppression 결과가 없다.
+  - 현재 G3 evaluator는 구조 가설용 ghost/identity provisional check다. protocol 동결
+    때 G2와 동일한 quality non-inferiority 및 false-suppression gate를 결합해야 한다.
 - **signed state label의 오검출 위험이 있다**
   - `not detected`를 `confirmed-absent`로 바꾸면 실제 객체를 억제하는 false
     suppression이 생긴다.

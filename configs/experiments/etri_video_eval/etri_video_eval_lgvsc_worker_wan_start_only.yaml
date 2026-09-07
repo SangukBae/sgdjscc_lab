@@ -29,9 +29,11 @@
 #                    — see the bidirectional_experimental config, NOT this one
 #   - `prompt`     = the target frame's caption → REAL text conditioning
 #                    (used here — start-only conditioning still passes prompt)
-# `side_infos` (semantic-delta/motion dicts) are still accepted by the
-# manifest but NOT used for conditioning by either backend — an explicit,
-# documented limitation (see lgvsc_generate_worker.py::run_wan_backend).
+# Generic `side_infos` (semantic-delta/motion dicts) are accepted by the
+# manifest but remain unused. The opt-in, schema-checked
+# `saver_receiver_condition_v1` payload is different: Wan consumes its active
+# and negative entity lists as positive/negative text conditioning. This
+# config does not enable that SAVER evaluation path by itself.
 #
 # `python_bin` below points at THIS MACHINE's existing `semantic-diffusers`
 # conda env (diffusers 0.39.0.dev0, torch 2.12 cu130). Getting

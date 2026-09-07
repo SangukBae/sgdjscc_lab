@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 4544094
 ---
 
 > [← 문서 색인](../README.md)
@@ -20,6 +20,9 @@ source_commit: c96b538
   구현됐다. 실제 SAVER 학습 checkpoint와 formal 성능 근거는 없다.
 - 기존 [negative-semantics 계획](./negative_semantic_paper_plan.md)은 삭제하지 않고
   SAVER SV0/SV1의 데이터·Oracle·packet/RSM 선행 gate로 유지한다.
+- G3 Oracle REVOKE는 `no_rsm`/`append_only_rsm`/`revocable_rsm` condition manifest,
+  frame-aligned video injection, receiver-state 전환 GOP split, event-cluster ghost/identity
+  evaluator와 read-only audit까지 구현했다. protocol은 G2 통과 전 draft이고 GPU 결과는 없다.
 - `SV0 = G2 Oracle ABSENT` 1-video smoke는 완료됐고 `NOT_EVIDENCE`다. 40-video formal
   Pilot는 기존 clean commit `6f9593d`에서 실행 중이다. 구조 코드는 선행 구현했지만,
   Pilot 판정 전에 대규모 SAVER 학습을 시작하지 않는다.

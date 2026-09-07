@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 4544094
 supersedes:
 ---
 
@@ -34,6 +34,10 @@ prompt-only receiver-state bridge, dataset/loss/stage runner/checkpoint 형식�
 `PROTOTYPE_IMPLEMENTED_UNTRAINED`이다. 이 선행 구현은 gate를 통과했다는 뜻이 아니며,
 실험·claim 순서는 아래 표를 그대로 따른다. 실제 SAVER 학습 checkpoint와 formal 성능
 근거는 없다.
+
+G3 Oracle REVOKE의 세 receiver-memory arm manifest, frame-aligned Wan 주입, snapshot
+전환 GOP 분할, ghost/identity evaluator와 read-only audit도 구현됐다. 다만 protocol은
+G2 결과를 기다리는 `implementation_draft_waiting_for_g2`이며 실행 산출물은 없다.
 
 | 순서 | SAVER 단계 | 완료 조건 |
 |---:|---|---|
@@ -245,7 +249,7 @@ gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-dire
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|
-| 즉시 | SAVER SV0 | 실행 중 G2 Oracle ABSENT Pilot 완료·감사, 통과 시 G3 Oracle REVOKE; 실패 시 Stop Track 또는 구조 재설계 |
+| 즉시 | SAVER SV0 | 실행 중 G2 Oracle ABSENT Pilot 완료·감사; 통과 시 구현된 G3 protocol을 동결하고 Oracle REVOKE GPU matrix 실행, 실패 시 Stop Track 또는 구조 재설계 |
 | SV0 판정 후 | SAVER SV1 | 구현된 SAT/VREM을 실제 source-only sequence manifest로 학습; No/Append-only/Revocable 비교 |
 | SV1 통과 후 | SAVER SV2 | 구현된 bridge로 frozen real backbone + SM-DiT adapter 학습과 prompt/token-only ablation |
 | SV2 통과 후 | SAVER SV3/SV4 | 구현된 JASR·codec·fault channel의 common-budget Pareto와 packet/channel formal robustness |

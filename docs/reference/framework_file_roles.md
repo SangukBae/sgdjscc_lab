@@ -2,7 +2,7 @@
 status: active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 4544094
 supersedes:
 ---
 
@@ -152,6 +152,19 @@ CPU 구조 검증을 통과했지만 학습 checkpoint나 성능 근거는 없�
 | `training/saver_losses.py` | state/memory/ghost/preserve/rate/channel loss |
 | `training/saver_stage_runner.py` | SV1/SV2/SV3/end-to-end freeze·gradient·checkpoint 계약 |
 | `scripts/train_saver_jscc.py` | clean-checkout·manifest-hash 기반 stage 실행/resume 진입점 |
+
+### 5.3 구현된 G3 Oracle REVOKE harness (`IMPLEMENTED_UNVALIDATED`)
+
+| 파일 | 책임 |
+|---|---|
+| `guidance/saver_receiver_state.py` | official-GT event를 No/Append-only/Revocable receiver snapshot으로 변환·검증 |
+| `video/receiver_state_conditioning.py` | receiver snapshot 전환마다 GOP boundary를 추가해 segment state 혼입 차단 |
+| `scripts/evaluate_video.py` | opt-in G3 receiver-condition manifest를 frame-aligned temporal pipeline에 주입 |
+| `evaluators/negative_semantics_g3.py` | paired event grid, EXIT ghost survival/AUC, identity event bootstrap |
+| `scripts/prepare_negative_semantics_g3.py` | 세 arm manifest/hash/run spec 생성; G2 전 실행 비허가 기록 |
+| `scripts/evaluate_negative_semantics_g3.py` | 사전 계산 detector/identity row를 순수 CPU로 요약하고 입력 hash 결합 |
+| `scripts/audit_negative_semantics_g3.py` | protocol/manifest/hash/rate/held-out 경계 read-only 감사 |
+| `configs/experiments/negative_semantics/g3_oracle_revoke_protocol.yaml` | G2 통과 전 draft G3 계약; formal freeze 아님 |
 
 deterministic packet schema/version/tombstone 검사는 `transmission/` 또는 별도 state
 protocol 계층에 두며 neural memory update와 섞어 구현하지 않는다. master gate

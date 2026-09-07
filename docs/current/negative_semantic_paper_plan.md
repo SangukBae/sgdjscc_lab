@@ -2,7 +2,7 @@
 status: supporting_active
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 4544094
 primary_venue: IEEE Transactions on Multimedia
 fallback_venue: IEEE Transactions on Circuits and Systems for Video Technology
 g0_gate: PASSED
@@ -114,11 +114,15 @@ ablation/시연 opt-in으로만 유지한다. 근거는
 
 ### 1.3 현재 구현의 필수 보완점
 
-- Wan worker는 `side_infos`를 받지만 실제 conditioning에 사용하지 않는다.
-- GOP 사이에서 track별 semantic state를 유지하는 persistent RSM이 없다.
+- Wan worker는 generic motion/delta `side_infos`를 계속 무시한다. 다만 schema가 검증된
+  `saver_receiver_condition_v1`은 positive/negative prompt로 소비하도록 opt-in 연결됐다.
+- GOP 사이 track별 versioned ledger와 VREM prototype은 구현됐지만 real-Wan·학습
+  성능은 검증되지 않았다.
 - `verifier_controller`의 candidate action은 sampler에 실제 개입하지 않는다.
-- semantic packet 자체의 drop/reorder/corruption protocol이 없다.
-- positive/negative action을 공통 예산에서 고르는 allocator가 없다.
+- SAVER signed packet의 drop/reorder/corruption simulator는 구현됐지만 formal channel
+  profile과 성능 결과가 없다.
+- positive/negative action을 공통 예산에서 고르는 JASR prototype은 구현됐지만
+  학습·Pareto 결과가 없다.
 - 실제 FEC·modulation은 proxy이므로 첫 논문의 core claim으로 사용하지 않는다.
 
 ## 2. 연구 질문, 가설과 주장 경계
@@ -873,20 +877,33 @@ feasibility를 보는 탐색 근거로 기록한다. 이를 G1 통과나 confirm
 
 ### G3. RSM-lite와 P2/Oracle REVOKE
 
-**구현 상태: `PARTIAL_PROTOTYPE_IMPLEMENTED_UNTRAINED`**
+**구현 상태: `IMPLEMENTED_UNVALIDATED`; protocol draft, GPU 실행 없음**
 
 - versioned receiver ledger, deterministic ledger-to-prompt compiler와 Wan
-  `prompt`/`negative_prompt` 연결은 구현됐다.
-- No/append-only/revocable 실행 matrix, Oracle REVOKE evaluator와 real-Wan 출력 검증은
-  아직 없다.
+  `prompt`/`negative_prompt` 연결을 구현했다.
+- official-GT event로부터 `no_rsm`/`append_only_rsm`/`revocable_rsm` frame manifest를
+  생성하고, snapshot이 바뀌면 GOP를 강제 분할해 한 Wan call에 미래 state가 섞이지
+  않도록 구현했다.
+- paired arm-grid 검증, EXIT ghost survival curve/AUC, event-cluster identity bootstrap,
+  preparation/evaluation hash binding과 read-only audit를 구현했다.
+- G2 provisional pass 전 protocol은 `implementation_draft_waiting_for_g2`이고
+  `execution_authorized=false`다. real-Wan reconstruction, detector/identity row와 G3
+  성능 결과는 아직 없다.
 
-**작업**
+**구현된 작업**
 
 - persistent RSM ledger와 state transition 구현
 - RSM snapshot을 deterministic prompt/token으로 컴파일
 - Wan side-info→conditioning 실제 연결
-- No-RSM, append-only RSM, revocable RSM 3조건 비교
-- exit, occlusion, reappearance, scene cut 분리
+- No-RSM, append-only RSM, revocable RSM 3조건 manifest·paired evaluator 구현
+- exit, occlusion, reappearance event state를 분리하고 snapshot 전환 GOP boundary 구현
+
+**검증 때 남은 작업**
+
+- G2 통과 후 protocol 동결과 real-Wan 세 arm GPU reconstruction
+- 독립 detector/identity embedding으로 평가 row 생성
+- G2 quality·false-suppression gate 결합
+- scene-cut 표본과 `SCENE_RESET` 효과의 별도 formal 비교
 
 **provisional 통과 조건**
 

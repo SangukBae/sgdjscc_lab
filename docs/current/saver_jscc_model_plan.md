@@ -2,7 +2,7 @@
 status: active_implementation
 updated: 2026-09-07
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 4544094
 implementation_status: PROTOTYPE_IMPLEMENTED_UNTRAINED
 training_status: NOT_STARTED
 formal_evidence_status: NOT_AVAILABLE
@@ -34,6 +34,9 @@ supersedes:
 - prompt-only RSM은 receiver-applied ledger에서만 condition을 만들고 Wan의
   `prompt`/`negative_prompt`로 연결한다. SM-DiT는 generic Transformer block bridge까지
   구현됐지만 실제 Wan/MDTv2 가중치에 삽입·학습된 상태는 아니다.
+- G3 Oracle REVOKE의 세 memory arm manifest, frame-aligned Wan injection, snapshot
+  전환 GOP split, ghost/identity evaluator와 audit는 구현됐다. G2 통과 전 draft이므로
+  GPU 실행·성능 근거는 없다.
 - 기존 negative-semantics G0/G1, int4/int6 bridge는 문제 설정과 운용점의 선행
   근거이며 SAVER의 성능 증거가 아니다.
 - 기존 `SGDJSCC/` baseline과 게이트-off 경로는 보존한다.
@@ -313,8 +316,15 @@ src/sgdjscc_lab/transmission/saver_packet.py
 src/sgdjscc_lab/transmission/saver_channel.py
 src/sgdjscc_lab/training/saver_losses.py
 src/sgdjscc_lab/training/saver_stage_runner.py
+src/sgdjscc_lab/guidance/saver_receiver_state.py
+src/sgdjscc_lab/evaluators/negative_semantics_g3.py
+src/sgdjscc_lab/video/receiver_state_conditioning.py
 scripts/train_saver_jscc.py
+scripts/prepare_negative_semantics_g3.py
+scripts/evaluate_negative_semantics_g3.py
+scripts/audit_negative_semantics_g3.py
 configs/experiments/saver_jscc/
+configs/experiments/negative_semantics/g3_oracle_revoke_protocol.yaml
 ```
 
 구현 판정은 `PROTOTYPE_IMPLEMENTED_UNTRAINED`이다. CPU test는 state/action mask,
@@ -337,6 +347,10 @@ configs/experiments/negative_semantics/g2_oracle_absent_protocol.yaml
 controllability 시험 경로다. SAVER의 SAT/VREM/SM-DiT 구현이나 rate-bearing negative
 packet으로 계산하지 않는다.
 
+G3 Oracle REVOKE 준비·평가 경로도 구현되어 있다. Oracle state는 packet 밖의
+`ORACLE_EVAL_ONLY` 입력이며 rate에 포함하지 않는다. G2 통과 전 protocol은 draft이고
+prepare 단계가 `execution_authorized=false`를 기록하므로 formal 실행 근거가 아니다.
+
 호환성 불변조건:
 
 - SAVER 전용 config에서만 `use_saver_jscc: true`를 명시하며 production default에는
@@ -354,6 +368,8 @@ packet으로 계산하지 않는다.
 - 구현 상태: `IMPLEMENTED_UNVALIDATED` — 1-video GPU smoke 완료(`NOT_EVIDENCE`),
   40-video Pilot 실행 중
 - negative-semantics G2 Oracle ABSENT와 G3 Oracle REVOKE를 재사용한다.
+- G3 harness는 구현됐지만 G2 provisional pass 후 protocol을 동결하기 전에는 실행하지
+  않는다.
 - no/random/frequency/oracle condition을 matched generation compute로 비교한다.
 - G1 effective-seed가 `NOT_PASSED`인 동안 결과는 mechanism feasibility다.
 
@@ -485,15 +501,17 @@ cost
 구조 prototype은 병렬 준비를 위해 먼저 구현됐지만 과학적 실행 순서는 바뀌지 않는다.
 
 1. 실행 중 SV0/G2 Pilot를 완료·감사하고 feasibility를 판정한다.
-2. 통과 시 source-only sequence tensor manifest를 materialize하고 구현된 SAT/VREM으로
+2. 통과 시 G3 draft를 동결하고 구현된 No-RSM/Append-only/Revocable Oracle matrix로
+   REVOKE controllability를 검증한다.
+3. source-only sequence tensor manifest를 materialize하고 구현된 SAT/VREM으로
    No-memory/Append-only/Revocable 학습 비교를 수행한다.
-3. Oracle action으로 구현된 SM-DiT bridge를 real frozen backbone에 연결·학습해 decoder
+4. Oracle action으로 구현된 SM-DiT bridge를 real frozen backbone에 연결·학습해 decoder
    구조 효과를 분리한다.
-4. SM-DiT 통과 후 구현된 JASR와 semantic channel codec을 학습하고 네 budget Pareto를
+5. SM-DiT 통과 후 구현된 JASR와 semantic channel codec을 학습하고 네 budget Pareto를
    평가한다.
-5. 구현된 packet/fault simulator로 formal disorder/channel robustness를 수행한다.
-6. architecture와 threshold를 동결한 뒤 Validation, 마지막으로 Held-out을 실행한다.
-7. 완료된 각 gate는 새 `docs/experiments/YYYY-MM-DD_saver_*.md`에 기록한다.
+6. 구현된 packet/fault simulator로 formal disorder/channel robustness를 수행한다.
+7. architecture와 threshold를 동결한 뒤 Validation, 마지막으로 Held-out을 실행한다.
+8. 완료된 각 gate는 새 `docs/experiments/YYYY-MM-DD_saver_*.md`에 기록한다.
 
 기존 완료 실험 문서를 새 해석에 맞춰 덮어쓰지 않는다. 상태 변화는 `status.md`, 다음
 작업은 `roadmap.md`, 불변 실행 결과는 날짜 기반 실험 문서에 각각 기록한다.

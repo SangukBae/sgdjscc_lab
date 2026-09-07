@@ -2,7 +2,7 @@
 status: implementation_complete_untrained
 date: 2026-09-07
 source_branch: codex/saver-jscc-implementation
-source_commit: c96b538
+source_commit: 4544094
 evidence_scope: cpu_structure_and_wiring_only
 formal_model_evidence: NOT_AVAILABLE
 ---
@@ -16,8 +16,10 @@ formal_model_evidence: NOT_AVAILABLE
 
 SAVER-JSCC의 signed representation, joint router, channel codec, versioned memory,
 signed-memory diffusion adapter와 학습/packet 기반을 독립 opt-in prototype으로 구현했다.
-관련 집중 CPU 구조·회귀 검사는 371개가 통과했고 전체 suite는 1703 passed,
-9 skipped였다. 이 기록은 **코드 구현 증거**이며 학습된
+G3 Oracle REVOKE의 세 receiver-memory arm, frame-aligned Wan injection, snapshot
+boundary 분할과 event-level evaluator/audit도 구현했다. 관련 최신 집중 CPU 구조·회귀
+검사는 180개가 통과했고 전체 suite는 1708 passed, 9 skipped였다. 이 기록은
+**코드 구현 증거**이며 학습된
 모델, GPU 품질, SV0~SV5 gate 통과 또는 논문 성능 증거가 아니다.
 
 장시간 G2 Pilot가 commit `6f9593d`의 clean checkout에서 실행 중이므로 구현은 별도
@@ -37,6 +39,8 @@ provenance를 바꾸지 않기 위해 기존 checkout은 수정하지 않았다.
 | VREM | `models/saver/versioned_entity_memory.py` | identity/render/negative bank, reset/version/tombstone deterministic guard |
 | SM-DiT | `models/saver/signed_memory_dit.py`, `backbone_bridge.py` | active/negative 비대칭 attention, bounded subtraction, zero-init, block hook |
 | prompt-only RSM | `models/saver/rsm_conditioning.py`, `scripts/lgvsc_generate_worker.py` | receiver ledger만 사용, SAVER schema만 Wan positive/negative prompt로 소비 |
+| G3 Oracle REVOKE | `guidance/saver_receiver_state.py`, `video/receiver_state_conditioning.py`, `evaluators/negative_semantics_g3.py` | No/Append-only/Revocable manifest, state-transition GOP split, ghost/identity provisional gate |
+| G3 실행 기반 | `scripts/prepare_negative_semantics_g3.py`, `scripts/evaluate_negative_semantics_g3.py`, `scripts/audit_negative_semantics_g3.py` | hash-bound preparation/evaluation/audit; G2 전 실행 비허가 |
 | pipeline | `pipelines/saver_video_pipeline.py`, `models/saver/factory.py` | SAT→JASR→codec→VREM→SM-DiT, explicit state carry, disabled identity path |
 | data/training | `data/saver_dataset.py`, `training/saver_losses.py`, `training/saver_stage_runner.py`, `scripts/train_saver_jscc.py` | checksummed source-only sequence, seven losses, stage freeze, resume/fingerprint |
 
@@ -66,6 +70,7 @@ provenance를 바꾸지 않기 위해 기존 checkout은 수정하지 않았다.
 | `668036a` | baseline package import isolation |
 | `d22a8b2` | receiver conditioning과 backbone bridge |
 | `c96b538` | Wan receiver-state prompt 소비 |
+| `4544094` | G3 revocable receiver-state 준비·영상 주입·평가·감사 경로 |
 
 ## 실행한 검증
 
@@ -82,18 +87,21 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
   tests/test_lgvsc_generate_worker.py tests/test_saver_*.py
 ```
 
-집중 결과: `371 passed`. Git-ignored checkpoint/ETRI video를 원본 checkout에서
-읽기 전용으로 연결해 `tests/` 전체를 재실행한 결과는 `1703 passed, 9 skipped`였다.
+최신 G3 포함 집중 결과: `180 passed`. Git-ignored checkpoint/ETRI video를 원본
+checkout에서 읽기 전용으로 연결해 `tests/` 전체를 재실행한 결과는
+`1708 passed, 9 skipped`였다.
 warning 3개는 기존 PyTorch Transformer nested-tensor 경고다.
 
 ## 남은 실증 작업
 
 1. 실행 중 G2 Pilot 종료·감사와 SV0 판정
-2. 실제 OVIS/YouTube-VOS source-only tensor manifest materialization
-3. SAT/VREM SV1 seed별 학습과 No/Append-only/Revocable 비교
-4. real frozen Wan/MDTv2 block에 bridge를 붙인 SV2 학습·matched-compute ablation
-5. JASR/codec 네 budget Pareto와 packet/channel formal robustness
-6. Validation, sealed Held-out와 독립 backbone 재현
+2. G2 통과 시 G3 protocol 동결, real-Wan 세 arm reconstruction과 독립
+   detector/identity row 생성
+3. 실제 OVIS/YouTube-VOS source-only tensor manifest materialization
+4. SAT/VREM SV1 seed별 학습과 No/Append-only/Revocable 비교
+5. real frozen Wan/MDTv2 block에 bridge를 붙인 SV2 학습·matched-compute ablation
+6. JASR/codec 네 budget Pareto와 packet/channel formal robustness
+7. Validation, sealed Held-out와 독립 backbone 재현
 
 따라서 현재 허용되는 표현은 “SAVER-JSCC 구조 prototype과 학습 기반을 구현했다”이다.
 “SAVER-JSCC가 hallucination을 줄였다”, “학습 완료”, “A급 논문 수준 성능”은 아직
