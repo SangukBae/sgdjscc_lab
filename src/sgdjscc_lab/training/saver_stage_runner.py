@@ -100,11 +100,61 @@ class SaverStageRunner:
         self.global_step += 1
         return {name: float(value.detach().cpu()) for name, value in losses.items()}
 
+    def training_sequence_step(self, batches) -> Dict[str, float]:
+        """Optimize one GOP sequence while carrying VREM state across timesteps."""
+
+        batches = list(batches)
+        if not batches:
+            raise ValueError("sequence batch must contain at least one timestep")
+        self.pipeline.train()
+        self.optimizer.zero_grad(set_to_none=True)
+        totals: Dict[str, torch.Tensor] = {}
+        memory_state = batches[0]["pipeline_inputs"]["memory_state"]
+        for batch in batches:
+            inputs = dict(batch["pipeline_inputs"])
+            inputs["memory_state"] = memory_state
+            step_batch = dict(batch)
+            step_batch["pipeline_inputs"] = inputs
+            output, losses = self.forward_and_loss(step_batch)
+            memory_state = output.memory_state
+            for name, value in losses.items():
+                totals[name] = totals.get(name, value.new_zeros(())) + value
+        averaged = {name: value / len(batches) for name, value in totals.items()}
+        if not averaged["loss"].requires_grad:
+            raise RuntimeError(f"stage={self.stage} has no sequence gradient path")
+        averaged["loss"].backward()
+        self.optimizer.step()
+        self.global_step += 1
+        return {name: float(value.detach().cpu()) for name, value in averaged.items()}
+
     @torch.no_grad()
     def validation_step(self, batch: Mapping) -> Dict[str, float]:
         self.pipeline.eval()
         _, losses = self.forward_and_loss(batch)
         return {name: float(value.detach().cpu()) for name, value in losses.items()}
+
+    @torch.no_grad()
+    def validation_sequence_step(self, batches) -> Dict[str, float]:
+        batches = list(batches)
+        if not batches:
+            raise ValueError("sequence batch must contain at least one timestep")
+        self.pipeline.eval()
+        totals: Dict[str, torch.Tensor] = {}
+        memory_state = batches[0]["pipeline_inputs"]["memory_state"]
+        for batch in batches:
+            inputs = dict(batch["pipeline_inputs"])
+            inputs["memory_state"] = memory_state
+            step_batch = dict(batch)
+            step_batch["pipeline_inputs"] = inputs
+            output, losses = self.forward_and_loss(step_batch)
+            memory_state = output.memory_state
+            for name, value in losses.items():
+                totals[name] = totals.get(name, value.new_zeros(())) + value
+        return {
+            name: float((value / len(batches)).detach().cpu())
+            for name, value in totals.items()
+        }
+
 
     def checkpoint_payload(self, extra: Optional[Mapping] = None) -> dict:
         return {
@@ -141,4 +191,3 @@ class SaverStageRunner:
     def load_checkpoint(self, path: str | Path, *, load_optimizer: bool = True) -> None:
         payload = torch.load(Path(path), map_location="cpu")
         self.load_checkpoint_payload(payload, load_optimizer=load_optimizer)
-
