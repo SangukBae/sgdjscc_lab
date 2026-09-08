@@ -406,3 +406,29 @@ class TestEarlyExitMetricWiring:
             score_fn=score_fn, check_interval=1, min_steps=1, **_gi_kwargs(pipe))
         assert saw_x0["n"] >= 1          # score_fn actually saw x0
         assert info["interrupted"] is True
+
+
+def test_text_encoding_uses_explicit_generator_device():
+    from sgdjscc_lab.models.diffusion_wrapper import _encode_text_on_device
+
+    seen = {}
+
+    class _TextModel:
+        def encode_text(self, tokens):
+            seen["token_device"] = tokens.device
+            return tokens.float() + 1
+
+    def _tokenize(labels, truncate=False):
+        seen["labels"] = labels
+        seen["truncate"] = truncate
+        return torch.ones(len(labels), 4, dtype=torch.long)
+
+    out = _encode_text_on_device(
+        ["a", "b"], _TextModel(), torch.device("cpu"), _tokenize
+    )
+    assert seen == {
+        "labels": ["a", "b"],
+        "truncate": True,
+        "token_device": torch.device("cpu"),
+    }
+    assert out.device.type == "cpu"

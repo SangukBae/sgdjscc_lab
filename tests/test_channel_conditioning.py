@@ -203,6 +203,19 @@ class TestBuildChannelConditionedInference:
         cci = build_channel_conditioned_inference(self._FakeModels(), cfg)
         assert cci.wrapper._encoder.token_grid == 4    # default
 
+    def test_linear_encoder_is_created_on_model_device(self):
+        from sgdjscc_lab.pipelines.channel_conditioned_infer import (
+            build_channel_condition_wrapper,
+        )
+
+        cfg = OmegaConf.create({
+            "channel_condition": {
+                "encoder_mode": "linear", "token_grid": 2, "token_dim": 4,
+            }
+        })
+        wrapper = build_channel_condition_wrapper(cfg, device=torch.device("meta"))
+        assert next(wrapper._encoder.parameters()).device.type == "meta"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # One-pass conditioning: channel sampled once per patch (no extra measure forward)

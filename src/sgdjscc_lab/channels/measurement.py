@@ -123,16 +123,30 @@ def aggregate_bundles(bundles: list) -> Optional["MeasurementBundle"]:
     return MeasurementBundle(**kwargs)
 
 
-def awgn_noise_like(signal: torch.Tensor, snr_db: float) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Return ``(noise, noise_var)`` matched to *signal* power at *snr_db*.
+def awgn_noise_like(
+    signal: torch.Tensor,
+    snr_db: float,
+    power_reference: Optional[torch.Tensor] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Return ``(noise, noise_var)`` for *signal* at *snr_db*.
 
     Uses the same per-sample power normalisation as ``channels/awgn.py`` so the
     fading channels reduce to the AWGN baseline when the gain is unity.
+    ``power_reference`` selects the signal whose transmit power defines the
+    noise floor.  It defaults to *signal* (the original AWGN contract).  Fading
+    channels pass their **pre-fading** latent so a deep fade reduces received
+    SNR instead of also reducing the receiver noise and cancelling the fade.
     Returns the additive noise tensor and the per-sample variance ``[B,1,1,1]``.
     """
+    reference = signal if power_reference is None else power_reference
     bsz = signal.shape[0]
-    norm_2 = torch.linalg.norm(signal.reshape([bsz, -1]), ord=2, dim=1)
-    noise_var = ((norm_2 ** 2 / (signal.numel() / bsz)) / (10 ** (snr_db / 10)))
+    if reference.shape[0] != bsz:
+        raise ValueError(
+            "power_reference and signal must have the same batch size; "
+            f"got {reference.shape[0]} and {bsz}."
+        )
+    norm_2 = torch.linalg.norm(reference.reshape([bsz, -1]), ord=2, dim=1)
+    noise_var = ((norm_2 ** 2 / (reference.numel() / bsz)) / (10 ** (snr_db / 10)))
     noise_var = noise_var.reshape([-1, 1, 1, 1])
     noise = torch.randn_like(signal) * torch.sqrt(noise_var)
     return noise, noise_var

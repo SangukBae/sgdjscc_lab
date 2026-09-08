@@ -129,8 +129,10 @@ class OnePassChannelConditionedInference:
                 "info": info, "cfg": resolved_cfg}
 
 
-def build_channel_condition_wrapper(cfg: DictConfig) -> ChannelConditionedDiffusion:
-    """Build a config-driven :class:`ChannelConditionedDiffusion` (no dead config)."""
+def build_channel_condition_wrapper(
+    cfg: DictConfig, device=None
+) -> ChannelConditionedDiffusion:
+    """Build a config-driven condition wrapper on the receiver model device."""
     from sgdjscc_lab.models.channel_condition_encoder import ChannelConditionEncoder
     from sgdjscc_lab.models.reliability_head import ReliabilityHead
     from sgdjscc_lab.controllers.channel_condition_policy import ChannelConditionPolicy
@@ -142,12 +144,16 @@ def build_channel_condition_wrapper(cfg: DictConfig) -> ChannelConditionedDiffus
         token_dim=int(cc.get("token_dim", 8)),
         mode=str(cc.get("encoder_mode", "stats")),
     )
+    reliability_head = ReliabilityHead()
+    if device is not None:
+        encoder = encoder.to(device)
+        reliability_head = reliability_head.to(device)
     policy = ChannelConditionPolicy(
         confidence_threshold=float(cc.get("confidence_threshold", 0.5)),
         overrides=cc.get("policy_overrides"),
     )
     return ChannelConditionedDiffusion(
-        encoder=encoder, reliability_head=ReliabilityHead(), policy=policy,
+        encoder=encoder, reliability_head=reliability_head, policy=policy,
     )
 
 
@@ -162,7 +168,7 @@ def build_channel_conditioned_inference(models, cfg: DictConfig, channel=None):
 
     channel = channel or build_channel(cfg)
     models.jscc_model.channel_model = channel
-    wrapper = build_channel_condition_wrapper(cfg)
+    wrapper = build_channel_condition_wrapper(cfg, device=models.device)
     return OnePassChannelConditionedInference(
         models=models, base_cfg=cfg, wrapper=wrapper,
         csi=str(cfg.get("csi", "perfect")),

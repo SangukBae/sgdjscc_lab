@@ -69,7 +69,11 @@ class FastFadingChannel(ChannelTape):
         g = g_block.repeat_interleave(self.block_length, dim=1)[:, :n]   # [B, n]
 
         faded = (flat * g).reshape(bsz, c, h, w)
-        noise, noise_var = awgn_noise_like(faded, snr_db)
+        # Keep one physical receiver noise floor referenced to transmit power;
+        # do not renormalise it for each fading realisation.
+        noise, noise_var = awgn_noise_like(
+            faded, snr_db, power_reference=latent
+        )
         received = faded + noise
 
         g_map = g.reshape(bsz, c, h, w)

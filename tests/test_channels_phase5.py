@@ -105,6 +105,36 @@ class TestMMSEEqualization:
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestChannelOutputs:
+    @pytest.mark.parametrize("channel_cls,kwargs", [
+        ("rayleigh", {}),
+        ("fast_fading", {"block_length": 16}),
+    ])
+    def test_fading_noise_floor_uses_pre_fading_transmit_power(
+        self, latent, channel_cls, kwargs
+    ):
+        from sgdjscc_lab.channels import FastFadingChannel, RayleighChannel
+
+        cls = RayleighChannel if channel_cls == "rayleigh" else FastFadingChannel
+        b = cls(csi="perfect", **kwargs).observe(latent, 10.0)
+        tx_power = latent.square().flatten(1).mean(dim=1).reshape(-1, 1, 1, 1)
+        assert torch.allclose(b.noise_var, tx_power / 10.0, rtol=1e-6, atol=1e-7)
+
+    def test_slow_rayleigh_gain_changes_effective_noise_level(self):
+        from sgdjscc_lab.channels import RayleighChannel
+
+        torch.manual_seed(123)
+        x = torch.randn(64, 16, 8, 8)
+        # JSCCModel.normalize produces exactly this unit-power contract.
+        x = x / x.flatten(1).norm(dim=1)[:, None, None, None]
+        x = x * (x[0].numel() ** 0.5)
+        b = RayleighChannel(csi="perfect").observe(x, 10.0)
+        gain = b.channel_gain.flatten()
+        level = b.noise_level.flatten(1).mean(dim=1)
+
+        # A deep fade must be noisier after equalisation than a strong channel.
+        assert level[gain.argmin()] > level[gain.argmax()]
+        assert level.std() > 0.05
+
     def test_rayleigh_shapes(self, latent):
         from sgdjscc_lab.channels import RayleighChannel
         ch = RayleighChannel(csi="perfect")

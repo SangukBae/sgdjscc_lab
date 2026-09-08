@@ -30,6 +30,18 @@ _INTERRUPTIBLE_REQUIRES = (
 )
 
 
+def _encode_text_on_device(label, model, device, tokenize_fn):
+    """Encode CLIP text on the generator's configured device.
+
+    The read-only upstream ``DiffusionGenerator.encode_text`` calls ``.cuda()``
+    with no device index, which silently targets the process-default GPU. Keep
+    the upstream repository untouched while making the lab wrapper honour
+    ``cuda:N`` and CPU devices explicitly.
+    """
+    text_tokens = tokenize_fn(label, truncate=True).to(device)
+    return model.encode_text(text_tokens).cpu()
+
+
 def build_diffusion_pipeline(cfg, device: torch.device, jscc_model):
     """Load MDTv2 (+ optional ControlNet), CLIP, and shared VAE.
 
@@ -89,8 +101,16 @@ def build_diffusion_pipeline(cfg, device: torch.device, jscc_model):
     vae_shared.load_state_dict(jscc_model.vae.state_dict(), strict=False)
     vae_shared.to(device)
 
+    class LabDiffusionGenerator(DiffusionGenerator):
+        """Device-safe adapter over the read-only reference generator."""
+
+        def encode_text(self, label, model):
+            return _encode_text_on_device(label, model, self.device, clip.tokenize)
+
     logger.info("Semantic pipeline ready (use_controlnet=%s)", cfg.use_controlnet)
-    return DiffusionGenerator(denoiser, vae_shared, clip_model, device, torch.float32)
+    return LabDiffusionGenerator(
+        denoiser, vae_shared, clip_model, device, torch.float32
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

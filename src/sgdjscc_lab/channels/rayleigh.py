@@ -64,7 +64,13 @@ class RayleighChannel(ChannelTape):
         g = torch.sqrt((a ** 2 + b ** 2) / 2.0)             # [B,1,1,1]
 
         faded = g * latent
-        noise, noise_var = awgn_noise_like(faded, snr_db)
+        # The receiver noise floor is set by the pre-fading transmit power.
+        # Using ``faded`` here would make σ² proportional to g², so the flat
+        # Rayleigh gain cancels exactly after equalisation/normalisation and the
+        # channel degenerates to AWGN for every gain realisation.
+        noise, noise_var = awgn_noise_like(
+            faded, snr_db, power_reference=latent
+        )
         received = faded + noise
 
         equalized, g_used = self._equalize(received, g, noise_var)
