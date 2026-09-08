@@ -302,6 +302,30 @@ def test_jscc_loss_gan_term_toggles():
     assert "loss_gan" in out_gan
 
 
+def test_generator_backward_does_not_modify_discriminator_gradients():
+    from sgdjscc_lab.training.stage_runners import _frozen_module_parameters
+
+    torch.manual_seed(7)
+    disc = nn.Sequential(nn.Conv2d(3, 4, 3, padding=1), nn.LeakyReLU(),
+                         nn.Conv2d(4, 1, 1))
+    target = torch.rand(2, 3, 8, 8)
+    recon = torch.rand(2, 3, 8, 8, requires_grad=True)
+    gan = JSCCStageLoss(gan_weight=1.0)
+
+    d_loss = gan.gan.discriminator_loss(
+        disc(target * 2 - 1), disc(recon.detach() * 2 - 1)
+    )
+    d_loss.backward()
+    before = [p.grad.detach().clone() for p in disc.parameters()]
+
+    with _frozen_module_parameters(disc):
+        g_loss = gan(recon, target, disc=disc)["loss"]
+    g_loss.backward()
+
+    assert recon.grad is not None and recon.grad.norm() > 0
+    assert all(torch.equal(p.grad, old) for p, old in zip(disc.parameters(), before))
+
+
 def test_jscc_loss_lpips_term_toggles_and_backprops():
     # stub LPIPS (avoids the alexnet download): a differentiable perceptual proxy
     calls = {"n": 0}
@@ -564,6 +588,9 @@ class _StubStepRunner:
     def optimizer_state(self):
         return {}
 
+    def load_train_state(self, state):
+        self.loaded_state = state
+
 
 def test_step_based_training_stops_and_saves(tmp_path):
     from sgdjscc_lab.pipelines.train_pipeline import run_training
@@ -706,6 +733,20 @@ def test_get_load_train_state_round_trip_optimizer():
     runner2 = _dm_runner(TextDMStageRunner)
     runner2.load_train_state(state)
     assert runner2._accum == runner._accum
+
+
+def test_train_state_rejects_module_or_architecture_mismatch():
+    runner = _dm_runner(TextDMStageRunner)
+    state = runner.get_train_state()
+
+    with_extra = {**state, "modules": {**state["modules"], "unexpected": {}}}
+    with pytest.raises(RuntimeError, match="module set"):
+        runner.load_train_state(with_extra)
+
+    wrong_schema = runner.get_train_state()
+    wrong_schema["meta"]["module_schemas"]["diffusion"]["type"] = "OtherModel"
+    with pytest.raises(RuntimeError, match="architecture fingerprint"):
+        runner.load_train_state(wrong_schema)
 
 
 def test_flush_pending_applies_partial_window():
@@ -906,6 +947,20 @@ def test_edge_jscc_vit_snr_cond_checkpoint_round_trips():
     b.load_state_dict(sd)                          # adaLN params load cleanly
     edge = torch.rand(1, 1, 64, 64)
     assert torch.allclose(a.reconstruct(edge), b.reconstruct(edge), atol=1e-5)
+
+
+def test_edge_codec_loader_rejects_incompatible_architecture(tmp_path):
+    conv = EdgeJSCC(latent_ch=16, base_ch=8, with_decoder=True, arch="conv")
+    path = tmp_path / "conv.pth"
+    torch.save({
+        "runner_state": {"modules": {"edge_jscc": conv.state_dict()}}
+    }, path)
+    vit = EdgeJSCC(
+        latent_ch=16, with_decoder=False, arch="vit",
+        vit_cfg={"embed_dim": 32, "depth": 1, "num_heads": 4},
+    )
+    with pytest.raises(RuntimeError, match="Incompatible edge-codec checkpoint"):
+        vit.load_codec_state(path, strict=False)
 
 
 def test_edge_jscc_arch_invalid_raises():

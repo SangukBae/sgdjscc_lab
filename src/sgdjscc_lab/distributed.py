@@ -5,9 +5,11 @@ These helpers let the training stack run under
 **single-process / CPU path byte-for-byte unchanged** (every helper degrades to a
 no-op / local computation when not launched distributed).
 
-Scope (see docs/paper_gap_closure.md "DDP"): Stage 2 (text_dm) is the validated
-target; Stage 3 (controlnet) shares the same plumbing. Nothing here is GPU- or
-NCCL-specific — the smoke tests run on the Gloo CPU backend.
+Trainable modules that can be called through one conventional ``forward`` use
+``DistributedDataParallel``. Composite runners (JSCC, edge codec, CSI and joint
+fine-tuning) invoke submodule methods directly, so they use the explicit
+parameter broadcast / gradient all-reduce helpers below. Nothing here is GPU-
+or NCCL-specific — the smoke tests run on the Gloo CPU backend.
 """
 
 from __future__ import annotations
@@ -186,12 +188,45 @@ def all_reduce_grads(modules: List, average: bool = True) -> None:
         return
     import torch.distributed as dist
     world = get_world_size()
+    seen = set()
     for m in modules:
         for p in unwrap_module(m).parameters():
+            if id(p) in seen:
+                continue
+            seen.add(id(p))
             if p.grad is not None:
                 dist.all_reduce(p.grad, op=dist.ReduceOp.SUM)
                 if average:
                     p.grad /= world
+
+
+def broadcast_module_state(modules: List, src: int = 0) -> None:
+    """Broadcast parameters and buffers once so manual-DDP ranks start equal."""
+    if not is_distributed():
+        return
+    import torch.distributed as dist
+    seen = set()
+    for m in modules:
+        core = unwrap_module(m)
+        for tensor in list(core.parameters()) + list(core.buffers()):
+            if id(tensor) in seen:
+                continue
+            seen.add(id(tensor))
+            dist.broadcast(tensor, src=src)
+
+
+def broadcast_module_buffers(modules: List, src: int = 0) -> None:
+    """Mirror DDP's pre-forward buffer broadcast for manually synced modules."""
+    if not is_distributed():
+        return
+    import torch.distributed as dist
+    seen = set()
+    for m in modules:
+        for tensor in unwrap_module(m).buffers():
+            if id(tensor) in seen:
+                continue
+            seen.add(id(tensor))
+            dist.broadcast(tensor, src=src)
 
 
 def maybe_set_epoch(loader, epoch: int) -> None:

@@ -64,6 +64,10 @@ class _StateRunner:
         self.loaded = s
 
 
+class _TaggedStateRunner(_StateRunner):
+    stage = "text_dm"
+
+
 def test_interrupt_checkpoint_writes_both_and_restores(tmp_path):
     state = {"epoch": 2, "global_step": 7, "stage": "jscc", "best_metric": 0.3,
              "runner_state": {"modules": {}, "optimizers": {}, "scalers": {}, "accum": 0}}
@@ -73,6 +77,23 @@ def test_interrupt_checkpoint_writes_both_and_restores(tmp_path):
     # Restorable by the SAME code path as a normal checkpoint.
     restored = restore_runner_state(tmp_path / "latest.pth", _StateRunner())
     assert restored["global_step"] == 7 and restored["epoch"] == 2
+
+
+def test_resume_rejects_cross_stage_checkpoint(tmp_path):
+    path = tmp_path / "wrong-stage.pth"
+    torch.save({"stage": "jscc", "runner_state": {}}, path)
+    with pytest.raises(RuntimeError, match="stage mismatch"):
+        restore_runner_state(path, _TaggedStateRunner())
+
+
+def test_resume_requires_stage_tag_unless_legacy_opt_in(tmp_path):
+    path = tmp_path / "untagged.pth"
+    torch.save({"runner_state": {"legacy": True}}, path)
+    with pytest.raises(RuntimeError, match="no stage tag"):
+        restore_runner_state(path, _TaggedStateRunner())
+    runner = _TaggedStateRunner()
+    restore_runner_state(path, runner, allow_legacy=True)
+    assert runner.loaded == {"legacy": True}
 
 
 # ── 8-bit optimizer graceful fallback ────────────────────────────────────────

@@ -73,6 +73,11 @@ train:
   lr:           1.0e-4          # assumed default (unpublished in the paper)
   weight_decay: 1.0e-5          # assumed default (unpublished in the paper)
   save_every:   5               # save epoch_{N}.pth every N epochs (0 = off)
+  # Resume is fail-closed by default: stage, module architecture, optimizer and
+  # scaler state must all match. These migration switches must never be enabled
+  # for a formal continuation without separately auditing the legacy checkpoint.
+  resume_allow_legacy: false    # allow a checkpoint with no stage tag
+  resume_allow_partial: false   # allow missing/incompatible train-state pieces
   val_every:    1               # run validation every N epochs
   log_every:    10              # print batch-level loss every N batches
   # resume:

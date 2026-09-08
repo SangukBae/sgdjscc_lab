@@ -31,6 +31,7 @@ inference path.  Do not "improve" these constants.
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from typing import Callable, Dict, List, Optional
 
 import torch
@@ -61,6 +62,34 @@ logger = logging.getLogger(__name__)
 
 # Identical to pipelines/infer_pipeline.py — algorithm-preservation invariant.
 _SCALING_FACTOR = 15.45
+
+
+@contextmanager
+def _frozen_module_parameters(module: nn.Module):
+    """Temporarily exclude *module* parameters while retaining input gradients."""
+    params = list(module.parameters())
+    flags = [p.requires_grad for p in params]
+    try:
+        for p in params:
+            p.requires_grad_(False)
+        yield
+    finally:
+        for p, flag in zip(params, flags):
+            p.requires_grad_(flag)
+
+
+def _module_schemas(modules: Dict[str, nn.Module]) -> Dict:
+    """Return a lightweight architecture fingerprint for checkpoint validation."""
+    return {
+        name: {
+            "type": module.__class__.__name__,
+            "state": {
+                key: {"shape": list(value.shape), "dtype": str(value.dtype)}
+                for key, value in module.state_dict().items()
+            },
+        }
+        for name, module in modules.items()
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,6 +137,10 @@ class StageRunner:
         # DDP-wrapped modules trained by this runner (empty for single-process).
         # Used for grad-accum no_sync and the epoch-boundary grad sync.
         self._ddp_modules: List = []
+        # Composite stages call methods such as vae.encode()/codec.reconstruct()
+        # directly, so wrapping the container in DDP would not run DDP.forward.
+        # Those trainable modules are synchronized explicitly at step boundaries.
+        self._manual_ddp_modules: List = []
 
     def apply_perf_toggles(self) -> None:
         """Apply opt-in memory toggles (gradient checkpointing / xformers).
@@ -127,6 +160,29 @@ class StageRunner:
                              if m is not None and _ddp.is_distributed()
                              and hasattr(m, "no_sync")]
 
+    def register_manual_ddp_modules(self, modules: List) -> None:
+        """Register composite modules for explicit DDP gradient synchronization."""
+        from sgdjscc_lab import distributed as _ddp
+        if not _ddp.is_distributed():
+            self._manual_ddp_modules = []
+            return
+        seen = set()
+        registered = []
+        for module in modules:
+            if module is None or id(module) in seen:
+                continue
+            seen.add(id(module))
+            if any(p.requires_grad for p in module.parameters()):
+                registered.append(module)
+        self._manual_ddp_modules = registered
+        _ddp.broadcast_module_state(registered)
+
+    def _sync_manual_ddp_grads(self) -> None:
+        modules = getattr(self, "_manual_ddp_modules", [])
+        if modules:
+            from sgdjscc_lab import distributed as _ddp
+            _ddp.all_reduce_grads(modules)
+
     def _ddp_find_unused(self) -> bool:
         """Whether the stage needs DDP find_unused_parameters (override per stage)."""
         return False
@@ -145,6 +201,10 @@ class StageRunner:
     # ── train/val ─────────────────────────────────────────────────────────────
     def set_mode(self, training: bool) -> None:
         self._training = bool(training)
+        manual = getattr(self, "_manual_ddp_modules", [])
+        if manual:
+            from sgdjscc_lab import distributed as _ddp
+            _ddp.broadcast_module_buffers(manual)
         for m in self.state_modules().values():
             if hasattr(m, "train"):
                 m.train(training)
@@ -174,6 +234,7 @@ class StageRunner:
             self.scaler.scale(loss / self.grad_accum).backward()
         self._accum += 1
         if will_step:
+            self._sync_manual_ddp_grads()
             self.scaler.step(self.optimizer)
             self.scaler.update()
             self.optimizer.zero_grad()
@@ -276,6 +337,7 @@ class StageRunner:
         if self._ddp_modules:
             from sgdjscc_lab import distributed as _ddp
             _ddp.all_reduce_grads(self._ddp_modules)
+        self._sync_manual_ddp_grads()
         stepped = False
         for opt, sc in self._optimizer_scaler_pairs():
             if opt is not None:
@@ -291,53 +353,127 @@ class StageRunner:
     def get_train_state(self) -> Dict:
         """Snapshot everything needed to resume *exactly*: module weights, every
         optimizer, every GradScaler, and the accumulation counter."""
+        modules = {n: m for n, m in self.state_modules().items()
+                   if m is not None and hasattr(m, "state_dict")}
         return {
-            "modules": {n: m.state_dict() for n, m in self.state_modules().items()
-                        if m is not None and hasattr(m, "state_dict")},
+            "modules": {n: m.state_dict() for n, m in modules.items()},
             "optimizers": {n: o.state_dict() for n, o in self.optimizers().items()
                            if o is not None},
             "scalers": {n: s.state_dict() for n, s in self.scalers().items()
                         if s is not None},
             "accum": int(self._accum),
+            "meta": {
+                "checkpoint_schema_version": 2,
+                "module_schemas": _module_schemas(modules),
+            },
         }
 
-    def load_train_state(self, state: Dict) -> None:
+    def load_train_state(self, state: Dict, *, strict: bool = True) -> None:
         """Restore from :meth:`get_train_state` output (or a legacy checkpoint
-        with top-level ``model_state`` / ``optimizer_state``)."""
+        with top-level ``model_state`` / ``optimizer_state``).
+
+        Exact module/optimizer/scaler identity and strict state-dict loading are
+        the default. ``strict=False`` is reserved for an explicit legacy
+        migration; normal resume must never silently continue with random or
+        partially restored weights.
+        """
         modules = state.get("modules")
         if modules is None:
             modules = state.get("model_state", {})  # legacy
         targets = self.state_modules()
-        for name, sd in (modules or {}).items():
-            m = targets.get(name)
-            if m is not None and hasattr(m, "load_state_dict"):
-                try:
-                    m.load_state_dict(sd, strict=False)
-                    logger.info("  Restored module %s", name)
-                except Exception as exc:  # pragma: no cover
-                    logger.warning("  Skipped module %s: %s", name, exc)
+        saved_modules = dict(modules or {})
+        expected_modules = {
+            name: module for name, module in targets.items()
+            if module is not None and hasattr(module, "load_state_dict")
+        }
+        if strict and set(saved_modules) != set(expected_modules):
+            raise RuntimeError(
+                "Checkpoint module set does not match runner: "
+                f"saved={sorted(saved_modules)}, expected={sorted(expected_modules)}"
+            )
+
+        saved_schemas = (state.get("meta") or {}).get("module_schemas")
+        if strict and saved_schemas is not None:
+            current_schemas = _module_schemas(expected_modules)
+            if saved_schemas != current_schemas:
+                raise RuntimeError(
+                    "Checkpoint architecture fingerprint does not match the current runner."
+                )
+
+        for name, sd in saved_modules.items():
+            m = expected_modules.get(name)
+            if m is None:
+                if strict:
+                    raise RuntimeError(f"Checkpoint contains unknown module {name!r}.")
+                logger.warning("  Skipped unknown module %s", name)
+                continue
+            try:
+                incompat = m.load_state_dict(sd, strict=strict)
+            except Exception as exc:
+                if strict:
+                    raise RuntimeError(
+                        f"Could not restore module {name!r}: {exc}"
+                    ) from exc
+                logger.warning("  Could not restore module %s: %s", name, exc)
+                continue
+            if not strict and (incompat.missing_keys or incompat.unexpected_keys):
+                logger.warning(
+                    "  Partially restored module %s (missing=%s unexpected=%s)",
+                    name, incompat.missing_keys, incompat.unexpected_keys,
+                )
+            else:
+                logger.info("  Restored module %s", name)
 
         opts = state.get("optimizers")
         if opts is None and state.get("optimizer_state"):
             opts = {"optimizer": state["optimizer_state"]}  # legacy
-        my_opts = self.optimizers()
-        for name, sd in (opts or {}).items():
+        saved_opts = dict(opts or {})
+        my_opts = {name: opt for name, opt in self.optimizers().items() if opt is not None}
+        if strict and set(saved_opts) != set(my_opts):
+            raise RuntimeError(
+                "Checkpoint optimizer set does not match runner: "
+                f"saved={sorted(saved_opts)}, expected={sorted(my_opts)}"
+            )
+        for name, sd in saved_opts.items():
             o = my_opts.get(name)
-            if o is not None:
-                try:
-                    o.load_state_dict(sd)
-                    logger.info("  Restored optimizer %s", name)
-                except Exception as exc:  # pragma: no cover
-                    logger.warning("  Could not restore optimizer %s: %s", name, exc)
+            if o is None:
+                if strict:
+                    raise RuntimeError(f"Checkpoint contains unknown optimizer {name!r}.")
+                logger.warning("  Skipped unknown optimizer %s", name)
+                continue
+            try:
+                o.load_state_dict(sd)
+                logger.info("  Restored optimizer %s", name)
+            except Exception as exc:
+                if strict:
+                    raise RuntimeError(
+                        f"Could not restore optimizer {name!r}: {exc}"
+                    ) from exc
+                logger.warning("  Could not restore optimizer %s: %s", name, exc)
 
-        my_scalers = self.scalers()
-        for name, sd in (state.get("scalers") or {}).items():
+        saved_scalers = dict(state.get("scalers") or {})
+        my_scalers = {name: scaler for name, scaler in self.scalers().items()
+                      if scaler is not None}
+        if strict and set(saved_scalers) != set(my_scalers):
+            raise RuntimeError(
+                "Checkpoint scaler set does not match runner: "
+                f"saved={sorted(saved_scalers)}, expected={sorted(my_scalers)}"
+            )
+        for name, sd in saved_scalers.items():
             s = my_scalers.get(name)
-            if s is not None and sd:
-                try:
-                    s.load_state_dict(sd)
-                except Exception as exc:  # pragma: no cover
-                    logger.warning("  Could not restore scaler %s: %s", name, exc)
+            if s is None:
+                if strict:
+                    raise RuntimeError(f"Checkpoint contains unknown scaler {name!r}.")
+                logger.warning("  Skipped unknown scaler %s", name)
+                continue
+            try:
+                s.load_state_dict(sd)
+            except Exception as exc:
+                if strict:
+                    raise RuntimeError(
+                        f"Could not restore scaler {name!r}: {exc}"
+                    ) from exc
+                logger.warning("  Could not restore scaler %s: %s", name, exc)
 
         if "accum" in state:
             self._accum = int(state["accum"])
@@ -483,6 +619,7 @@ class JSCCStageRunner(StageRunner):
             self.d_scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
             logger.info("Stage-1 GAN enabled (patch discriminator, w=%.3f, lr=%.2e)",
                         self.gan_weight, d_lr)
+        self.register_manual_ddp_modules([self.jscc, self.disc])
 
     # ── JSCC encode/decode (mirrors infer_pipeline) ───────────────────────────
     def _encode(self, x: torch.Tensor) -> torch.Tensor:
@@ -547,14 +684,20 @@ class JSCCStageRunner(StageRunner):
         self.d_scaler.scale(d_loss / self.grad_accum).backward()
 
         # ── Generator (MSE + GAN) ─────────────────────────────────────────────
-        with self._autocast():
-            g_out = self.loss(recon, x, disc=self.disc)
+        # D remains a differentiable function of ``recon`` but its parameters are
+        # excluded from this graph. Otherwise G.backward() adds generator-loss
+        # gradients to D's already-accumulated discriminator gradients (and, with
+        # AMP, mixes gradients produced by two independent GradScalers).
+        with _frozen_module_parameters(self.disc):
+            with self._autocast():
+                g_out = self.loss(recon, x, disc=self.disc)
         out.update(g_out)
         self.last_step_did_update = False
         if self.optimizer is not None:
             self.scaler.scale(g_out["loss"] / self.grad_accum).backward()
             self._accum += 1
             if self._accum % self.grad_accum == 0:
+                self._sync_manual_ddp_grads()
                 self.d_scaler.step(self.d_optimizer)
                 self.d_scaler.update()
                 self.d_optimizer.zero_grad()
@@ -814,6 +957,7 @@ class EndToEndFTStageRunner(StageRunner):
         self.scheduler = scheduler if scheduler is not None else _build_scheduler(cfg)
         self.loss = loss if loss is not None else build_stage_loss(cfg, self.stage)
         self.snr_db = float(OmegaConf.select(cfg, "train.end_to_end_ft.snr_db", default=10.0))
+        self.register_manual_ddp_modules([self.jscc, self.denoiser, self.edge_module])
 
     def state_modules(self) -> Dict[str, nn.Module]:
         mods = {"jscc_model": self.jscc, "diffusion": self.denoiser}
@@ -892,6 +1036,7 @@ class EdgeCodecStageRunner(StageRunner):
         self.multi_snr = bool(OmegaConf.select(ms, "enabled", default=False)) if ms else False
         self.snr_min = float(OmegaConf.select(ms, "min_db", default=0.0)) if ms else 0.0
         self.snr_max = float(OmegaConf.select(ms, "max_db", default=20.0)) if ms else 20.0
+        self.register_manual_ddp_modules([self.edge_codec])
 
     def state_modules(self) -> Dict[str, nn.Module]:
         return {"edge_jscc": self.edge_codec}
@@ -946,6 +1091,7 @@ class CSIEstimationStageRunner(StageRunner):
         self.target = str(OmegaConf.select(
             cfg, "train.csi_estimation.target", default="amplitude")).lower()
         self.loss = loss if loss is not None else build_stage_loss(cfg, STAGE_CSI_ESTIMATION)
+        self.register_manual_ddp_modules([self.snr_estimator])
 
     def state_modules(self) -> Dict[str, nn.Module]:
         return {"snr_estimator": self.snr_estimator}
@@ -955,7 +1101,7 @@ class CSIEstimationStageRunner(StageRunner):
         # net outputs √α (amplitude, runtime drop-in) or α (paper eq. 15) and can
         # adapt accordingly — prevents loading an α-target net into the net²=α path.
         state = super().get_train_state()
-        state["meta"] = {"csi_target": self.target}
+        state["meta"]["csi_target"] = self.target
         return state
 
     def forward(self, batch: Dict) -> Dict[str, torch.Tensor]:

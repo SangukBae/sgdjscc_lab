@@ -33,6 +33,7 @@ Notes
 from __future__ import annotations
 
 import json
+import inspect
 import logging
 import time
 from pathlib import Path
@@ -440,20 +441,56 @@ def _runner_save_state(runner) -> Dict:
     }
 
 
-def restore_runner_state(path, runner) -> Dict:
+def restore_runner_state(
+    path,
+    runner,
+    *,
+    expected_stage: Optional[str] = None,
+    allow_legacy: bool = False,
+    allow_partial: bool = False,
+) -> Dict:
     """Restore a stage checkpoint into the runner (modules + every optimizer +
-    every scaler + the grad-accumulation counter)."""
+    every scaler + the grad-accumulation counter).
+
+    Stage identity and full train-state compatibility are fail-closed. A
+    checkpoint without a stage tag or with partial legacy state requires an
+    explicit migration opt-in; a checkpoint tagged for a different stage is
+    always rejected.
+    """
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Checkpoint not found: {p}")
     state = torch.load(p, map_location="cpu")
+    runner_stage = expected_stage or getattr(runner, "stage", None)
+    saved_stage = state.get("stage")
+    if runner_stage is not None:
+        if saved_stage is None and not allow_legacy:
+            raise RuntimeError(
+                f"Checkpoint {p} has no stage tag; expected {runner_stage!r}. "
+                "Set train.resume_allow_legacy=true only for an audited migration."
+            )
+        if saved_stage is not None and str(saved_stage) != str(runner_stage):
+            raise RuntimeError(
+                f"Checkpoint stage mismatch: saved={saved_stage!r}, "
+                f"expected={runner_stage!r} ({p})."
+            )
     logger.info("Loaded checkpoint from %s (epoch %s, global_step %s, stage %s)",
                 p, state.get("epoch", "?"), state.get("global_step", "?"),
                 state.get("stage", "?"))
     if hasattr(runner, "load_train_state"):
         # new format nests under "runner_state"; legacy keeps keys at top level.
-        runner.load_train_state(state.get("runner_state", state))
+        load = runner.load_train_state
+        train_state = state.get("runner_state", state)
+        if "strict" in inspect.signature(load).parameters:
+            load(train_state, strict=not allow_partial)
+        else:
+            load(train_state)
     else:  # pragma: no cover - legacy fallback for non-StageRunner runners
+        if not allow_partial:
+            raise RuntimeError(
+                "Runner does not implement strict train-state restoration; "
+                "set train.resume_allow_partial=true only for an audited migration."
+            )
         modules = runner.state_modules()
         for name, sd in state.get("model_state", {}).items():
             m = modules.get(name)
@@ -604,7 +641,17 @@ def run_training(
     global_step = 0
     resolved_resume, _is_auto = resolve_resume_path(resume_path, ckpt_dir)
     if resolved_resume is not None:
-        state = restore_runner_state(resolved_resume, runner)
+        state = restore_runner_state(
+            resolved_resume,
+            runner,
+            expected_stage=stage,
+            allow_legacy=bool(OmegaConf.select(
+                cfg, "train.resume_allow_legacy", default=False
+            )),
+            allow_partial=bool(OmegaConf.select(
+                cfg, "train.resume_allow_partial", default=False
+            )),
+        )
         start_epoch = int(state.get("epoch", 0)) + 1
         best_metric = float(state.get("best_metric", float("inf")))
         global_step = int(state.get("global_step", 0))

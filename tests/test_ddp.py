@@ -78,7 +78,10 @@ def _ddp_worker(rank: int, world: int, tmp: str, port: int):
     import torch.distributed as dist
     from omegaconf import OmegaConf
     from sgdjscc_lab import distributed as ddp
-    from sgdjscc_lab.training.stage_runners import TextDMStageRunner
+    from sgdjscc_lab.training.losses import JSCCStageLoss
+    from sgdjscc_lab.training.stage_runners import (
+        EdgeCodecStageRunner, JSCCStageRunner, TextDMStageRunner,
+    )
     from sgdjscc_lab.pipelines.train_pipeline import save_checkpoint
 
     dist.init_process_group("gloo", rank=rank, world_size=world)
@@ -117,6 +120,83 @@ def _ddp_worker(rank: int, world: int, tmp: str, port: int):
         core = ddp.unwrap_module(runner.denoiser)
         assert _all_same(next(core.parameters()).detach())
         assert _all_same(runner._null_core.token.detach())
+
+        # Composite stages call methods such as ``reconstruct`` directly and
+        # therefore cannot rely on a DDP.forward wrapper. Their explicit
+        # gradient-sync path must also converge from different rank-local data
+        # (and broadcast intentionally different initial parameters first).
+        class _TinyEdgeCodec(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.conv = nn.Conv2d(1, 1, 1)
+
+            def reconstruct(self, edge, snr_db=None):
+                return self.conv(edge)
+
+        torch.manual_seed(100 + rank)
+        codec = _TinyEdgeCodec()
+        edge_cfg = OmegaConf.create({"train": {"lr": 0.1, "edge_codec": {}}})
+        edge_runner = EdgeCodecStageRunner(
+            codec, edge_cfg, torch.device("cpu"),
+            [{"params": list(codec.parameters()), "name": "edge_jscc"}],
+        )
+        assert len(edge_runner._manual_ddp_modules) == 1
+        edge_batch = {"edge": (torch.rand(2, 1, 8, 8) + 0.1 * rank).clamp(0, 1)}
+        edge_runner.training_step(edge_batch)
+        assert _all_same(next(codec.parameters()).detach())
+
+        # Stage-1 uses VAE encode/decode methods and a separate discriminator;
+        # both optimizers must receive rank-averaged gradients even though neither
+        # container can safely be driven through a conventional DDP.forward.
+        from types import SimpleNamespace
+
+        class _TinyVAE(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.enc = nn.Conv2d(3, 3, 1)
+                self.dec = nn.Conv2d(3, 3, 1)
+
+            def encode(self, x):
+                return SimpleNamespace(
+                    latent_dist=SimpleNamespace(mean=self.enc(x))
+                )
+
+            def decode(self, z):
+                return (self.dec(z),)
+
+        class _TinyJSCC(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.vae = _TinyVAE()
+                self.snr = 0.0
+
+            @staticmethod
+            def normalize(x):
+                return x
+
+            @staticmethod
+            def channel(x):
+                return x
+
+        torch.manual_seed(200 + rank)
+        jscc = _TinyJSCC()
+        disc = nn.Conv2d(3, 1, 1)
+        jscc_cfg = OmegaConf.create({"train": {
+            "lr": 0.1,
+            "jscc": {"snr_db": 10.0, "gan": {
+                "enabled": True, "weight": 0.5, "mode": "hinge", "lr": 0.1,
+            }},
+        }})
+        jscc_runner = JSCCStageRunner(
+            jscc, jscc_cfg, torch.device("cpu"),
+            [{"params": list(jscc.parameters()), "name": "jscc_model"}],
+            loss=JSCCStageLoss(gan_weight=0.5), discriminator=disc,
+        )
+        assert len(jscc_runner._manual_ddp_modules) == 2
+        image = (torch.rand(2, 3, 8, 8) + 0.05 * rank).clamp(0, 1)
+        jscc_runner.training_step({"image": image})
+        assert _all_same(next(jscc.parameters()).detach())
+        assert _all_same(next(disc.parameters()).detach())
 
         # DistributedSampler is used when building a loader under DDP.
         import tempfile

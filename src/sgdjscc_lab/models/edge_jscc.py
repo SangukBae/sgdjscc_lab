@@ -528,6 +528,38 @@ class EdgeJSCC(nn.Module):
                 f"No edge codec weights found in {p} (looked for "
                 "runner_state.modules.edge_jscc / model_state.edge_jscc / a bare state_dict)."
             )
-        missing, unexpected = self.load_state_dict(sd, strict=strict)
-        logger.info("Loaded edge codec weights from %s (missing=%d, unexpected=%d).",
-                    p, len(missing), len(unexpected))
+        target = self.state_dict()
+        target_keys = set(target)
+        saved_keys = set(sd)
+        missing = sorted(target_keys - saved_keys)
+        unexpected = sorted(saved_keys - target_keys)
+        shape_mismatches = sorted(
+            key for key in target_keys & saved_keys
+            if tuple(target[key].shape) != tuple(sd[key].shape)
+        )
+
+        # Stage-3 deliberately builds a decoder-less transport from a checkpoint
+        # trained with a reconstruction decoder. Those decoder-only source keys are
+        # the one safe incompatibility. Every encoder/projector target tensor must
+        # otherwise exist with the exact shape, even when the historical API caller
+        # passes strict=False.
+        allowed_unexpected = (
+            {key for key in unexpected if key.startswith("decoder.")}
+            if self.decoder is None and not strict else set()
+        )
+        bad_unexpected = sorted(set(unexpected) - allowed_unexpected)
+        if missing or bad_unexpected or shape_mismatches:
+            raise RuntimeError(
+                "Incompatible edge-codec checkpoint: "
+                f"missing={missing}, unexpected={bad_unexpected}, "
+                f"shape_mismatches={shape_mismatches}. "
+                f"target_arch={self.arch!r}, target_in_ch={self.in_ch}."
+            )
+
+        compatible = {key: sd[key] for key in target}
+        self.load_state_dict(compatible, strict=True)
+        logger.info(
+            "Loaded edge codec weights from %s (all %d target tensors matched; "
+            "ignored_decoder_keys=%d).",
+            p, len(compatible), len(allowed_unexpected),
+        )
