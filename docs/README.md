@@ -3,7 +3,8 @@
 - 프로젝트 관계
   - 원본 `SGDJSCC/`: 읽기 전용 논문 baseline
   - `sgdjscc_lab/`: 모듈화·평가·연구 확장
-  - 기본 추론: 원본 forward-pass와 수치 동일
+  - 기본 추론: 원본 forward-pass 연산 계약 보존이 목표. 구성요소 회귀는 검증됐지만
+    원본 script·실제 checkpoint와의 종단간 byte-parity는 아직 별도 입증되지 않음
 - 문서 원칙
   - 역할별 분리
   - 현재 계획·상태·실험 이력 분리

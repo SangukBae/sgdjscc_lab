@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-08
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 4544094
+source_commit: 5520b90
 supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -181,7 +181,7 @@ formal freeze 때 quality non-inferiority와 false suppression 판정을 결합�
 
 ```bash
 python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 10
-python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr-list -5,0,5,10,15,20,25
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr-list=-5,0,5,10,15,20,25
 python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 10 --no-clip
 ```
 

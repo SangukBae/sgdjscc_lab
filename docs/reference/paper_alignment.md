@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-08
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 5520b90
 supersedes:
 ---
 
@@ -40,7 +40,7 @@ supersedes:
 | 진입점 | `inference_one.py` 중심 | `scripts/infer_images.py` |
 | config | script 내부 결합 | YAML + CLI override |
 | 채널/가이드/평가 | 한 파일에 섞임 | `channels/`, `guidance/`, `evaluators/`로 분리 |
-| 추론 알고리즘 | monolithic | 동일 수치를 유지한 모듈식 래핑 |
+| 추론 알고리즘 | monolithic | 동일 연산 계약을 목표로 한 모듈식 래핑 |
 | 원본 수정 | 직접 수정 필요 | `SGDJSCC/`는 읽기 전용, 확장은 `sgdjscc_lab/`에 구현 |
 
 - 보존 블록
@@ -71,7 +71,7 @@ supersedes:
 | ControlNet freeze 정책 | 구조 반영 | paper-like |
 | MuGE 기반 edge 경로 | 구조 반영 | paper-like → faithful structure |
 | edge codec 전용 링크 | 학습 stage 포함 | paper-like |
-| MMSE equalization / fast-fading 배선 | 연결 | paper-faithful(실수 gain 기준) / scaffold |
+| MMSE equalization / fading 배선 | 연결·송신전력 기준 noise floor 보정, CPU 회귀 | paper-like(실수 gain 기준) / scaffold |
 | complex phase / joint CSI | 일부 필드·연산만 | 부분/미구현 |
 | FID / SRS / temporal / packet 기반 평가 | 논문 밖 확장 포함 | ETRI 확장 |
 
@@ -139,6 +139,10 @@ fingerprint를 기록한다.
 ## 검증 상태
 
 - 단위/통합 테스트 기준으로 paper-mode 경로와 주요 배선은 검증됨
+- AWGN·step matching 등 구성요소 수준의 불변성 회귀는 검증됐지만, 원본
+  `SGDJSCC/inference_one.py`와 실제 checkpoint를 사용한 전체 추론 결과의 종단간
+  byte-parity artifact는 아직 없다. 따라서 저장소 전체 경로를 `byte-identical`로
+  주장하지 않는다.
 - real-model smoke 학습과 일부 multi-GPU 경로는 별도 검증 문서가 있음
 - 실제 FID 수치, large-scale DM 재현, water-filling 실수치 등은 체크포인트·데이터·GPU에 의존
 

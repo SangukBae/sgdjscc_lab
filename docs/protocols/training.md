@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-08
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 5520b90
 supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
 ---
 
@@ -163,14 +163,20 @@ python scripts/train.py \
 
 ## Checkpoint와 Export
 
-- 학습 결과는 기본적으로 다음 위치에 저장된다.
+- 정확한 저장 위치는 config의 `checkpoint_dir`와 `train_log_path`가 결정한다.
+  stage별 recipe의 기본 관례는 다음과 같다.
 
 ```text
-outputs/checkpoints/<stage>/
-├── latest.pth
-├── best.pth
-└── train_log.jsonl
+outputs/
+├── checkpoints/<stage>/
+│   ├── latest.pth
+│   └── best.pth
+└── <stage>_train_log.jsonl
 ```
+
+- 범용 `composed_train.yaml`은 각각 `outputs/checkpoints/`와
+  `outputs/train_log.jsonl`을 사용한다. `--output-dir`는 `checkpoint_dir`만
+  override하며 `train_log_path`를 checkpoint 하위로 자동 이동하지 않는다.
 
 - 추론용 checkpoint로 변환할 때는 export 스크립트를 사용한다.
 
@@ -188,6 +194,11 @@ python scripts/export_checkpoint.py \
 | `controlnet` | `checkpoints/diffusion_controlnet.pth` |
 
 - overwrite 규칙: `--force` 필요
+- resume 기본 규칙
+  - 저장 stage와 실행 stage가 다르면 즉시 실패
+  - module key·shape·dtype·type fingerprint와 optimizer/scaler 집합이 모두 일치해야 함
+  - stage tag가 없는 legacy checkpoint는 `train.resume_allow_legacy: true`, 부분
+    복원은 `train.resume_allow_partial: true`를 명시한 감사용 migration에서만 허용
 - checkpoint 구분: [reproducibility.md](./reproducibility.md)
 
 ## Multi-GPU
@@ -201,7 +212,13 @@ torchrun --standalone --nproc_per_node=3 scripts/train.py \
 - batch 규칙
   - `batch_size`: rank별 값
   - global batch: `batch_size × world_size × grad_accum_steps`
+- 동기화 규칙
+  - `text_dm`·`controlnet`: `DistributedDataParallel` wrapper
+  - `jscc`·GAN discriminator·`edge_codec`·`csi_estimation`·`end_to_end_ft`:
+    복합 forward가 submodule method를 직접 호출하므로 초기 state broadcast 후
+    optimizer-step 경계에서 명시적으로 gradient 평균
 - export·평가: 단일 process
+- 현재 증거: CPU/Gloo 2-rank smoke. 실제 NCCL 장기학습 완료를 뜻하지 않는다.
 
 ## Smoke 검증
 

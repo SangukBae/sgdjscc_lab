@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-08
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 5520b90
 supersedes: docs/etri_overview.md
 ---
 
@@ -140,7 +140,8 @@ SAVER prototype은 `models/saver/`, `pipelines/saver_video_pipeline.py`,
 - 호환성 규칙
   - opt-in 확장: 패킷 검증·채널 조건화·영상 확장·저지연 샘플링
   - 상위 게이트: `use_phase4`, `use_phase5`, `phase_gates.py`
-  - 게이트 off: 원본 SGD-JSCC 추론과 수치 동일
+  - 게이트 off: 원본 SGD-JSCC 연산 계약 보존이 목표. 구성요소 회귀 테스트는 통과했지만
+    원본 script와 실제 checkpoint를 사용한 종단간 byte-parity는 별도 입증되지 않음
   - `paper_mode`: 논문 재현 경로만 허용
   - 세부 규칙: [재현성 프로토콜](../protocols/reproducibility.md)
 

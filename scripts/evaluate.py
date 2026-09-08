@@ -7,7 +7,7 @@ Usage examples
 python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr 10
 
 # SNR sweep writing to CSV
-python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr-list -5,0,5,10,15,20,25
+python scripts/evaluate.py --config configs/recipes/inference/composed.yaml --snr-list=-5,0,5,10,15,20,25
 
 # Custom input / output CSV
 python scripts/evaluate.py \\
@@ -96,7 +96,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--snr-list",
         default=None,
-        help="Comma-separated list of SNR values in dB (e.g. '-5,0,5,10,15,20,25')",
+        help="Comma-separated SNR values; use --snr-list=-5,0,5,... when the first value is negative",
     )
     parser.add_argument(
         "--device",

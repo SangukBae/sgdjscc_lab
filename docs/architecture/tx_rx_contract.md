@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-08
 owner: ETRI SGD-JSCC 연구팀
-source_commit: c96b538
+source_commit: 5520b90
 supersedes: docs/video_extension_lgvsc.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -29,7 +29,8 @@ supersedes: docs/video_extension_lgvsc.md, docs/phase4.md, docs/phase5.md
   - 원본 이미지 경로 보존
   - 신규 기능: `use_phase4`, `use_phase5` 뒤에 배치
   - 기본값: off
-  - gate off: 원본 SGD-JSCC와 수치 동일
+  - gate off: 원본 SGD-JSCC 연산 계약 보존이 목표. 구성요소 회귀 테스트와 종단간
+    원본-script byte-parity의 증거 수준은 구분해 기록
 
 ## 2. 의미 단위(packet) 검증 계약 — Rx-legal self-verification
 
@@ -83,6 +84,8 @@ channel.observe() → MeasurementBundle (received/equalized/gain/noise_var/mask/
   - 조건 token: config에 부착
   - frozen denoiser: 조건 token 미사용
   - 실제 조건화: received-latent initialization + reliability 기반 guidance·step 조절
+  - Rayleigh·fast-fading의 AWGN 분산은 송신 latent 전력과 목표 SNR로 정한다. fading 후
+    순간 전력으로 다시 정규화하지 않아 deep fade의 수신 SNR 저하를 보존한다.
 - 향후 필요
   - 조건 인식 denoiser 재학습
   - FiLM·cross-attention·posterior-gradient guidance 검토

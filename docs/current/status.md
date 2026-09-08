@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-08
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 4544094
+source_commit: 5520b90
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -146,7 +146,9 @@ historical artifact이므로 재작성하지 않았다.
   - SNR sweep CSV
   - regeneration loop
 - 호환성
-  - `use_phase4=false`, `use_phase5=false`: 원본과 byte 단위 동일
+  - `use_phase4=false`, `use_phase5=false`: 원본 연산 계약 보존이 목표이며 관련
+    구성요소 회귀 테스트를 통과했다. 원본 `inference_one.py`와 실제 checkpoint를 사용한
+    종단간 byte-parity는 아직 별도 입증되지 않았다.
 
 ### 시맨틱 패킷 평가 (`use_packet_eval`)
 
@@ -181,6 +183,11 @@ historical artifact이므로 재작성하지 않았다.
   - frozen denoiser가 조건 token을 직접 사용하지 않음
   - water-filling은 배선·CPU stub만 검증
   - 실제 수치는 MDTv2 checkpoint 의존
+- 2026-09-08 구현 보정
+  - Rayleigh·fast-fading 잡음 전력을 fading 후 신호가 아니라 송신 latent 전력에
+    고정해 deep fade가 수신 SNR에서 상쇄되지 않도록 수정했다.
+  - CPU 회귀 테스트만 통과했으며, 보정 전 Rayleigh 결과는 보정 후 결과와 직접
+    합치지 않는다. 실제 checkpoint 기반 fading sweep은 아직 재실행하지 않았다.
 - 설계: [Tx/Rx 계약 §4](../architecture/tx_rx_contract.md)
 
 ### 저지연 샘플링 (`acceleration.*`)
@@ -278,10 +285,15 @@ historical artifact이므로 재작성하지 않았다.
   - 보조 경로: `edge_codec`, `csi_estimation`
   - 확장 실험: `end_to_end_ft`
 - 기능
-  - DDP
+  - DDP: `text_dm`·`controlnet`은 DDP wrapper, 직접 submodule method를 호출하는
+    `jscc`·`edge_codec`·`csi_estimation`·`end_to_end_ft`와 GAN discriminator는
+    weight broadcast + optimizer-step 경계 gradient all-reduce
   - step·epoch 실행
-  - auto-resume
+  - auto-resume: stage·module 구조·optimizer·scaler 불일치 시 기본 fail-closed
   - 메모리 toggle
+- 검증 경계
+  - CPU/Gloo 2-rank에서 text-DM, edge codec, JSCC+GAN parameter 동기화를 검증했다.
+  - 실제 multi-GPU NCCL 장기학습 및 보정 후 checkpoint 재학습 결과는 아직 없다.
 - 상세: [학습 프로토콜](../protocols/training.md)
 
 ## 관련 문서

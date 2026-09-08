@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-08
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 8fbe6d98
+source_commit: 5520b90
 supersedes: docs/etri_overview.md
 ---
 
@@ -45,7 +45,9 @@ SRS = (0.30*clip_image_image + 0.25*clip_text_image + 0.25*object_preservation_r
 
 - `temporal_srs` — 시퀀스 전체의 평균 SRS.
 - `srs_flicker` — 프레임 간 SRS 변동 폭(낮을수록 안정).
-- `object_identity_consistency` — 같은 물체가 프레임이 넘어가도 동일하게 유지되는 정도.
+- `object_identity_consistency` — 역사적으로 유지한 CSV field 이름. 현재 구현은 연속
+  복원 frame의 packet `objects` label 집합 사이 Jaccard 평균이며 instance tracking이나
+  embedding 기반 object identity 지표가 아니다.
 - `temporal_hallucination_rate` — 영상 전체에서 없던 것이 지어내지는 비율.
 - `PTC` (Packet-Temporal Consistency)
   - 전송 packet과 복원 packet의 시간축 일치도
@@ -94,9 +96,12 @@ SAVER 구조·gate 정의는
     나눈 값.
   - selector가 negative 후보를 만들 때 사용한 detector와 독립된 evaluator로 계산한다.
 - `false_suppression_rate`
-  - source에서 present인데 negative/revocation action 이후 reconstruction에서 누락된
-    entity 비율.
-  - absolute 값과 positive-only 대비 paired delta를 모두 보고한다.
+  - source GT에서 present이고 `no_negative` reconstruction에서도 threshold 이상으로
+    검출된 concept 중 candidate arm에서 threshold 미만으로 떨어진 비율.
+  - 분모 `baseline_detected_present_opportunities`, 억제 수 `suppressed`, 조건부 `rate`,
+    video-cluster bootstrap one-sided 95% upper bound를 함께 보고한다.
+  - 현재 G2 구현은 위 `no_negative` 기준 조건부 비율이며, 모든 GT-present entity를
+    분모로 한 별도 unconditional absolute rate는 구현하지 않았다.
 - `ghost_survival_auc`
   - GT EXIT/REVOKE event 이후 entity presence score를 사전 동결한 horizon에서 적분한 값.
   - horizon 전에 clip이 끝난 event는 censored로 표시하고 분모를 숨기지 않는다.
