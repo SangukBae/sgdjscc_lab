@@ -1,11 +1,13 @@
 ---
-status: active_implementation
-updated: 2026-09-07
+status: stopped_under_frozen_plan
+updated: 2026-09-09
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 4544094
+source_commit: fd2426a
 implementation_status: PROTOTYPE_IMPLEMENTED_UNTRAINED
-training_status: NOT_STARTED
-formal_evidence_status: NOT_AVAILABLE
+training_status: NOT_STARTED_STOP_TRACK
+formal_evidence_status: NOT_CONFIRMATORY__SV0_G2_NOT_PASSED
+sv0_gate: NOT_PASSED
+track_decision: STOP_UNDER_FROZEN_PLAN
 primary_venue: IEEE Transactions on Multimedia
 stretch_venue: IEEE Transactions on Wireless Communications
 supporting_plan: docs/current/negative_semantic_paper_plan.md
@@ -29,16 +31,19 @@ supersedes:
 
 - SAVER-JSCC 핵심 module, tensor pipeline, signed packet/fault channel, dataset/loss,
   stage runner와 checkpoint 계약은 **prototype으로 구현됐지만 학습되지 않았다**.
-- SV0/G2 Oracle ABSENT 1-video smoke는 완료됐으며 `NOT_EVIDENCE`다. 40-video Pilot는
-  2026-09-07 현재 clean commit `6f9593d`에서 실행 중이다.
+- SV0/G2 Oracle ABSENT 40-video Pilot는 clean commit `6f9593d`에서 320/320, 실패
+  0으로 완료됐다. runner audit은 `PASSED`지만 Oracle H_add 감소 0%로 provisional
+  mechanism gate는 **`NOT_PASSED`**다.
 - prompt-only RSM은 receiver-applied ledger에서만 condition을 만들고 Wan의
   `prompt`/`negative_prompt`로 연결한다. SM-DiT는 generic Transformer block bridge까지
   구현됐지만 실제 Wan/MDTv2 가중치에 삽입·학습된 상태는 아니다.
 - G3 Oracle REVOKE의 세 memory arm manifest, frame-aligned Wan injection, snapshot
-  전환 GOP split, ghost/identity evaluator와 audit는 구현됐다. G2 통과 전 draft이므로
-  GPU 실행·성능 근거는 없다.
+  전환 GOP split, ghost/identity evaluator와 audit는 구현됐다. G2 미통과로 draft와
+  `execution_authorized=false`를 유지하며 GPU 실행·성능 근거는 없다.
 - 기존 negative-semantics G0/G1, int4/int6 bridge는 문제 설정과 운용점의 선행
   근거이며 SAVER의 성능 증거가 아니다.
+- G2는 prompt-only Oracle controllability의 negative result이며 학습된 SAVER 모델의
+  성능 결과가 아니다. 동결 계획상 Stop Track을 적용하고 formal 학습을 중단한다.
 - 기존 `SGDJSCC/` baseline과 게이트-off 경로는 보존한다.
 - 각 module은 해당 gate를 통과했을 때만 최종 모델과 논문 contribution에 포함한다.
 
@@ -348,7 +353,7 @@ controllability 시험 경로다. SAVER의 SAT/VREM/SM-DiT 구현이나 rate-bea
 packet으로 계산하지 않는다.
 
 G3 Oracle REVOKE 준비·평가 경로도 구현되어 있다. Oracle state는 packet 밖의
-`ORACLE_EVAL_ONLY` 입력이며 rate에 포함하지 않는다. G2 통과 전 protocol은 draft이고
+`ORACLE_EVAL_ONLY` 입력이며 rate에 포함하지 않는다. G2 미통과로 protocol은 draft이고
 prepare 단계가 `execution_authorized=false`를 기록하므로 formal 실행 근거가 아니다.
 
 호환성 불변조건:
@@ -365,11 +370,10 @@ prepare 단계가 `execution_authorized=false`를 기록하므로 formal 실행 
 
 ### SV0. Oracle signed-control feasibility
 
-- 구현 상태: `IMPLEMENTED_UNVALIDATED` — 1-video GPU smoke 완료(`NOT_EVIDENCE`),
-  40-video Pilot 실행 중
+- 결과 상태: **`VALIDATED_NOT_PASSED`** — 40-video·4-arm·2-policy 320/320 완료,
+  runner audit `PASSED`, provisional mechanism gate `NOT_PASSED`
 - negative-semantics G2 Oracle ABSENT와 G3 Oracle REVOKE를 재사용한다.
-- G3 harness는 구현됐지만 G2 provisional pass 후 protocol을 동결하기 전에는 실행하지
-  않는다.
+- G3 harness는 구현됐지만 G2 미통과로 실행하지 않는다.
 - no/random/frequency/oracle condition을 matched generation compute로 비교한다.
 - G1 effective-seed가 `NOT_PASSED`인 동안 결과는 mechanism feasibility다.
 
@@ -377,11 +381,15 @@ prepare 단계가 `execution_authorized=false`를 기록하므로 formal 실행 
 
 - source-paired `H_add` 상대 감소 25% 이상
 - video-paired one-sided 95% CI가 사전 정의한 방향을 지지
-- false suppression 증가 `1%p` 이내
+- false suppression 증가 CI 상한 `2%` 이내
 - PSNR/SSIM/LPIPS non-inferiority budget 통과
 
-Oracle이 실패하면 구현된 prototype의 formal 학습·최종 모델 채택을 중단하고 Stop
-Track으로 기록한다.
+실측 결과 primary few10의 Oracle source-paired H_add는 no-negative와 동일한
+1.0493%(156/14,867)로 상대 감소 0%였다. false suppression·품질 조건은 통과했지만
+효능 조건과 개선 CI는 실패했다. 따라서 구현된 prototype의 formal 학습·최종 모델
+채택을 중단하고 Stop Track으로 기록한다. 상세는
+[G2 결과](../experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md)를
+따른다.
 
 ### SV1. SAT와 VREM
 
@@ -498,20 +506,16 @@ cost
 
 ## 9. 구현·문서 진행 순서
 
-구조 prototype은 병렬 준비를 위해 먼저 구현됐지만 과학적 실행 순서는 바뀌지 않는다.
+구조 prototype은 병렬 준비를 위해 먼저 구현됐지만 SV0가 실패했으므로 원래 실행 사슬은
+중단한다.
 
-1. 실행 중 SV0/G2 Pilot를 완료·감사하고 feasibility를 판정한다.
-2. 통과 시 G3 draft를 동결하고 구현된 No-RSM/Append-only/Revocable Oracle matrix로
-   REVOKE controllability를 검증한다.
-3. source-only sequence tensor manifest를 materialize하고 구현된 SAT/VREM으로
-   No-memory/Append-only/Revocable 학습 비교를 수행한다.
-4. Oracle action으로 구현된 SM-DiT bridge를 real frozen backbone에 연결·학습해 decoder
-   구조 효과를 분리한다.
-5. SM-DiT 통과 후 구현된 JASR와 semantic channel codec을 학습하고 네 budget Pareto를
-   평가한다.
-6. 구현된 packet/fault simulator로 formal disorder/channel robustness를 수행한다.
-7. architecture와 threshold를 동결한 뒤 Validation, 마지막으로 Held-out을 실행한다.
-8. 완료된 각 gate는 새 `docs/experiments/YYYY-MM-DD_saver_*.md`에 기록한다.
+1. 완료된 SV0/G2 negative result와 최소 재현 artifact를 보존한다.
+2. G3 GPU matrix, source-only SAVER formal 학습, SV1~SV5 실행은 중단한다.
+3. 연구를 계속하려면 이번 Pilot을 seen data로 선언하고 prompt-only control 대신
+   diffusion block 내부의 구조적 receiver-state injection을 별도 versioned 설계로 만든다.
+4. 새 Development protocol과 gate를 동결하고 독립 output root에서 새 SV0를 수행한다.
+5. 새 SV0가 통과한 경우에만 SAT/VREM·SM-DiT 학습과 후속 JASR/codec 실험을 재개한다.
+6. 구조·threshold를 다시 동결하기 전에는 Validation과 Held-out을 열지 않는다.
 
 기존 완료 실험 문서를 새 해석에 맞춰 덮어쓰지 않는다. 상태 변화는 `status.md`, 다음
 작업은 `roadmap.md`, 불변 실행 결과는 날짜 기반 실험 문서에 각각 기록한다.

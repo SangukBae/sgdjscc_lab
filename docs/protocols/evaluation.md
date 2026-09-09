@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-08
+updated: 2026-09-09
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 5520b90
+source_commit: fd2426a
 supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -78,11 +78,14 @@ supersedes: docs/etri_overview.md, docs/phase4.md, docs/phase5.md
   - ETRI 10영상: 개발·비교
   - 별도 영상 split: 최종 held-out 검증
 
-## SAVER-JSCC 평가 계약 (`PROTOTYPE IMPLEMENTED; FORMAL NOT RUN`)
+## SAVER-JSCC 평가 계약 (`PROTOTYPE IMPLEMENTED; SV0/G2 NOT PASSED`)
 
 SAVER 핵심 module과 packet/channel simulator는 CPU-test된 prototype이다. SV0/G2
-1-video smoke는 완료됐으나 `NOT_EVIDENCE`, 40-video Pilot는 실행 중이다. 아래 계약은
-formal GPU run에 적용하고 기존 결과나 CPU test에 소급하지 않는다.
+40-video Pilot는 320/320, 실패 0으로 완료됐고 runner audit은 `PASSED`지만 Oracle
+H_add 효능 gate는 `NOT_PASSED`다. 결과와 claim 경계는
+[G2 결과 문서](../experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md)를
+따른다. 아래 계약은 versioned 재설계 후의 새 formal GPU run에도 동일하게 적용하며
+기존 결과나 CPU test에 소급하지 않는다.
 
 SV0 실행·판독:
 
@@ -97,9 +100,11 @@ python scripts/audit_negative_semantics_g2.py \
 
 `--require-provisional-gate`는 실행 완결성이 아니라 결과 gate를 요구하는 별도 옵션이다.
 G1 scientific gate가 `NOT_PASSED`이면 G2 provisional 결과가 좋아도 confirmatory
-scientific gate로 승격하지 않는다.
+scientific gate로 승격하지 않는다. 완료 run에서는 `--require-runner-complete`가 exit 0,
+`--require-provisional-gate`가 exit 3이다.
 
-G3 구현 경로는 G2 통과 전 `implementation_draft_waiting_for_g2`다. 다음 명령은
+G3 구현 경로는 G2 미통과로 `implementation_draft_waiting_for_g2`와
+`execution_authorized=false`를 유지한다. 다음 명령은
 condition/harness를 점검하는 용도이며, protocol을 동결하거나 GPU 성능 근거를 만들지
 않는다.
 
@@ -107,7 +112,7 @@ condition/harness를 점검하는 용도이며, protocol을 동결하거나 GPU 
 python scripts/prepare_negative_semantics_g3.py \
   --output-root outputs/negative_semantics_g3_smoke_<run_id> --smoke
 
-# G2 provisional pass와 protocol freeze 뒤에만 40-video manifest를 준비한다.
+# 새 G2 provisional pass와 protocol freeze 뒤에만 40-video manifest를 준비한다.
 python scripts/prepare_negative_semantics_g3.py \
   --output-root outputs/negative_semantics_g3_pilot_<run_id>
 

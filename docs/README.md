@@ -46,8 +46,8 @@
 | [current/status.md](./current/status.md) | 기능별 현재 구현 상태 — 완료/PoC/스캐폴드 구분 |
 | [current/roadmap.md](./current/roadmap.md) | 연구 목표 기준 향후 계획, 일정, ETRI 협의 필요사항 |
 | [current/open_issues.md](./current/open_issues.md) | 알려진 한계·기술 부채 |
-| [current/saver_jscc_model_plan.md](./current/saver_jscc_model_plan.md) | 활성 제안 모델의 단일 기준; 핵심 prototype `IMPLEMENTED_UNTRAINED`, G2 Pilot 실행 중, formal evidence 없음 |
-| [current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md) | SAVER 선행 연구선; G0 `PASSED`, G1 effective-seed `NOT_PASSED`, fixed_int4 primary |
+| [current/saver_jscc_model_plan.md](./current/saver_jscc_model_plan.md) | 활성 제안 모델의 단일 기준; 핵심 prototype `IMPLEMENTED_UNTRAINED`, SV0/G2 `NOT_PASSED`, formal 학습 중단 |
+| [current/negative_semantic_paper_plan.md](./current/negative_semantic_paper_plan.md) | SAVER 선행 연구선; G0 `PASSED`, G1·G2 `NOT_PASSED`, 동결 계획상 Stop Track |
 
 ## 2. 장기 시스템 설계 (`architecture/`)
 
@@ -106,6 +106,7 @@
 | [experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md](./experiments/2026-09-06_negative_semantics_int6_bridge_preparation.md) | fixed_int4 vs fixed_int6 paired bridge 실행 준비(코드/설정/테스트 완료, GPU 실행은 미실시) — tmux 명령과 판독 절차 |
 | [experiments/2026-09-07_negative_semantics_int6_bridge_results.md](./experiments/2026-09-07_negative_semantics_int6_bridge_results.md) | OVIS Pilot 40영상 formal bridge 결과; int6 품질 gate 통과, bytes +44.217%, H_add 유의차 없음 |
 | [experiments/2026-09-07_negative_semantics_g2_implementation.md](./experiments/2026-09-07_negative_semantics_g2_implementation.md) | SV0/G2 Oracle ABSENT receiver path·four-arm runner·read-only audit 구현; CPU 회귀만 완료, GPU 결과 없음 |
+| [experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md](./experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md) | SV0/G2 40영상 Pilot 320/320·감사 완료; runner `PASSED`, Oracle H_add 효과 gate `NOT_PASSED`, Stop Track 판정 |
 | [experiments/2026-09-07_saver_jscc_structural_implementation.md](./experiments/2026-09-07_saver_jscc_structural_implementation.md) | SAVER 전체 구조 prototype·packet·학습 기반과 G3 harness 구현; 전체 1708 passed, 미학습·formal evidence 없음 |
 | [experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md](./experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md) | bridge 결과와 통신 효율 목표를 반영해 fixed_int4를 primary development bit-depth로 재결정 |
 

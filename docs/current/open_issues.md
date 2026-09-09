@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-09
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 4544094
+source_commit: fd2426a
 supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
 ---
 
@@ -27,15 +27,19 @@ supersedes: docs/etri_strategy.md, docs/phase4.md, docs/phase5.md
     block signature, timestep embedding과 channel token 연결은 GPU에서 확인해야 한다.
   - prompt-only receiver-state bridge는 Wan 호출 인자에 연결됐지만 SM-DiT contribution이
     아니며 real weights 출력은 아직 확인하지 않았다.
-- **Oracle controllability가 아직 입증되지 않았다**
+- **Oracle prompt controllability가 G2에서 입증되지 않았다**
   - G1은 effective seed 1개와 source-paired prevalence 한계 때문에 scientific gate가
     `NOT_PASSED`다.
-  - 1-video smoke는 완료됐지만 `NOT_EVIDENCE`다. 40-video Pilot는 실행 중이며 이 gate가
-    실패하면 구현된 prototype을 그대로 학습하기보다 Stop Track 또는 재설계를 우선한다.
+  - 40-video G2 Pilot는 320/320, 실패 0, matched-compute mismatch 0으로 완료됐지만
+    primary few10에서 Oracle source-paired H_add 감소가 0%였다. 품질과 false-suppression
+    gate만 통과하고 efficacy gate는 `NOT_PASSED`다.
+  - 동결 계획상 Stop Track이다. 구현된 prototype을 그대로 formal 학습하지 않으며,
+    계속하려면 prompt-only가 아닌 구조적 receiver-state injection을 versioned 재설계한다.
+  - 근거: [G2 결과](../experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md)
 - **G3 Oracle REVOKE harness는 구현됐지만 실행 가능한 동결 protocol이 아니다**
   - 공식 GT 기반 `no_rsm`/`append_only_rsm`/`revocable_rsm` manifest, receiver-state
     snapshot 전환 GOP 분할, ghost survival/identity evaluator와 audit는 구현됐다.
-  - G2 provisional pass 전에는 `execution_authorized=false`이며 real-Wan reconstruction,
+  - G2가 `NOT_PASSED`이므로 `execution_authorized=false`를 유지하며 real-Wan reconstruction,
     독립 detector/identity row, 품질·false-suppression 결과가 없다.
   - 현재 G3 evaluator는 구조 가설용 ghost/identity provisional check다. protocol 동결
     때 G2와 동일한 quality non-inferiority 및 false-suppression gate를 결합해야 한다.

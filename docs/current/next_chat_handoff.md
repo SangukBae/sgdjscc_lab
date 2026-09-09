@@ -1,13 +1,35 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-09
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 4544094
+source_commit: fd2426a
 ---
 
 > [← 문서 색인](../README.md)
 
 # 다음 채팅용 연구개발 인계 요약
+
+## 2026-09-09 SV0/G2 Oracle ABSENT 최종 결과
+
+- G2 Pilot는 clean commit `6f9593d`에서 OVIS 40영상 × 4 arm × 2 policy =
+  **320/320**, 실패 0으로 완료됐다. Held-out은 열지 않았다.
+- read-only audit의 runner 완결성은 `PASSED`다. detection 145,320/145,320,
+  accounting 320/320, matched comparison 240건 mismatch 0, 기록 checksum 10/10을
+  확인했다.
+- 그러나 primary few10에서 source-paired H_add는 no-negative와 Oracle이 모두
+  **1.0493%(156/14,867)**로 같아 상대 감소 0%였다. 요구한 25% 감소와 개선 CI를
+  충족하지 못해 provisional mechanism gate는 **`NOT_PASSED`**다.
+- Oracle false suppression 상한 0.4147%와 PSNR/SSIM/LPIPS non-inferiority는 통과했다.
+  즉 실행·품질 문제가 아니라 additional-object 억제 효과 부재가 실패 원인이다.
+- G1 scientific gate도 `NOT_PASSED`이므로 최종 표시는
+  `NOT_CONFIRMATORY_DEPENDENCY_G1_NOT_PASSED`다. runner 완료와 scientific passage를
+  혼용하지 않는다.
+- 동결 계획상 **Stop Track**이다. G3 GPU matrix와 SV1 이후 formal SAVER 학습은 시작하지
+  않는다. 계속하려면 이번 Pilot을 본 데이터로 처리하고 구조적 receiver-state injection을
+  새 protocol/version/run root에서 재설계한다.
+- 상세: [G2 결과 문서](../experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md)
+
+> 아래 2026-09-07 항목은 당시 구현·실행 전 스냅샷이다. 현재 판정은 위 절이 대체한다.
 
 ## 2026-09-07 SAVER-JSCC 연구선 등록
 
@@ -22,10 +44,10 @@ source_commit: 4544094
   SAVER SV0/SV1의 데이터·Oracle·packet/RSM 선행 gate로 유지한다.
 - G3 Oracle REVOKE는 `no_rsm`/`append_only_rsm`/`revocable_rsm` condition manifest,
   frame-aligned video injection, receiver-state 전환 GOP split, event-cluster ghost/identity
-  evaluator와 read-only audit까지 구현했다. protocol은 G2 통과 전 draft이고 GPU 결과는 없다.
-- `SV0 = G2 Oracle ABSENT` 1-video smoke는 완료됐고 `NOT_EVIDENCE`다. 40-video formal
-  Pilot는 기존 clean commit `6f9593d`에서 실행 중이다. 구조 코드는 선행 구현했지만,
-  Pilot 판정 전에 대규모 SAVER 학습을 시작하지 않는다.
+  evaluator와 read-only audit까지 구현했다. protocol은 G2 미통과로 draft·실행 비허가이며
+  GPU 결과는 없다.
+- `SV0 = G2 Oracle ABSENT` 40-video Pilot는 이후 완료됐고 provisional `NOT_PASSED`로
+  판정됐다. 구조 코드는 보존하지만 대규모 SAVER 학습은 중단한다.
 - 호환성은 production default와 기존 package export를 바꾸지 않고 SAVER 전용 config와
   import로만 opt-in하도록 구현했다.
 - 문서 역할: 설계·gate는 SAVER plan, 실제 상태는 `status.md`, 다음 작업은
@@ -77,9 +99,8 @@ source_commit: 4544094
   ablation과 시연 opt-in으로만 유지한다.
 - 근거: [bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md),
   [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md).
-- 다음 작업은 구현된 fixed_int4 기반 G2 Oracle ABSENT의 GPU smoke/Pilot 검증이다.
-  G1 effective-seed gate가 `NOT_PASSED`인 동안 G2 결과는 mechanism feasibility를 보는
-  탐색 근거로만 기록한다.
+- 후속 fixed_int4 기반 G2 Oracle ABSENT는 2026-09-09 완료·감사됐으며 provisional
+  `NOT_PASSED`다. 상세 판정은 이 문서 최상단과 G2 결과 문서를 따른다.
 
 ## 2026-09-04 int6 임시 결정 — superseded
 
@@ -273,23 +294,19 @@ source_commit: 4544094
 
 ## 바로 이어서 할 작업
 
-1. **SAVER SV0 / G2 Oracle ABSENT GPU 검증 마감**
-   - receiver injection, four-arm runner, matched-compute check와 read-only audit 구현 완료
-   - 1-video smoke는 완료(`NOT_EVIDENCE`); 실행 중 40-video Pilot 종료 후 감사를 수행
-   - `fixed_int4 + candidate_both_omit`에서 no negative / random / frequency /
-     oracle negative를 동일 generation·step budget으로 비교한다.
-   - H_add 상대 감소, paired one-sided CI, false suppression, PSNR/SSIM/LPIPS와
-     추가 compute를 함께 기록한다.
-   - G1 effective-seed gate가 `NOT_PASSED`인 동안 탐색적 mechanism feasibility로만
-     판정하고 held-out은 열지 않는다.
+1. **G2 negative result 보존과 Stop Track 결정 마감**
+   - 결과 문서는 작성됐다. 필요한 최소 summary/audit/manifest/checksum을 `results/`에
+     보존하고 registry에 등록한다. 대용량 reconstruction 전체는 Git에 넣지 않는다.
+   - G3 GPU 실행과 현 SAVER formal 학습은 시작하지 않는다.
+   - 연구를 계속할지 결정하면 prompt-only 조정이 아니라 구조적 receiver-state injection의
+     versioned 재설계 범위와 새 Development gate를 먼저 문서화한다.
 2. **int6 bridge 결과 보존 마감**
    - 날짜 결과 문서는 작성됐다. 필요한 최소 artifact를 `results/`에 복사하고
      manifest/checksum/registry를 추가한다. 1.2GB 원본 전체를 Git에 넣지 않는다.
-3. **SV0 통과 시 실제 SAVER 학습 데이터와 SV1/SV2 실행**
-   - prompt-only receiver RSM, signed packet/ledger, SAT/VREM/SM-DiT code는 구현됐다.
-   - OVIS/YouTube-VOS source-only GOP tensor manifest를 만들고 SV1 memory ablation부터
-     실행한다. 이후 real frozen backbone에 SM-DiT bridge를 연결한다.
-4. **SV2 통과 시 JASR/codec 및 channel robustness formal**
+3. **새 SV0가 설계·통과한 경우에만 SAVER 학습 재개**
+   - prompt-only receiver RSM, signed packet/ledger, SAT/VREM/SM-DiT code는 구현됐지만
+     현재 gate 실패 상태에서는 source-only manifest 학습을 시작하지 않는다.
+4. **새 SV2 통과 시에만 JASR/codec 및 channel robustness formal**
    - 구현된 router/codec/fault simulator를 실제 학습해 네 budget Pareto와
      loss/reorder/corruption/fading을 평가한다.
 5. **데이터 준비 후 held-out과 최종 문서 마감**

@@ -1,14 +1,16 @@
 ---
-status: supporting_active
-updated: 2026-09-07
+status: supporting_stop_track
+updated: 2026-09-09
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 4544094
+source_commit: fd2426a
 primary_venue: IEEE Transactions on Multimedia
 fallback_venue: IEEE Transactions on Circuits and Systems for Video Technology
 g0_gate: PASSED
 g1_gate: PASSED_DECLARED_SEED__NOT_PASSED_EFFECTIVE_SEED
 primary_development_bit_depth: fixed_int4
 int6_bridge: COMPLETED_NO_SIGNIFICANT_H_ADD_CHANGE
+g2_gate: NOT_PASSED
+track_decision: STOP_UNDER_FROZEN_PLAN
 parent_plan: docs/current/saver_jscc_model_plan.md
 supersedes: docs/reference/paper_writing_notes.md
 ---
@@ -29,8 +31,9 @@ supersedes: docs/reference/paper_writing_notes.md
 
 > **Joint Positive–Negative Semantic Source Coding with Revocable Receiver Memory for Generative Video Communication**
 
-최종 개발 결정은 **조건부 GO**다. 연구의 생존 여부는 구현량이나 일정이 아니라 아래
-순차 gate의 실측 결과로 판정한다.
+2026-09-09 현재 최종 개발 결정은 동결 계획상 **Stop Track**이다. G2 Oracle ABSENT가
+실행 무결성은 통과했지만 효능 gate를 통과하지 못했다. 아래 질문과 분기는 설계 기준으로
+보존하되, 동일 prompt-only mechanism의 후속 G3~G11 실행은 중단한다.
 
 1. 현재 개발 backbone에서 additional-object hallucination이 반복되는가?
 2. 완전한 `ABSENT` 정보를 주면 receiver가 실제로 이를 억제할 수 있는가?
@@ -60,6 +63,8 @@ additional-object/ghost-track만 primary 표현으로 허용한다. 근거는
 | **Reduced Track** | P1·Oracle ABSENT 통과, P2 또는 Oracle REVOKE 실패 | negative source coding + joint allocator, RSM 기여 제거 | 제목·기여 축소, conference 또는 범위 재검토 |
 | **Stop Track** | Oracle ABSENT 실패 | 본 아이디어 중단 | packet·allocator·adapter 개발 금지 |
 
+현재 선택은 **Stop Track**이다. 계속하려면 동일 계획을 억지로 진행하는 것이 아니라
+receiver control mechanism을 구조적으로 바꾼 versioned 재설계와 새 SV0가 필요하다.
 P2가 실패하면 현재 제목에서 `Revocable Receiver Memory`를 제거한다. Full Track의
 결과가 없는데 Reduced Track 결과를 이용해 temporal-state revocation을 주장하지 않는다.
 
@@ -75,9 +80,9 @@ P2가 실패하면 현재 제목에서 `Revocable Receiver Memory`를 제거한�
 - 비교 기준: `full50 + baseline`, `full50 + both-omit`
 - 주요 조건: reliable-digital, fixed-reference 10 dB, seed 2025
 
-`fixed_int4 + both-omit + few10`은 **frozen development stress configuration**이자
-G2 이후 primary development condition이다. held-out 검증이 끝난 최종 operating
-point는 아니다. OVIS Pilot 40영상 int4/int6 formal bridge에서 int6는 품질이 소폭
+`fixed_int4 + both-omit + few10`은 G2에 사용한 **frozen development stress
+configuration**이다. G2 미통과 후의 primary operating point나 held-out 검증이 끝난
+최종 operating point는 아니다. OVIS Pilot 40영상 int4/int6 formal bridge에서 int6는 품질이 소폭
 개선됐지만 int4 대비 bytes가 44.217% 증가했고 H_add의 유의한 개선은 없었다.
 따라서 2026-09-07부터 fixed_int4를 primary로 사용하고 fixed_int6는 secondary
 ablation/시연 opt-in으로만 유지한다. 근거는
@@ -840,7 +845,7 @@ versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
 
 ### G2. Oracle ABSENT controllability
 
-**구현 상태 (2026-09-07): `IMPLEMENTED_UNVALIDATED`**
+**결과 상태 (2026-09-09): `VALIDATED_NOT_PASSED`**
 
 - frozen protocol: `configs/experiments/negative_semantics/g2_oracle_absent_protocol.yaml`
 - runner: `scripts/run_negative_semantics_g2.py`
@@ -849,8 +854,8 @@ versioned amendment를 남기며 기존 기록을 덮어쓰지 않는다.
   옵션이 없으면 baseline 문자열과 수치 경로를 유지한다.
 - Oracle condition은 `ORACLE_EVAL_ONLY`, `serialized_in_packet=false`,
   `rate_accounted=false`로 기록한다.
-- 1-video GPU smoke는 완료됐고 smoke이므로 `NOT_EVIDENCE`로 기록됐다. 40-video Pilot는
-  2026-09-07 현재 clean commit `6f9593d`에서 실행 중이며 gate 판정은 아직 없다.
+- 1-video GPU smoke는 `NOT_EVIDENCE`로 보존했다. 40-video Pilot는 clean commit
+  `6f9593d`에서 320/320, 실패 0으로 완료됐고 runner audit은 `PASSED`다.
 
 **작업**
 
@@ -863,21 +868,35 @@ G1의 effective-seed gate가 `NOT_PASSED`인 동안 G2의 Pilot 결과는 mechan
 feasibility를 보는 탐색 근거로 기록한다. 이를 G1 통과나 confirmatory paper evidence로
 소급 해석하지 않는다.
 
+**실측 결과**
+
+- primary few10 source-paired H_add: no-negative 1.0493%(156/14,867), Oracle
+  1.0493%(156/14,867), 상대 감소 0%
+- 요구한 25% 상대 감소와 one-sided 개선 CI: FAIL
+- Oracle false suppression: 0.2072%, one-sided 95% 상한 0.4147% ≤ 2%: PASS
+- Oracle quality delta: PSNR +0.0421 dB, SSIM +0.000489, LPIPS -0.000942: PASS
+- full50 Oracle은 0.9081%→0.9282%로 2.22% 악화한 point estimate이며 개선 근거 없음
+- provisional gate: **`NOT_PASSED`**
+- final scientific gate: **`NOT_CONFIRMATORY_DEPENDENCY_G1_NOT_PASSED`**
+- 상세: [G2 결과](../experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md)
+
 **provisional 통과 조건**
 
 - $H_{\mathrm{add}}$ 상대 감소 25% 이상
 - paired one-sided 95% CI가 개선 방향
-- false suppression 증가 CI 상한 0.01~0.02 이내
+- false suppression 증가 CI 상한 0.02 이내
 - PSNR/SSIM/LPIPS non-inferiority 통과
 
 **실패 시**
 
-- 구현된 RSM/packet/allocator prototype의 formal 학습·최종 contribution 채택 중단
-- receiver control mechanism을 바꾸는 별도 연구로 재정의하지 않는 한 본 계획 종료
+- 위 실패 조건이 실제로 발생했다. 구현된 RSM/packet/allocator prototype의 formal
+  학습·최종 contribution 채택을 중단한다.
+- receiver control mechanism을 바꾸는 별도 versioned 연구로 재정의하지 않는 한 본
+  계획은 Stop Track에서 종료한다.
 
 ### G3. RSM-lite와 P2/Oracle REVOKE
 
-**구현 상태: `IMPLEMENTED_UNVALIDATED`; protocol draft, GPU 실행 없음**
+**구현 상태: `IMPLEMENTED_UNVALIDATED`; G2 실패로 실행 비허가, GPU 실행 없음**
 
 - versioned receiver ledger, deterministic ledger-to-prompt compiler와 Wan
   `prompt`/`negative_prompt` 연결을 구현했다.
@@ -886,9 +905,9 @@ feasibility를 보는 탐색 근거로 기록한다. 이를 G1 통과나 confirm
   않도록 구현했다.
 - paired arm-grid 검증, EXIT ghost survival curve/AUC, event-cluster identity bootstrap,
   preparation/evaluation hash binding과 read-only audit를 구현했다.
-- G2 provisional pass 전 protocol은 `implementation_draft_waiting_for_g2`이고
-  `execution_authorized=false`다. real-Wan reconstruction, detector/identity row와 G3
-  성능 결과는 아직 없다.
+- G2가 provisional `NOT_PASSED`이므로 protocol은
+  `implementation_draft_waiting_for_g2`, `execution_authorized=false`를 유지한다.
+  real-Wan reconstruction, detector/identity row와 G3 성능 결과는 없다.
 
 **구현된 작업**
 
@@ -898,9 +917,9 @@ feasibility를 보는 탐색 근거로 기록한다. 이를 G1 통과나 confirm
 - No-RSM, append-only RSM, revocable RSM 3조건 manifest·paired evaluator 구현
 - exit, occlusion, reappearance event state를 분리하고 snapshot 전환 GOP boundary 구현
 
-**검증 때 남은 작업**
+**versioned 재설계와 새 G2 통과 후에만 가능한 작업**
 
-- G2 통과 후 protocol 동결과 real-Wan 세 arm GPU reconstruction
+- 새 G2 통과 후 protocol 동결과 real-Wan 세 arm GPU reconstruction
 - 독립 detector/identity embedding으로 평가 row 생성
 - G2 quality·false-suppression gate 결합
 - scene-cut 표본과 `SCENE_RESET` 효과의 별도 formal 비교
@@ -1141,17 +1160,17 @@ tests/
 |---:|---|---|
 | 1~2 | G0 | split·ontology·metric·gate 동결 |
 | 3~4 | G1 | P1 phenomenon report |
-| 5 | G2 | Oracle ABSENT 판정 |
-| 6~8 | G3 | RSM-lite, P2, Oracle REVOKE |
-| 9~10 | G4 | binary schema, bit-cost, protocol tests |
-| 11~12 | G5 | Oracle allocator와 Pareto |
-| 13~14 | G6 | transport와 loss/reorder |
-| 15~16 | G7 | heuristic online method |
-| 17~19 | G8 | RSM-adapter와 ablation |
-| 20~21 | G9 | learned predictor |
-| 22~24 | G10 | full matched-rate·compute 평가 |
-| 25~27 | G11 | held-out·독립 backbone·human 평가 |
-| 28~30 | 논문 | 표·그림·원고·artifact audit |
+| 완료·실패 | G2 | Oracle ABSENT `NOT_PASSED`, Stop Track 진입 |
+| 중단 | G3 | G2 미통과로 RSM-lite/Oracle REVOKE 실행 비허가 |
+| 중단 | G4 | G2 미통과로 packet formal 개발 중단 |
+| 중단 | G5 | G2 미통과로 allocator Pareto 중단 |
+| 중단 | G6 | G2 미통과로 transport formal 중단 |
+| 중단 | G7 | G2 미통과로 heuristic online method 중단 |
+| 중단 | G8 | G2 미통과로 RSM-adapter 학습 중단 |
+| 중단 | G9 | G2 미통과로 learned predictor 중단 |
+| 중단 | G10 | G2 미통과로 full matched-rate·compute 평가 중단 |
+| 봉인 유지 | G11 | 구조 재설계·재동결 전 Held-out 개봉 금지 |
+| 범위 재검토 | 논문 | G2 negative result 보존; 기존 SAVER contribution 원고 진행 중단 |
 
 Wan 14B worker는 메모리 요구량이 크므로 여러 Wan 프로세스를 같은 GPU에 동시에 올리지
 않는다. 작은 pilot로 gate를 닫은 뒤 full run을 수행하고, 실패 시 이미 생성된 artifact를

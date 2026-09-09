@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-08
+updated: 2026-09-09
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 5520b90
+source_commit: fd2426a
 supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
 ---
 
@@ -43,17 +43,20 @@ supersedes: docs/training_scaffold.md, docs/dev/smoke_training.md
 [saver_jscc_model_plan.md](../current/saver_jscc_model_plan.md)를 따른다. Stage 0은 학습이
 없는 Oracle inference이며 `run_negative_semantics_g2.py`로 구현됐다. `sv1`, `sv2`,
 `sv3`, `end_to_end` freeze 정책, seven-loss runner, sequence dataloader와 versioned
-checkpoint는 구현됐다. 실제 source-only tensor manifest와 학습 결과는 없다.
+checkpoint는 구현됐다. SV0/G2 Pilot는 실행 무결성을 통과했지만 mechanism gate가
+`NOT_PASSED`이므로 formal 학습은 중단한다. 실제 source-only tensor manifest와 학습
+결과는 없다.
 
 | 순서 | 계획 stage | 학습 대상 | 시작 조건 |
 |---:|---|---|---|
-| 0 | `saver_sv0_oracle` | 학습 없음, Oracle condition 실험 — `IMPLEMENTED_UNVALIDATED` | negative-semantics G2 protocol 동결 |
-| 1 | `sv1` | SAT + VREM updater/state heads | runner 구현; formal 시작은 SV0 통과 후 |
-| 2 | `sv2` | SM-DiT zero-init adapters | runner 구현; formal 시작은 SV1 통과 후 |
-| 3 | `sv3` | JASR + semantic codec | runner 구현; formal 시작은 SV2 통과 후 |
-| 4 | `end_to_end` | SAT/VREM/SM-DiT/JASR/codec | runner 구현; formal 시작은 구조·rate 단위 동결 후 |
+| 0 | `saver_sv0_oracle` | 학습 없음, Oracle condition 실험 — `VALIDATED_NOT_PASSED` | 완료; [G2 결과](../experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md) |
+| 1 | `sv1` | SAT + VREM updater/state heads | runner 구현; SV0 미통과로 formal 중단 |
+| 2 | `sv2` | SM-DiT zero-init adapters | runner 구현; 새 SV0/SV1 통과 전 formal 중단 |
+| 3 | `sv3` | JASR + semantic codec | runner 구현; 상위 gate 미통과로 formal 중단 |
+| 4 | `end_to_end` | SAT/VREM/SM-DiT/JASR/codec | runner 구현; 상위 gate 미통과로 formal 중단 |
 
-학습 순서를 건너뛰지 않는다.
+학습 순서를 건너뛰지 않는다. 현재는 1단계 이후를 실행하지 않으며, versioned 구조
+재설계와 새 SV0 통과가 있을 때만 아래 순서를 재개한다.
 
 1. Oracle action으로 decoder/memory 효과를 먼저 확인한다.
 2. base SGD-JSCC/video diffusion backbone을 freeze한다.

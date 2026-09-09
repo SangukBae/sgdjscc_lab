@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-09
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 4544094
+source_commit: fd2426a
 supersedes:
 ---
 
@@ -36,21 +36,23 @@ prompt-only receiver-state bridge, dataset/loss/stage runner/checkpoint 형식�
 근거는 없다.
 
 G3 Oracle REVOKE의 세 receiver-memory arm manifest, frame-aligned Wan 주입, snapshot
-전환 GOP 분할, ghost/identity evaluator와 read-only audit도 구현됐다. 다만 protocol은
-G2 결과를 기다리는 `implementation_draft_waiting_for_g2`이며 실행 산출물은 없다.
+전환 GOP 분할, ghost/identity evaluator와 read-only audit도 구현됐다. G2가
+`NOT_PASSED`이므로 protocol은 `implementation_draft_waiting_for_g2` 상태를 유지하고
+실행은 허가하지 않는다.
 
 | 순서 | SAVER 단계 | 완료 조건 |
 |---:|---|---|
-| 진행 | SV0 Oracle signed control | 1-video smoke 완료(`NOT_EVIDENCE`); 40-video Pilot 실행 중, source-paired 개선·false-suppression·품질 gate 판정 필요 |
-| 구현 완료·실험 대기 | SV1 SAT + VREM | tensor module/property test는 완료; No-memory < Append-only, 그리고 Revocable이 identity 이득을 유지하며 ghost 감소 |
-| 구현 완료·실험 대기 | SV2 SM-DiT | zero-init adapter와 generic backbone bridge 완료; real backbone 학습 후 prompt/token-only보다 matched-rate·matched-compute paired 개선 |
-| 구현 완료·실험 대기 | SV3 JASR + channel codec | common-budget router/codec 완료; 최소 4개 budget에서 heuristic보다 Pareto 개선 |
-| 구현 완료·실험 대기 | SV4 channel/packet robustness | loss/reorder/duplicate/corruption 및 AWGN/Rayleigh simulator 완료; formal protocol 통과 |
-| 대기 | SV5 held-out/generalization | 동결 후 held-out과 독립 backbone에서 방향 재현 |
+| 완료·실패 | SV0 Oracle signed control | 40영상 320/320·감사 완료; 품질/false-suppression은 통과했지만 Oracle H_add 감소 0%로 `NOT_PASSED` |
+| 구현 보존·formal 중단 | SV1 SAT + VREM | SV0 미통과. 현 구조로 학습하지 않고 versioned 재설계 여부부터 결정 |
+| 구현 보존·formal 중단 | SV2 SM-DiT | SV0 미통과. 구조적 receiver-state injection 재설계 후보로만 유지 |
+| 구현 보존·formal 중단 | SV3 JASR + channel codec | 상위 gate 미통과로 formal Pareto 실행 중단 |
+| 구현 보존·formal 중단 | SV4 channel/packet robustness | 상위 gate 미통과로 formal protocol 실행 중단 |
+| 봉인 유지 | SV5 held-out/generalization | 구조 재동결 전 Held-out 개봉 금지 |
 
-SV0가 실패하면 구현된 full SAVER prototype의 formal 학습·최종 채택을 중단한다.
-SV1 또는 SV2가 실패하면 해당 module을 최종 contribution에서 제거하고 범위를 줄인다.
-SV3가 실패하면 learned allocation claim을 제거한다.
+SV0는 실제로 실패했다. 따라서 구현된 full SAVER prototype의 formal 학습·최종 채택을
+중단하고 동결 계획의 Stop Track을 적용한다. 연구를 계속하려면 이번 Pilot을 본 데이터로
+명시하고, prompt-only control을 구조적으로 바꾸는 별도 versioned 재설계와 새 gate가
+필요하다.
 
 ### Negative-semantics 선행 gate 상태
 
@@ -64,8 +66,10 @@ source-carried additional-object 혼입을 확인해 같은 gate를 정직하게
 [v1.2 amendment](../experiments/2026-09-06_negative_semantics_g1_v1_2_amendment.md)).
 후속 fixed_int4–fixed_int6 bridge도 정식 완료했다. int6는 품질이 소폭
 개선됐지만 int4 대비 bytes가 44.217% 증가했고 H_add의 유의한 개선은 없었다.
-따라서 이후 primary development bit-depth는 `fixed_int4`이며, 다음 우선순위는
-G1의 `NOT_PASSED` 경계를 유지한 구현 완료 G2 Oracle ABSENT의 GPU 검증이다.
+따라서 이후 primary development bit-depth는 `fixed_int4`다. 후속 G2 Oracle ABSENT
+Pilot도 완료됐지만 primary few10의 Oracle source-paired H_add 감소가 0%여서
+provisional gate가 `NOT_PASSED`다. 다음 우선순위는 G3 실행이 아니라 Stop Track 수용
+또는 versioned receiver-control 구조 재설계 여부 결정이다.
 
 | 순서 | G0 후속 작업 | 완료 조건 |
 |---:|---|---|
@@ -78,7 +82,7 @@ G1의 `NOT_PASSED` 경계를 유지한 구현 완료 G2 Oracle ABSENT의 GPU 검
 | 완료 | G1 정식 GPU run | Pilot 40영상 전체 완료(240/240, 실패 0), `g1_summary.json` gate: declared-seed `PASSED` |
 | 완료 | G1 v1.2 amendment | effective-seed 재계산 결과 few10 gate `NOT_PASSED`; source-paired h_add로 full50 prevalence 미달 확인; code-clean v1_2c 결론 동일 |
 | 완료 | int4–int6 bridge | OVIS Pilot 40영상 formal 완료, 실패 0, 품질 gate 통과, int6 bytes +44.217%, H_add 유의차 없음 |
-| 진행 | G2 Oracle ABSENT Pilot | 1-video smoke 완료, formal 요구를 의도적으로 충족하지 않아 `NOT_EVIDENCE`; fixed_int4 no/random/frequency/oracle 40-video Pilot가 clean commit `6f9593d`에서 실행 중. G1 미통과 상태에서는 탐색 근거로만 판정 |
+| 완료·실패 | G2 Oracle ABSENT Pilot | clean commit `6f9593d`, 320/320·실패 0·runner audit `PASSED`; Oracle H_add 상대 감소 0%, 개선 CI 실패로 provisional `NOT_PASSED`; G1 dependency도 `NOT_PASSED` |
 
 상세 동결값과 자동 annotation 규칙은
 [G0 v1.2 기록](../experiments/2026-09-03_negative_semantics_g0_official_gt_amendment_v1_2.md)에 있다.
@@ -90,6 +94,10 @@ int6 결정은 후속 bridge 전 임시 판단으로 보존하되 현재 기준�
 int6는 품질 민감도·robustness ablation과 명시적 시연 opt-in에만 사용한다. 근거는
 [bridge 결과](../experiments/2026-09-07_negative_semantics_int6_bridge_results.md)와
 [fixed_int4 결정](../experiments/2026-09-07_fixed_int4_primary_operating_point_decision.md)을 따른다.
+
+G2의 상세 수치와 Stop Track 판정은
+[2026-09-09 G2 결과](../experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md)에
+고정했다. 같은 Pilot을 prompt/threshold 튜닝 후 confirmatory 데이터로 재사용하지 않는다.
 
 - 관리 규칙
   - 메인 계획: 이 문서
@@ -249,11 +257,11 @@ gate를 통과했지만 hallucination CI 상한이 margin을 넘었고, VAE-dire
 
 | 시기 | 초점 | 산출물 |
 |---|---|---|
-| 즉시 | SAVER SV0 | 실행 중 G2 Oracle ABSENT Pilot 완료·감사; 통과 시 구현된 G3 protocol을 동결하고 Oracle REVOKE GPU matrix 실행, 실패 시 Stop Track 또는 구조 재설계 |
-| SV0 판정 후 | SAVER SV1 | 구현된 SAT/VREM을 실제 source-only sequence manifest로 학습; No/Append-only/Revocable 비교 |
-| SV1 통과 후 | SAVER SV2 | 구현된 bridge로 frozen real backbone + SM-DiT adapter 학습과 prompt/token-only ablation |
-| SV2 통과 후 | SAVER SV3/SV4 | 구현된 JASR·codec·fault channel의 common-budget Pareto와 packet/channel formal robustness |
-| 구조 동결 후 | SAVER SV5 | Validation·held-out·독립 backbone, 최종 operating point·논문 |
+| 즉시 | Stop Track 결정 | G2 negative result와 최소 재현 artifact를 보존하고 현 prompt-only 연구선 종료 여부 결정 |
+| 재설계 승인 시 | SV0 v2 설계 | Development split에서 receiver-state가 diffusion block에 직접 작용하는 구조와 새 protocol/version 동결 |
+| 새 SV0 통과 후 | SAVER SV1/SV2 | SAT/VREM·SM-DiT 학습을 재개하고 prompt-only 대비 구조 효과 분리 |
+| SV1/SV2 통과 후 | SAVER SV3/SV4 | JASR·codec·fault channel formal Pareto·robustness 실행 |
+| 구조 동결 후 | SAVER SV5 | Validation·Held-out·독립 backbone; 현재는 봉인 유지 |
 
 ## 신규 연구 아이템 확장 가능성
 

@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-07
+updated: 2026-09-09
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 4544094
+source_commit: fd2426a
 supersedes:
 ---
 
@@ -120,7 +120,7 @@ evaluate.py → eval config → eval_pipeline.py → infer_pipeline.py
 
 ## 5. SAVER-JSCC 파일 역할
 
-### 5.1 구현된 SV0/G2 경로 (`IMPLEMENTED_UNVALIDATED`)
+### 5.1 구현된 SV0/G2 경로 (`VALIDATED_NOT_PASSED`)
 
 | 파일 | 책임 |
 |---|---|
@@ -129,6 +129,9 @@ evaluate.py → eval config → eval_pipeline.py → infer_pipeline.py
 | `scripts/run_negative_semantics_g2.py` | fixed_int4 네 arm 실행·resume signature·matched-compute 집계 |
 | `scripts/audit_negative_semantics_g2.py` | 완료 run의 grid/hash/rate/held-out 경계 read-only 감사 |
 | `configs/experiments/negative_semantics/g2_oracle_absent_protocol.yaml` | SV0/G2 frozen 조건과 provisional gate |
+
+40-video Pilot 실행·runner audit은 완료됐지만 Oracle H_add efficacy gate는
+`NOT_PASSED`다. 파일 경로가 구현됐다는 사실을 SAVER 성능 근거로 해석하지 않는다.
 
 ### 5.2 SAVER 핵심 모델 prototype (`IMPLEMENTED_UNTRAINED`)
 
@@ -161,10 +164,10 @@ CPU 구조 검증을 통과했지만 학습 checkpoint나 성능 근거는 없�
 | `video/receiver_state_conditioning.py` | receiver snapshot 전환마다 GOP boundary를 추가해 segment state 혼입 차단 |
 | `scripts/evaluate_video.py` | opt-in G3 receiver-condition manifest를 frame-aligned temporal pipeline에 주입 |
 | `evaluators/negative_semantics_g3.py` | paired event grid, EXIT ghost survival/AUC, identity event bootstrap |
-| `scripts/prepare_negative_semantics_g3.py` | 세 arm manifest/hash/run spec 생성; G2 전 실행 비허가 기록 |
+| `scripts/prepare_negative_semantics_g3.py` | 세 arm manifest/hash/run spec 생성; 새 G2 통과 전 실행 비허가 기록 |
 | `scripts/evaluate_negative_semantics_g3.py` | 사전 계산 detector/identity row를 순수 CPU로 요약하고 입력 hash 결합 |
 | `scripts/audit_negative_semantics_g3.py` | protocol/manifest/hash/rate/held-out 경계 read-only 감사 |
-| `configs/experiments/negative_semantics/g3_oracle_revoke_protocol.yaml` | G2 통과 전 draft G3 계약; formal freeze 아님 |
+| `configs/experiments/negative_semantics/g3_oracle_revoke_protocol.yaml` | G2 미통과로 실행 비허가인 draft G3 계약; formal freeze 아님 |
 
 deterministic packet schema/version/tombstone 검사는 `transmission/` 또는 별도 state
 protocol 계층에 두며 neural memory update와 섞어 구현하지 않는다. master gate

@@ -1,8 +1,8 @@
 ---
 status: active
-updated: 2026-09-08
+updated: 2026-09-09
 owner: ETRI SGD-JSCC 연구팀
-source_commit: 5520b90
+source_commit: fd2426a
 supersedes:
 ---
 
@@ -32,6 +32,9 @@ supersedes:
 - SAVER-JSCC는 두 논문의 faithful reproduction이 아니라 ETRI 신규 제안 구조다.
 - SAVER 핵심 모델의 현재 상태는 `PROTOTYPE_IMPLEMENTED_UNTRAINED`다. 기존 extension,
   SV0 Oracle prompt 결과 또는 CPU test를 SAVER 학습 성능으로 재분류하지 않는다.
+- SV0/G2 Oracle ABSENT Pilot는 runner 무결성은 통과했지만 Oracle source-paired H_add
+  효과 gate가 `NOT_PASSED`다. 동결 계획상 Stop Track이며 기존 SAVER contribution의
+  formal 학습·논문 claim을 진행하지 않는다.
 
 ## 원본 코드 vs `sgdjscc_lab`
 
@@ -145,6 +148,8 @@ fingerprint를 기록한다.
   주장하지 않는다.
 - real-model smoke 학습과 일부 multi-GPU 경로는 별도 검증 문서가 있음
 - 실제 FID 수치, large-scale DM 재현, water-filling 실수치 등은 체크포인트·데이터·GPU에 의존
+- G2 negative result는 prompt-only Oracle control의 한계이며 SAVER prototype의 학습
+  성능이 아니다. 상세 수치는 [G2 결과](../experiments/2026-09-09_negative_semantics_g2_oracle_absent_pilot_results.md)에 고정했다.
 
 ## 관련 문서
 
